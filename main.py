@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import Response
 import uvicorn
 from core import fetch_and_process
 import sqlite3
@@ -74,6 +75,40 @@ async def read_root(request: Request):
     conn.close()
     
     return templates.TemplateResponse("index.html", {"request": request, "news": news})
+
+# 1. Rota robots.txt (Diz para o Google: "Pode ler tudo")
+@app.get("/robots.txt", response_class=Response)
+def get_robots_txt():
+    content = """User-agent: *
+Allow: /
+Sitemap: https://financas-news.net.br/sitemap.xml
+"""
+    return Response(content=content, media_type="text/plain")
+
+# 2. Rota sitemap.xml (Lista todas as notícias para o Google indexar)
+@app.get("/sitemap.xml", response_class=Response)
+def get_sitemap_xml():
+    conn = sqlite3.connect('news.db')
+    c = conn.cursor()
+    # Pega as últimas 100 notícias
+    news = c.execute("SELECT id, data FROM news ORDER BY id DESC LIMIT 100").fetchall()
+    conn.close()
+
+    xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+        <loc>https://financas-news.net.br/</loc>
+        <changefreq>hourly</changefreq>
+        <priority>1.0</priority>
+    </url>
+"""
+    
+    # Como seu site por enquanto é "Single Page" (tudo na home), 
+    # o sitemap é simples. Mas se criarmos páginas individuais no futuro,
+    # aqui entrará o loop das urls.
+    
+    xml_content += "</urlset>"
+    return Response(content=xml_content, media_type="application/xml")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
