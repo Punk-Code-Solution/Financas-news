@@ -108,28 +108,38 @@ Sitemap: https://financas-news.net.br/sitemap.xml
     return Response(content=content, media_type="text/plain")
 
 # 2. Rota sitemap.xml (Lista todas as notícias para o Google indexar)
-@app.get("/sitemap.xml", response_class=Response)
-def get_sitemap_xml():
-    conn = sqlite3.connect('news.db')
-    c = conn.cursor()
-    # Pega as últimas 100 notícias
-    news = c.execute("SELECT id, data FROM news ORDER BY id DESC LIMIT 100").fetchall()
-    conn.close()
+@app.get("/sitemap.xml")
+def get_sitemap():
+    # 1. Links fixos (Páginas obrigatórias)
+    static_urls = [
+        "https://financas-news.net.br/",
+        "https://financas-news.net.br/privacidade",
+        "https://financas-news.net.br/termos"
+    ]
+    
+    # 2. Links dinâmicos (Notícias do Banco de Dados)
+    # Aqui assumimos que você tem uma função que busca as notícias
+    # Se ainda não tiver as rotas individuais de notícia, o Google indexará a Home
+    # Mas é bom já deixar o código preparado
+    
+    xml_content = '<?xml version="1.0" encoding="UTF-8"?>'
+    xml_content += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+    
+    # Adiciona as páginas fixas
+    for url in static_urls:
+        xml_content += f'''
+        <url>
+            <loc>{url}</loc>
+            <changefreq>hourly</changefreq>
+            <priority>{"1.0" if url.endswith("/") else "0.8"}</priority>
+        </url>'''
+    
+    # Se você quiser que cada notícia tenha sua própria página no futuro:
+    # for noticia in noticias_do_db:
+    #     xml_content += f'<url><loc>https://financas-news.net.br/noticia/{noticia.id}</loc></url>'
 
-    xml_content = """<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-    <url>
-        <loc>https://financas-news.net.br/</loc>
-        <changefreq>hourly</changefreq>
-        <priority>1.0</priority>
-    </url>
-"""
+    xml_content += '</urlset>'
     
-    # Como seu site por enquanto é "Single Page" (tudo na home), 
-    # o sitemap é simples. Mas se criarmos páginas individuais no futuro,
-    # aqui entrará o loop das urls.
-    
-    xml_content += "</urlset>"
     return Response(content=xml_content, media_type="application/xml")
 
 if __name__ == "__main__":
