@@ -1,176 +1,133 @@
 <!DOCTYPE html>
-<html lang="pt-br" class="dark">
+<html lang="pt-br">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CryptoNews Daily | Finanças Simplificadas</title>
+    <title>Finanças News | Notícias em Tempo Real</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        dark: {
-                            bg: '#0f172a', // Slate 900
-                            card: '#1e293b', // Slate 800
-                            text: '#f1f5f9' // Slate 100
-                        }
-                    }
-                }
-            }
-        }
-    </script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
-        /* Placeholder para Anúncios (Visualização) */
-        .ad-placeholder {
-            background-color: #334155;
-            color: #94a3b8;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 2px dashed #475569;
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
+        body { font-family: 'Inter', sans-serif; }
     </style>
 </head>
-<body class="bg-gray-100 text-gray-800 dark:bg-dark-bg dark:text-dark-text transition-colors duration-300">
+<body class="bg-gray-900 text-gray-100 antialiased">
 
-    <nav class="fixed w-full z-50 top-0 bg-white dark:bg-dark-card border-b border-gray-200 dark:border-gray-700 shadow-sm">
-        <div class="container mx-auto px-4 h-16 flex justify-between items-center">
-            <div class="flex items-center space-x-2">
-                <i data-lucide="trending-up" class="text-blue-500 w-8 h-8"></i>
-                <span class="text-xl font-bold tracking-tight">Invest<span class="text-blue-500">Auto</span></span>
+    <nav class="bg-gray-800 border-b border-gray-700 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <span class="text-green-500 text-2xl font-black tracking-tighter">FINANÇAS</span>
+                        <span class="text-white text-2xl font-bold">NEWS</span>
+                    </div>
+                    <div class="hidden md:block">
+                        <div class="ml-10 flex items-baseline space-x-4">
+                            <a href="#" class="bg-gray-900 text-white px-3 py-2 rounded-md text-sm font-medium">Últimas Notícias</a>
+                            <a href="#" class="text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Cripto</a>
+                            <a href="#" class="text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium">Economia</a>
+                        </div>
+                    </div>
+                </div>
             </div>
-
-            <button onclick="toggleTheme()" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition">
-                <i data-lucide="moon" class="w-5 h-5 hidden dark:block"></i>
-                <i data-lucide="sun" class="w-5 h-5 block dark:hidden"></i>
-            </button>
         </div>
     </nav>
 
-    <div class="h-20"></div>
+    <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-    <div class="container mx-auto px-4 py-6">
-        
-        <div class="hidden md:flex justify-center mb-8">
-            <div class="ad-placeholder w-[728px] h-[90px]">
-                Espaço Publicitário (728x90)
-            </div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            
             <div class="lg:col-span-2 space-y-6">
-                <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-2xl font-bold border-l-4 border-blue-500 pl-3">Últimas Atualizações</h2>
-                    <span class="text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded-full">Ao Vivo</span>
-                </div>
-
-                {% for item in news %}
                 
-                <article class="bg-white dark:bg-dark-card rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-md transition">
+                {% for item in news %}
+                <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden border border-gray-700 hover:border-green-500 transition duration-300">
                     <div class="p-6">
-                        <div class="flex justify-between items-start mb-3">
-                            <span class="text-xs font-bold px-2 py-1 rounded uppercase tracking-wide
-                                {% if item.tag == 'Cripto' %}bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-200
-                                {% elif item.tag == 'Ações' %}bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200
-                                {% else %}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200{% endif %}">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
+                                {% if item.tag == 'Cripto' %} bg-yellow-100 text-yellow-800 
+                                {% elif item.tag == 'Economia' %} bg-blue-100 text-blue-800 
+                                {% else %} bg-gray-100 text-gray-800 {% endif %}">
                                 {{ item.tag }}
                             </span>
-                            <span class="text-xs text-gray-400 flex items-center gap-1">
-                                <i data-lucide="clock" class="w-3 h-3"></i> {{ item.data }}
-                            </span>
+                            <span class="text-gray-400 text-xs">{{ item.data }}</span>
                         </div>
                         
-                        <h3 class="text-xl font-bold mb-3 leading-tight hover:text-blue-500 transition cursor-pointer">
-                            <a href="{{ item.link }}" target="_blank">{{ item.titulo }}</a>
-                        </h3>
+                        <a href="{{ item.link }}" target="_blank" class="block mt-2">
+                            <p class="text-xl font-semibold text-white hover:text-green-400 transition">{{ item.titulo }}</p>
+                        </a>
                         
-                        <p class="text-gray-600 dark:text-gray-400 mb-4 line-clamp-3">
+                        <p class="mt-3 text-gray-300 text-sm leading-relaxed">
                             {{ item.resumo }}
                         </p>
 
-                        <div class="bg-gray-50 dark:bg-slate-900/50 p-3 rounded-lg border-l-2 border-green-500">
-                            <p class="text-xs font-bold text-green-600 dark:text-green-400 uppercase mb-1">💰 Impacto no Bolso:</p>
-                            <p class="text-sm text-gray-700 dark:text-gray-300">{{ item.impacto }}</p>
+                        <div class="mt-4 bg-gray-700 bg-opacity-50 p-3 rounded border-l-4 
+                            {% if item.sentimento == 'Positivo' %} border-green-500 
+                            {% elif item.sentimento == 'Negativo' %} border-red-500 
+                            {% else %} border-yellow-500 {% endif %}">
+                            <p class="text-xs text-gray-400 uppercase font-bold mb-1">Impacto no seu Bolso:</p>
+                            <p class="text-sm text-gray-200">{{ item.impacto }}</p>
                         </div>
-                    </div>
-                    
-                    <div class="bg-gray-50 dark:bg-slate-900/80 px-6 py-3 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center">
-                        <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                            <span>Sentimento:</span>
-                            {% if item.sentimento == 'Positivo' %}
-                                <span class="text-green-500 font-semibold flex items-center gap-1"><i data-lucide="trending-up" class="w-4 h-4"></i> Otimista</span>
-                            {% elif item.sentimento == 'Negativo' %}
-                                <span class="text-red-500 font-semibold flex items-center gap-1"><i data-lucide="trending-down" class="w-4 h-4"></i> Pessimista</span>
-                            {% else %}
-                                <span class="text-gray-500 font-semibold flex items-center gap-1"><i data-lucide="minus" class="w-4 h-4"></i> Neutro</span>
-                            {% endif %}
-                        </div>
-                        <a href="{{ item.link }}" target="_blank" class="text-sm text-blue-500 hover:underline">Ler original →</a>
-                    </div>
-                </article>
 
-                {% if loop.index == 2 %}
-                <div class="my-6">
-                    <div class="ad-placeholder w-full h-[250px] md:h-[150px] rounded-lg">
-                        Publicidade In-Feed (Responsivo)
+                        <div class="mt-4 flex items-center justify-between border-t border-gray-700 pt-4">
+                            <a href="{{ item.link }}" target="_blank" class="text-green-400 hover:text-green-300 text-sm font-medium flex items-center">
+                                Ler notícia completa &rarr;
+                            </a>
+                            
+                            <a href="https://twitter.com/intent/tweet?text={{ item.titulo }}&url={{ item.link }}" target="_blank" class="text-gray-400 hover:text-blue-400 transition">
+                                <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                            </a>
+                        </div>
                     </div>
-                    <p class="text-center text-xs text-gray-400 mt-1">Publicidade</p>
                 </div>
-                {% endif %}
-
+                {% else %}
+                <div class="text-center py-12">
+                    <p class="text-gray-500 text-lg">O robô está buscando notícias...</p>
+                    <p class="text-sm text-gray-600">Aguarde alguns instantes e atualize a página.</p>
+                </div>
                 {% endfor %}
+
             </div>
 
-            <div class="hidden lg:block space-y-8">
-                
-                <div class="bg-white dark:bg-dark-card p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-                    <h4 class="font-bold text-lg mb-2">Sobre o InvestAuto</h4>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">
-                        Monitoramos o mercado 24/7 usando Inteligência Artificial para traduzir o "economês" para você.
-                    </p>
-                </div>
+            <div class="lg:col-span-1">
+                <div class="sticky top-24 space-y-6">
 
-                <div class="sticky top-24">
-                    <div class="ad-placeholder w-full h-[250px] rounded-lg mb-2">
-                        Publicidade (300x250)
+                    <div class="bg-[#1E2329] rounded-xl p-6 text-center shadow-lg border border-gray-700 relative overflow-hidden group">
+                        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#FCD535] to-yellow-600"></div>
+                        
+                        <h3 class="text-[#FCD535] text-2xl font-black mb-2 tracking-tighter">BINANCE</h3>
+                        
+                        <p class="text-white font-bold text-lg mb-1">Lucre com Cripto Hoje</p>
+                        <p class="text-gray-400 text-sm mb-6">Cadastre-se na maior corretora do mundo e ganhe bônus em USDC.</p>
+                        
+                        <a href="https://www.binance.com/referral/earn-together/refer2earn-usdc/claim?hl=pt-BR&ref=GRO_28502_YULRD&utm_source=default" 
+                           target="_blank" 
+                           class="block w-full bg-[#FCD535] text-black font-bold py-3 rounded hover:bg-yellow-400 transition transform hover:scale-105 duration-200 shadow-md">
+                            Resgatar Bônus Agora 🚀
+                        </a>
+                        
+                        <p class="text-[10px] text-gray-600 mt-3">Publicidade Patrocinada</p>
                     </div>
-                    <p class="text-center text-xs text-gray-500">Publicidade</p>
-                </div>
+                    <div class="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
+                        <h3 class="text-lg font-bold text-white mb-2">Sobre o Projeto</h3>
+                        <p class="text-gray-400 text-sm">
+                            Este é um agregador de notícias financeiras automatizado com Inteligência Artificial.
+                        </p>
+                        <div class="mt-4 pt-4 border-t border-gray-700">
+                            <p class="text-xs text-gray-500">Atualizado a cada 30 minutos.</p>
+                        </div>
+                    </div>
 
+                </div>
             </div>
+
         </div>
     </div>
 
-    <script>
-        // Inicializa ícones
-        lucide.createIcons();
+    <footer class="bg-gray-800 border-t border-gray-700 mt-12">
+        <div class="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+            <p class="text-center text-gray-400 text-sm">
+                &copy; 2026 Finanças News. Desenvolvido com Python & IA.
+            </p>
+        </div>
+    </footer>
 
-        // Lógica do Dark Mode
-        const html = document.querySelector('html');
-        
-        // Verifica preferência salva ou do sistema
-        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-            html.classList.add('dark');
-        } else {
-            html.classList.remove('dark');
-        }
-
-        function toggleTheme() {
-            if (html.classList.contains('dark')) {
-                html.classList.remove('dark');
-                localStorage.theme = 'light';
-            } else {
-                html.classList.add('dark');
-                localStorage.theme = 'dark';
-            }
-        }
-    </script>
 </body>
 </html>
