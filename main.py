@@ -78,6 +78,10 @@ def startup_event():
     t = threading.Thread(target=run_scheduler, daemon=True)
     t.start()
 
+@app.get("/termos")
+def termos(request: Request):
+    return templates.TemplateResponse("termos.html", {"request": request})
+
 @app.get("/privacidade")
 def privacidade(request: Request):
     return templates.TemplateResponse("privacidade.html", {"request": request})
