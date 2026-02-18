@@ -57,6 +57,14 @@ def run_scheduler():
         schedule.run_pending()
         time.sleep(1)
 
+@app.get("/privacidade")
+def privacidade(request: Request):
+    return templates.TemplateResponse("privacidade.html", {"request": request})
+
+@app.get("/termos")
+def termos(request: Request):
+    return templates.TemplateResponse("termos.html", {"request": request})
+
 @app.on_event("startup")
 def startup_event():
     init_db()
