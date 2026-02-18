@@ -65,6 +65,12 @@ def privacidade(request: Request):
 def termos(request: Request):
     return templates.TemplateResponse("termos.html", {"request": request})
 
+@app.get("/ads.txt", response_class=Response)
+def get_ads_txt():
+    # Usando o seu ID de editor ca-pub-3623062544438213
+    content = "google.com, pub-3623062544438213, DIRECT, f08c47fec0942fa0"
+    return Response(content=content, media_type="text/plain")   
+
 @app.on_event("startup")
 def startup_event():
     init_db()
