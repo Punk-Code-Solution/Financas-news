@@ -78,6 +78,10 @@ def startup_event():
     t = threading.Thread(target=run_scheduler, daemon=True)
     t.start()
 
+@app.get("/privacidade")
+def privacidade(request: Request):
+    return templates.TemplateResponse("privacidade.html", {"request": request})
+
 @app.get("/")
 async def read_root(request: Request):
     conn = sqlite3.connect('news.db')
