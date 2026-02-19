@@ -6,6 +6,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 import uvicorn
 from dotenv import load_dotenv
+# Adicione esta linha junto com os outros imports no topo
+import core
 
 # Carrega as chaves do arquivo .env (se estiver rodando localmente)
 load_dotenv()
@@ -108,6 +110,46 @@ def get_sitemap():
         
     xml_content += '</urlset>'
     return Response(content=xml_content, media_type="application/xml")
+
+@app.get("/api/rodar-robo")
+def rodar_robo(token: str = None):
+    # Proteção: Só roda se a senha estiver na URL
+    if token != "punkcode2026":
+        raise HTTPException(status_code=401, detail="Não autorizado")
+        
+    print("🤖 Iniciando robô via API...")
+    noticias_geradas = core.fetch_and_process()
+    
+    if not noticias_geradas:
+        return {"status": "Aviso: Nenhuma notícia foi processada ou houve erro na IA."}
+        
+    client = get_db()
+    salvas = 0
+    
+    for n in noticias_geradas:
+        # QA: Verifica se a notícia já existe no banco (evita duplicidade)
+        check = client.execute("SELECT id FROM news WHERE link = ?", [n["original_link"]])
+        
+        if not check.rows:
+            # Salva definitivamente na Nuvem (Turso)
+            client.execute('''
+                INSERT INTO news (titulo, resumo, impacto, link, tag)
+                VALUES (?, ?, ?, ?, ?)
+            ''', [
+                n["titulo_viral"],
+                n["resumo_simples"],
+                n["impacto_bolso"],
+                n["original_link"],
+                n["tag"]
+            ])
+            salvas += 1
+            
+    client.close()
+    return {
+        "status": "Sucesso", 
+        "processadas_pela_ia": len(noticias_geradas), 
+        "novas_salvas_no_banco": salvas
+    }
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
