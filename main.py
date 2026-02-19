@@ -1,60 +1,69 @@
-import sqlite3
+import os
+import libsql_client
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 import uvicorn
-import os
+from dotenv import load_dotenv
+
+# Carrega as chaves do arquivo .env (se estiver rodando localmente)
+load_dotenv()
 
 app = FastAPI()
 
-# Configuração de arquivos estáticos e templates
-# Certifique-se de ter as pastas 'static' e 'templates' no seu projeto
 if os.path.exists("static"):
     app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-DB_PATH = 'news.db'
+# Captura as credenciais da nuvem
+TURSO_URL = os.environ.get("TURSO_DATABASE_URL")
+TURSO_TOKEN = os.environ.get("TURSO_AUTH_TOKEN")
 
-# --- FUNÇÃO AUXILIAR PARA O BANCO DE DADOS ---
-def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # Permite acessar colunas pelo nome
-    return conn
+def get_db():
+    if not TURSO_URL or not TURSO_TOKEN:
+        raise ValueError("Credenciais do Turso não encontradas.")
+    return libsql_client.create_client_sync(url=TURSO_URL, auth_token=TURSO_TOKEN)
 
-# --- ROTAS PRINCIPAIS ---
+# Garante que a tabela existe no novo banco de dados em nuvem ao iniciar
+try:
+    startup_client = get_db()
+    startup_client.execute('''
+        CREATE TABLE IF NOT EXISTS news (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            titulo TEXT,
+            resumo TEXT,
+            impacto TEXT,
+            link TEXT,
+            tag TEXT
+        )
+    ''')
+    startup_client.close()
+except Exception as e:
+    print(f"Aviso: Falha na inicialização do Turso: {e}")
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, categoria: str = None):
-    conn = get_db_connection()
-    
+    client = get_db()
     if categoria:
-        # Importante: A 'tag' no banco deve ser exatamente igual ao que vem na URL
-        query = 'SELECT * FROM news WHERE tag = ? ORDER BY id DESC LIMIT 20'
-        news = conn.execute(query, (categoria,)).fetchall()
+        result = client.execute('SELECT * FROM news WHERE tag = ? ORDER BY id DESC LIMIT 20', [categoria])
     else:
-        query = 'SELECT * FROM news ORDER BY id DESC LIMIT 20'
-        news = conn.execute(query).fetchall()
-        
-    conn.close()
-    return templates.TemplateResponse("index.html", {
-        "request": request, 
-        "news": news, 
-        "categoria_ativa": categoria
-    })
+        result = client.execute('SELECT * FROM news ORDER BY id DESC LIMIT 20')
+    
+    news = result.rows
+    client.close()
+    return templates.TemplateResponse("index.html", {"request": request, "news": news, "categoria_ativa": categoria})
 
 @app.get("/noticia/{noticia_id}", response_class=HTMLResponse)
 async def ver_noticia(request: Request, noticia_id: int):
-    conn = get_db_connection()
-    noticia = conn.execute('SELECT * FROM news WHERE id = ?', (noticia_id,)).fetchone()
-    conn.close()
+    client = get_db()
+    result = client.execute('SELECT * FROM news WHERE id = ?', [noticia_id])
+    client.close()
     
-    if noticia is None:
+    if not result.rows:
         raise HTTPException(status_code=404, detail="Notícia não encontrada")
         
-    return templates.TemplateResponse("noticia.html", {"request": request, "noticia": noticia})
-
-# --- ROTAS DE CONFORMIDADE (ADSENSE & SEO) ---
+    return templates.TemplateResponse("noticia.html", {"request": request, "noticia": result.rows[0]})
 
 @app.get("/privacidade", response_class=HTMLResponse)
 async def privacidade(request: Request):
@@ -66,7 +75,6 @@ async def termos(request: Request):
 
 @app.get("/ads.txt", response_class=Response)
 def get_ads_txt():
-    # Seu ID de editor verificado pelo Google
     content = "google.com, pub-3623062544438213, DIRECT, f08c47fec0942fa0"
     return Response(content=content, media_type="text/plain")
 
@@ -77,11 +85,11 @@ def get_robots_txt():
 
 @app.get("/sitemap.xml", response_class=Response)
 def get_sitemap():
-    conn = get_db_connection()
-    noticias = conn.execute('SELECT id FROM news ORDER BY id DESC LIMIT 500').fetchall()
-    conn.close()
+    client = get_db()
+    result = client.execute('SELECT id FROM news ORDER BY id DESC LIMIT 500')
+    noticias = result.rows
+    client.close()
 
-    # Links base
     urls = [
         "https://financas-news.net.br/",
         "https://financas-news.net.br/privacidade",
@@ -91,20 +99,16 @@ def get_sitemap():
     xml_content = '<?xml version="1.0" encoding="UTF-8"?>\n'
     xml_content += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
     
-    # Adiciona páginas estáticas
     for url in urls:
         xml_content += f'  <url><loc>{url}</loc><changefreq>daily</changefreq><priority>0.8</priority></url>\n'
     
-    # Adiciona links dinâmicos das notícias para o Google indexar
     for n in noticias:
-        xml_content += f'  <url><loc>https://financas-news.net.br/noticia/{n["id"]}</loc><changefreq>weekly</changefreq><priority>0.6</priority></url>\n'
+        # Acessa o ID usando o índice [0] do resultado
+        xml_content += f'  <url><loc>https://financas-news.net.br/noticia/{n[0]}</loc><changefreq>weekly</changefreq><priority>0.6</priority></url>\n'
         
     xml_content += '</urlset>'
     return Response(content=xml_content, media_type="application/xml")
 
-# --- INICIALIZAÇÃO ---
-
 if __name__ == "__main__":
-    # Porta configurada para rodar localmente e no Render
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
