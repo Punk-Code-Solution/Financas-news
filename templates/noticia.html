@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ noticia.titulo }} | Finanças News</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans">
+    <nav class="bg-gray-800 p-4 border-b border-gray-700">
+        <div class="max-w-4xl mx-auto"><a href="/" class="text-green-500 font-bold">← Voltar ao Início</a></div>
+    </nav>
+
+    <main class="max-w-4xl mx-auto py-8 px-4">
+        <span class="bg-green-600 text-white text-xs px-2 py-1 rounded">{{ noticia.tag }}</span>
+        <h1 class="text-3xl md:text-4xl font-black mt-4 mb-6">{{ noticia.titulo }}</h1>
+        
+        <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 mb-8">
+            <p class="text-lg text-gray-300 leading-relaxed mb-6">{{ noticia.resumo }}</p>
+            
+            <div class="bg-gray-700 p-4 rounded-lg border-l-4 border-green-500 mb-6">
+                <h3 class="text-sm font-bold uppercase text-gray-400">Análise de Impacto:</h3>
+                <p class="text-gray-200">{{ noticia.impacto }}</p>
+            </div>
+
+            <a href="{{ noticia.link }}" target="_blank" class="inline-block bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded transition">
+                Ler fonte original completa
+            </a>
+        </div>
+
+        <div class="bg-[#1E2329] p-6 rounded-xl text-center border border-yellow-500/30">
+            <p class="text-[#FCD535] font-bold mb-4">Gostou da análise? Comece a investir agora.</p>
+            <a href="https://www.binance.com/referral/earn-together/refer2earn-usdc/claim?hl=pt-BR&ref=GRO_28502_YULRD" target="_blank" class="bg-[#FCD535] text-black px-8 py-3 rounded font-bold hover:scale-105 transition block md:inline-block">
+                Abrir Conta na Binance 🚀
+            </a>
+        </div>
+    </main>
+</body>
+</html>
