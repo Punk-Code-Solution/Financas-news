@@ -25,12 +25,23 @@ def get_db_connection():
 # --- ROTAS PRINCIPAIS ---
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
+async def index(request: Request, categoria: str = None):
     conn = get_db_connection()
-    # Busca as últimas 20 notícias para a Home
-    news = conn.execute('SELECT * FROM news ORDER BY id DESC LIMIT 20').fetchall()
+    
+    if categoria:
+        # Importante: A 'tag' no banco deve ser exatamente igual ao que vem na URL
+        query = 'SELECT * FROM news WHERE tag = ? ORDER BY id DESC LIMIT 20'
+        news = conn.execute(query, (categoria,)).fetchall()
+    else:
+        query = 'SELECT * FROM news ORDER BY id DESC LIMIT 20'
+        news = conn.execute(query).fetchall()
+        
     conn.close()
-    return templates.TemplateResponse("index.html", {"request": request, "news": news})
+    return templates.TemplateResponse("index.html", {
+        "request": request, 
+        "news": news, 
+        "categoria_ativa": categoria
+    })
 
 @app.get("/noticia/{noticia_id}", response_class=HTMLResponse)
 async def ver_noticia(request: Request, noticia_id: int):
