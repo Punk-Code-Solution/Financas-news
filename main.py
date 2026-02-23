@@ -46,14 +46,20 @@ except Exception as e:
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, categoria: str = None):
-    client = get_db()
-    if categoria:
-        result = client.execute('SELECT * FROM news WHERE tag = ? ORDER BY id DESC LIMIT 20', [categoria])
-    else:
-        result = client.execute('SELECT * FROM news ORDER BY id DESC LIMIT 20')
-    
-    news = result.rows
-    client.close()
+    news = []
+    try:
+        client = get_db()
+        if categoria:
+            result = client.execute('SELECT * FROM news WHERE tag = ? ORDER BY id DESC LIMIT 20', [categoria])
+        else:
+            result = client.execute('SELECT * FROM news ORDER BY id DESC LIMIT 20')
+        
+        news = result.rows
+        client.close()
+    except Exception as e:
+        # Evita quebrar a home quando o Turso não está acessível localmente
+        print(f"Aviso: Falha ao obter notícias do Turso na rota /: {e}")
+
     return templates.TemplateResponse("index.html", {"request": request, "news": news, "categoria_ativa": categoria})
 
 @app.get("/noticia/{noticia_id}", response_class=HTMLResponse)
