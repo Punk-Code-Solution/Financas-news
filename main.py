@@ -94,6 +94,7 @@ def get_sitemap():
 
     urls = [
         "https://financas-news.net.br/",
+        "https://financas-news.net.br/quem-somos",
         "https://financas-news.net.br/privacidade",
         "https://financas-news.net.br/termos"
     ]
@@ -150,6 +151,10 @@ def rodar_robo(token: str = None):
         "processadas_pela_ia": len(noticias_geradas), 
         "novas_salvas_no_banco": salvas
     }
+
+@app.get("/quem-somos", response_class=HTMLResponse)
+async def quem_somos(request: Request):
+    return templates.TemplateResponse("quem-somos.html", {"request": request})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
