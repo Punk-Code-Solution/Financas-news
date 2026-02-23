@@ -162,6 +162,10 @@ def rodar_robo(token: str = None):
 async def quem_somos(request: Request):
     return templates.TemplateResponse("quem-somos.html", {"request": request})
 
+@app.get("/ping")
+def ping():
+    return {"status": "Render acordado!"}
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
