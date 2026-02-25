@@ -1,4 +1,7 @@
 import os
+import random
+from datetime import datetime
+
 import libsql_client
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.templating import Jinja2Templates
@@ -6,7 +9,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 import uvicorn
 from dotenv import load_dotenv
-# Adicione esta linha junto com os outros imports no topo
 import core
 
 # Carrega as chaves do arquivo .env (se estiver rodando localmente)
@@ -45,23 +47,76 @@ except Exception as e:
     print(f"Aviso: Falha na inicialização do Turso: {e}")
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request, categoria: str = None):
+async def index(request: Request, categoria: str = None, page: int = 1):
+    client = None
+    limit = 20  # Número de notícias por página
+    offset = (page - 1) * limit  # Calcula quantas notícias pular
+
     news = []
     try:
         client = get_db()
+
         if categoria:
-            result = client.execute('SELECT * FROM news WHERE tag = ? ORDER BY id DESC LIMIT 20', [categoria])
+            result = client.execute(
+                'SELECT * FROM news WHERE tag = ? ORDER BY id DESC LIMIT ? OFFSET ?',
+                [categoria, limit, offset],
+            )
         else:
-            result = client.execute('SELECT * FROM news ORDER BY id DESC LIMIT 20')
-        
+            result = client.execute(
+                'SELECT * FROM news ORDER BY id DESC LIMIT ? OFFSET ?',
+                [limit, offset],
+            )
+
         news = result.rows
-        client.close()
     except Exception as e:
-        # Evita quebrar a home quando o Turso não está acessível localmente
-        print(f"Aviso: Falha ao obter notícias do Turso na rota /: {e}")
+        # Em desenvolvimento/local, evita erro 500 quando o Turso não estiver acessível
+        print(f"Aviso: erro ao buscar notícias no banco: {e}")
 
-    return templates.TemplateResponse("index.html", {"request": request, "news": news, "categoria_ativa": categoria})
+        # Gera 30 notícias falsas em memória para testes locais,
+        # respeitando paginação (limit/offset) para testar os botões.
+        hoje = datetime.utcnow().strftime("%d/%m/%Y")
+        tags_possiveis = ["Cripto", "Economia", "Geral"]
+        sentimentos = ["Positivo", "Negativo", "Neutro"]
 
+        todas_noticias = []
+        for i in range(1, 31):
+            tag = random.choice(tags_possiveis)
+            sentimento = random.choice(sentimentos)
+            todas_noticias.append(
+                {
+                    "id": i,
+                    "titulo": f"Notícia de teste #{i} sobre {tag}",
+                    "resumo": "Esta é uma notícia de teste gerada localmente para validação visual da interface.",
+                    "impacto": f"Impacto {sentimento.lower()} simulado no seu bolso para fins de desenvolvimento.",
+                    "link": "https://exemplo.local/noticia-teste",
+                    "tag": tag,
+                    "data": hoje,
+                    "sentimento": sentimento,
+                }
+            )
+
+        # Aplica paginação nos dados fake
+        inicio = offset
+        fim = offset + limit
+        news = todas_noticias[inicio:fim]
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+    return templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+            "news": news,
+            "categoria_ativa": categoria,
+            "page": page,
+            "limit": limit,
+        },
+    )
+    
 @app.get("/noticia/{noticia_id}", response_class=HTMLResponse)
 async def ver_noticia(request: Request, noticia_id: int):
     client = get_db()

@@ -88,6 +88,26 @@
                 </div>
                 {% endfor %}
 
+                <div class="flex justify-center items-center mt-10 mb-8 space-x-4">
+        
+                    {% if page > 1 %}
+                        <a href="/?page={{ page - 1 }}{% if categoria_ativa %}&categoria={{ categoria_ativa }}{% endif %}" 
+                           class="bg-gray-800 text-white px-5 py-2 rounded-md hover:bg-gray-700 transition font-semibold shadow-sm">
+                            &larr; Anterior
+                        </a>
+                    {% endif %}
+                    
+                    <span class="text-gray-600 font-medium px-4">Página {{ page }}</span>
+                    
+                    {% if news|length == limit %}
+                        <a href="/?page={{ page + 1 }}{% if categoria_ativa %}&categoria={{ categoria_ativa }}{% endif %}" 
+                           class="bg-blue-600 text-white px-5 py-2 rounded-md hover:bg-blue-700 transition font-semibold shadow-sm">
+                            Próxima &rarr;
+                        </a>
+                    {% endif %}
+                    
+                </div>
+
             </div>
 
             <div class="lg:col-span-1">
