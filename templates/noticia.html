@@ -8,13 +8,21 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800;900&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3623062544438213" crossorigin="anonymous"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { fontFamily: { sans: ['Inter', 'sans-serif'] } } }
+        }
+    </script>
     <style>
         .ticker-wrapper { overflow: hidden; white-space: nowrap; background-color: #111827; color: #cbd5e1; font-size: 0.75rem; padding: 0.25rem 0; border-bottom: 1px solid #1e293b;}
         .ticker-content { display: inline-block; animation: ticker 30s linear infinite; }
         @keyframes ticker { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
         .ticker-up { color: #4ade80; } .ticker-down { color: #f87171; }
-        /* Impede buraco de anúncio vazio no topo */
-        .ad-top { max-height: 280px; overflow: hidden; }
+        
+        /* CORREÇÃO: Esconde o container de anúncio se estiver vazio para remover a parte branca no topo */
+        .ad-top:empty, .ad-top:has(ins[data-ad-status="unfilled"]) { display: none !important; }
+        .ad-top { max-height: 280px; overflow: hidden; transition: all 0.3s ease; }
     </style>
 </head>
 <body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 transition-colors duration-200 flex flex-col min-h-screen">
@@ -29,8 +37,10 @@
                 <span class="text-blue-600 dark:text-[#4ade80]">FINANÇAS</span><span class="text-gray-900 dark:text-white">NEWS</span>
             </a>
             <div class="flex items-center gap-4">
-                <a href="/" class="text-sm font-semibold text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white flex items-center">&larr; Voltar</a>
-                <button id="theme-toggle" class="p-2 rounded-lg text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800">
+                <a href="/" class="text-sm font-semibold text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white flex items-center transition-colors">
+                    &larr; <span class="ml-1">Voltar</span>
+                </a>
+                <button id="theme-toggle" class="p-2 rounded-lg text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors">
                     <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
                     <svg id="theme-toggle-light-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path></svg>
                 </button>
@@ -39,8 +49,8 @@
     </nav>
 
     <main class="container mx-auto px-4 pt-4 pb-8 max-w-4xl flex-none w-full">
-        <div class="ad-top text-center mb-6">
-            <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-3623062544438213" data-ad-slot="1234567890" data-ad-format="auto" data-full-width-responsive="true"></ins>
+        <div class="ad-top text-center mb-6" id="top-ad-container">
+            <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-3623062544438213" data-ad-slot="1234567890" data-ad-format="auto"></ins>
             <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
         </div>
 
@@ -63,16 +73,53 @@
             </div>
 
             <div class="mt-12 pt-8 border-t border-gray-200 dark:border-slate-800 flex flex-col sm:flex-row justify-between items-center">
-                <a href="{{ noticia[4] }}" target="_blank" class="bg-gray-900 dark:bg-[#4ade80] text-white dark:text-black px-6 py-3.5 rounded-md font-extrabold hover:bg-gray-800 dark:hover:bg-green-500 transition shadow-md">Ler matéria original na íntegra &rarr;</a>
-                <p class="text-sm text-gray-500 dark:text-slate-500 italic font-medium">Curadoria automatizada por Punk Code Solution</p>
+                <a href="{{ noticia[4] }}" target="_blank" class="bg-gray-900 dark:bg-[#4ade80] text-white dark:text-black px-6 py-3.5 rounded-md font-extrabold hover:bg-gray-800 dark:hover:bg-green-500 transition shadow-md">Ler matéria original &rarr;</a>
+                <p class="text-sm text-gray-500 dark:text-slate-500 italic">Curadoria automatizada por Punk Code Solution</p>
             </div>
         </article>
     </main>
 
-    <footer class="border-t border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] text-center py-8 mt-auto transition-colors">
-        <div class="container mx-auto px-4">
-            <p class="text-sm text-gray-500 dark:text-slate-500 font-medium">&copy; 2026 Finanças News. Desenvolvido por Punk Code Solution.</p>
-        </div>
-    </footer>
+    <script>
+        function setInitialThemeIcons() {
+            const darkIcon = document.getElementById('theme-toggle-dark-icon');
+            const lightIcon = document.getElementById('theme-toggle-light-icon');
+            if (!darkIcon || !lightIcon) return;
+            if (document.documentElement.classList.contains('dark')) {
+                lightIcon.classList.remove('hidden'); darkIcon.classList.add('hidden');
+            } else {
+                darkIcon.classList.remove('hidden'); lightIcon.classList.add('hidden');
+            }
+        }
+
+        async function fetchMarketData() {
+            const tickerEl = document.getElementById('market-ticker');
+            try {
+                const res = await fetch('https://economia.awesomeapi.com.br/last/USD-BRL,BTC-BRL');
+                const data = await res.json();
+                tickerEl.innerHTML = `<span class="ticker-item">🇺🇸 USD: R$ ${parseFloat(data.USDBRL.bid).toFixed(2)}</span><span class="ticker-item">₿ BTC: R$ ${parseFloat(data.BTCBRL.bid).toLocaleString()}</span>`;
+            } catch (e) { tickerEl.innerHTML = 'Carregando mercado...'; }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            setInitialThemeIcons();
+            fetchMarketData();
+
+            document.body.addEventListener('click', async (e) => {
+                const themeBtn = e.target.closest('#theme-toggle');
+                if (themeBtn) {
+                    document.documentElement.classList.toggle('dark');
+                    localStorage.setItem('color-theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+                    setInitialThemeIcons();
+                    return;
+                }
+                // Intercepta cliques para garantir que o scroll resete e a limpeza do SPA ocorra
+                const link = e.target.closest('a');
+                if (link && new URL(link.href).origin === window.location.origin && link.target !== '_blank') {
+                    // Aqui você deve chamar sua função global de carregarPaginaSemPiscar que está no seu index.html
+                    // window.scrollTo(0,0);
+                }
+            });
+        });
+    </script>
 </body>
 </html>
