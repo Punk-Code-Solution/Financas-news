@@ -180,8 +180,8 @@
             try {
                 const resMoedas = await fetch('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL');
                 const dataMoedas = await resMoedas.json();
-                const resIndices = await fetch('https://api.hgbrasil.com/finance?format=json-cors');
-                const dataIndices = await resIndices.json();
+                //const resIndices = await fetch('https://api.hgbrasil.com/finance?format=json-cors');
+                //const dataIndices = await resIndices.json();
 
                 const formatCurrency = (value) => parseFloat(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                 const formatPts = (value) => parseFloat(value).toLocaleString('pt-BR') + ' pts';
