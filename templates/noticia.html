@@ -6,6 +6,8 @@
     <title>{{ noticia[1] }} - Finanças News</title>
     <link rel="icon" href="/static/favicon.png" type="image/png">
     
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800;900&display=swap" rel="stylesheet">
+    
     <meta property="og:type" content="article" />
     <meta property="og:title" content="{{ noticia[1] }}" />
     <meta property="og:description" content="{{ noticia[2] }}" />
@@ -17,79 +19,74 @@
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3623062544438213" crossorigin="anonymous"></script>
 
     <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-50 text-gray-800 font-sans leading-relaxed flex flex-col min-h-screen">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                }
+            }
+        }
+    </script>
+
+    <script>
+        if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    </script>
 
     <style>
-        .ticker-wrapper { overflow: hidden; white-space: nowrap; background-color: #1f2937; color: #f3f4f6; font-size: 0.875rem; padding: 0.4rem 0; border-bottom: 2px solid #3b82f6;}
-        .ticker-content { display: inline-block; animation: ticker 25s linear infinite; }
+        .ticker-wrapper { overflow: hidden; white-space: nowrap; background-color: #111827; color: #cbd5e1; font-size: 0.75rem; padding: 0.25rem 0; border-bottom: 1px solid #1e293b;}
+        .ticker-content { display: inline-block; animation: ticker 30s linear infinite; }
         .ticker-content:hover { animation-play-state: paused; cursor: default; }
         @keyframes ticker { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
         .ticker-item { margin-right: 3rem; font-weight: 600; letter-spacing: 0.05em; }
         .ticker-up { color: #4ade80; }
         .ticker-down { color: #f87171; }
     </style>
+</head>
+<body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 transition-colors duration-200 flex flex-col min-h-screen">
+
     <div class="ticker-wrapper">
         <div class="ticker-content" id="market-ticker">
-            <span class="text-gray-400">Carregando mercado...</span>
+            <span class="text-slate-500">Carregando mercado...</span>
         </div>
     </div>
-    <script>
-        async function fetchMarketData() {
-            const tickerEl = document.getElementById('market-ticker');
-            const cachedHTML = sessionStorage.getItem('tickerHTML');
-            const cachedTime = sessionStorage.getItem('tickerTime');
-            const now = new Date().getTime();
 
-            if (cachedHTML && cachedTime && (now - cachedTime < 300000)) {
-                tickerEl.innerHTML = cachedHTML;
-                return;
-            }
-
-            try {
-                const response = await fetch('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL');
-                const data = await response.json();
-                const formatCurrency = (value) => parseFloat(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                const formatPct = (pct) => parseFloat(pct) > 0 ? `+${pct}%` : `${pct}%`;
-                const getColorClass = (pct) => parseFloat(pct) >= 0 ? 'ticker-up' : 'ticker-down';
-                
-                const usd = data.USDBRL; const eur = data.EURBRL; const btc = data.BTCBRL;
-                const tickerHtml = `
-                    <span class="ticker-item">🇺🇸 USD: ${formatCurrency(usd.bid)} <span class="${getColorClass(usd.pctChange)}">(${formatPct(usd.pctChange)})</span></span>
-                    <span class="ticker-item">🇪🇺 EUR: ${formatCurrency(eur.bid)} <span class="${getColorClass(eur.pctChange)}">(${formatPct(eur.pctChange)})</span></span>
-                    <span class="ticker-item">₿ BTC: ${formatCurrency(btc.bid)} <span class="${getColorClass(btc.pctChange)}">(${formatPct(btc.pctChange)})</span></span>
-                `;
-                
-                const fullHtml = tickerHtml + tickerHtml + tickerHtml;
-                tickerEl.innerHTML = fullHtml;
-                
-                sessionStorage.setItem('tickerHTML', fullHtml);
-                sessionStorage.setItem('tickerTime', now);
-            } catch (error) {
-                if (!cachedHTML) tickerEl.innerHTML = '<span class="ticker-item">Finanças News - Curadoria por Punk Code Solution.</span>';
-            }
-        }
-        fetchMarketData();
-    </script>
-
-    <nav class="bg-blue-600 text-white shadow-md">
-        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
-            <a href="/" class="text-2xl font-bold tracking-tight hover:text-blue-200 transition">Finanças News</a>
+    <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] transition-colors duration-200 pt-4 pb-4">
+        <div class="container mx-auto px-4 flex justify-between items-center gap-4">
             
-            <div class="flex items-center space-x-4">
-                <a href="/" class="text-sm font-semibold hover:underline flex items-center">
-                    &larr; Voltar
+            <a href="/" class="text-2xl font-black tracking-tighter">
+                <span class="text-blue-600 dark:text-[#4ade80]">FINANÇAS</span><span class="text-gray-900 dark:text-white">NEWS</span>
+            </a>
+            
+            <div class="flex items-center gap-4">
+                <a href="/" class="text-sm font-semibold text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white flex items-center transition-colors">
+                    &larr; <span class="hidden sm:inline ml-1">Voltar</span>
                 </a>
                 
                 <a href="https://accounts.binance.com/pt-BR/register" target="_blank" rel="noopener noreferrer" 
-                   class="bg-yellow-400 text-gray-900 px-3 py-1.5 rounded-md hover:bg-yellow-500 transition font-bold shadow-sm text-sm">
+                   class="hidden md:flex bg-yellow-400 text-gray-900 px-3 py-1.5 rounded-md hover:bg-yellow-500 transition font-bold shadow-sm items-center text-sm">
                     Binance
                 </a>
+
+                <button id="theme-toggle" type="button" class="text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 focus:outline-none rounded-lg text-sm p-2 transition-colors ml-2">
+                    <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
+                    </svg>
+                    <svg id="theme-toggle-light-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path>
+                    </svg>
+                </button>
             </div>
         </div>
     </nav>
 
-    <main class="container mx-auto px-4 py-8 max-w-3xl flex-grow">
+    <main class="container mx-auto px-4 py-8 max-w-4xl flex-grow">
         
         <div class="mb-6 text-center">
             <ins class="adsbygoogle"
@@ -103,38 +100,39 @@
             </script>
         </div>
 
-        <article class="bg-white rounded-xl shadow-sm p-8 md:p-12 border border-gray-100">
+        <article class="bg-white dark:bg-[#1e293b] rounded-xl shadow-sm dark:shadow-none p-6 md:p-12 border border-gray-200 dark:border-slate-800 transition-colors">
             
             <div class="flex items-center space-x-3 mb-6">
-                <span class="bg-blue-100 text-blue-800 text-sm font-bold px-3 py-1 rounded-md">{{ noticia[5] }}</span>
+                <span class="bg-blue-100 dark:bg-white text-blue-800 dark:text-blue-900 text-xs font-bold px-3 py-1 rounded-full">{{ noticia[5] }}</span>
                 
                 {% set sent = (noticia[6] | default('Neutro', true)) | lower %}
                 {% if 'positivo' in sent %}
-                    <span class="bg-green-100 text-green-800 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide">
+                    <span class="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-[#4ade80] text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide border border-transparent dark:border-green-800/50">
                         Mercado Positivo
                     </span>
                 {% elif 'negativo' in sent %}
-                    <span class="bg-red-100 text-red-800 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide">
+                    <span class="bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-[#f87171] text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide border border-transparent dark:border-red-800/50">
                         Alerta de Queda
                     </span>
                 {% else %}
-                    <span class="bg-gray-100 text-gray-600 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide">
+                    <span class="bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide border border-transparent dark:border-slate-700">
                         Neutro
                     </span>
                 {% endif %}
             </div>
 
-            <h1 class="text-3xl md:text-4xl font-extrabold text-gray-900 mb-8 leading-tight">
+            <h1 class="text-3xl md:text-5xl font-black text-gray-900 dark:text-white mb-8 leading-tight transition-colors">
                 {{ noticia[1] }}
             </h1>
 
-            <div class="prose prose-lg max-w-none text-gray-700">
-                <div class="bg-gray-50 p-6 rounded-lg border-l-4 border-blue-500 mb-8">
-                    <h3 class="text-sm font-bold text-gray-500 uppercase tracking-wider mb-2">Resumo da IA</h3>
-                    <p class="text-xl font-medium text-gray-800 leading-relaxed">{{ noticia[2] }}</p>
+            <div class="prose prose-lg max-w-none text-gray-700 dark:text-slate-300 transition-colors">
+                
+                <div class="bg-gray-50 dark:bg-[#0f172a] p-6 md:p-8 rounded-xl border-l-4 border-blue-500 dark:border-blue-400 mb-10 shadow-sm dark:shadow-inner transition-colors">
+                    <h3 class="text-xs font-black text-gray-500 dark:text-slate-500 uppercase tracking-wider mb-3">Resumo Inteligente</h3>
+                    <p class="text-xl font-medium text-gray-800 dark:text-slate-200 leading-relaxed">{{ noticia[2] }}</p>
                 </div>
 
-                <div class="my-8 text-center">
+                <div class="my-10 text-center bg-gray-50 dark:bg-[#0f172a] py-4 rounded-xl border border-gray-100 dark:border-slate-800 transition-colors">
                     <ins class="adsbygoogle"
                          style="display:block; text-align:center;"
                          data-ad-layout="in-article"
@@ -146,32 +144,179 @@
                     </script>
                 </div>
 
-                <div class="mb-8">
-                    <h2 class="text-2xl font-bold text-gray-900 mb-3">
+                {% set border_class = 'border-green-500 dark:border-[#4ade80]' if 'positivo' in sent else ('border-red-500 dark:border-[#f87171]' if 'negativo' in sent else 'border-gray-400 dark:border-slate-500') %}
+                <div class="mb-8 bg-white dark:bg-[#1e293b] border-y border-r border-l-4 border-gray-200 dark:border-slate-700 {{ border_class }} p-6 md:p-8 rounded-lg shadow-sm transition-colors">
+                    <h2 class="text-sm font-black text-gray-500 dark:text-slate-500 uppercase tracking-wider mb-3 flex items-center">
                         💡 Impacto no seu Bolso
                     </h2>
-                    <p class="text-lg bg-white border border-gray-200 p-6 rounded-lg shadow-sm">
+                    <p class="text-lg text-gray-800 dark:text-slate-200 font-medium leading-relaxed">
                         {{ noticia[3] }}
                     </p>
                 </div>
             </div>
 
-            <div class="mt-10 pt-6 border-t border-gray-200 flex flex-col sm:flex-row justify-between items-center">
+            <div class="mt-12 pt-8 border-t border-gray-200 dark:border-slate-800 flex flex-col sm:flex-row justify-between items-center transition-colors">
                 <a href="{{ noticia[4] }}" target="_blank" rel="noopener noreferrer" 
-                   class="bg-gray-900 text-white px-6 py-3 rounded-md hover:bg-gray-700 transition font-semibold w-full sm:w-auto text-center mb-4 sm:mb-0">
-                    Ler matéria original
+                   class="bg-gray-900 dark:bg-[#4ade80] text-white dark:text-black px-6 py-3.5 rounded-md hover:bg-gray-800 dark:hover:bg-green-500 transition font-extrabold w-full sm:w-auto text-center mb-6 sm:mb-0 shadow-md">
+                    Ler matéria original na íntegra &rarr;
                 </a>
                 
-                <p class="text-sm text-gray-500 italic">Curadoria automatizada por Punk Code Solution</p>
+                <p class="text-sm text-gray-500 dark:text-slate-500 italic font-medium">Curadoria automatizada por Punk Code Solution</p>
             </div>
         </article>
     </main>
 
-    <footer class="bg-gray-900 text-white text-center py-6 mt-auto">
+    <footer class="border-t border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] text-center py-8 mt-auto transition-colors">
         <div class="container mx-auto px-4">
-            <p class="text-sm text-gray-400">&copy; 2026 Finanças News. Todos os direitos reservados.</p>
+            <p class="text-sm text-gray-500 dark:text-slate-500 font-medium">
+                &copy; 2026 Finanças News. Desenvolvido por 
+                <a href="https://www.punkcodesolution.com.br/" target="_blank" rel="noopener noreferrer" class="text-gray-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-slate-100 transition font-semibold">Punk Code Solution</a>.
+            </p>
+            <div class="mt-4 space-x-4 text-xs text-gray-500 dark:text-slate-600 flex justify-center font-semibold">
+                <a href="/quem-somos" class="hover:text-blue-600 dark:hover:text-slate-300 transition">Quem Somos</a>
+                <a href="/termos" class="hover:text-blue-600 dark:hover:text-slate-300 transition">Termos de Uso</a>
+                <a href="/privacidade" class="hover:text-blue-600 dark:hover:text-slate-300 transition">Privacidade</a>
+            </div>
         </div>
     </footer>
 
+    <script>
+        function setInitialThemeIcons() {
+            const darkIcon = document.getElementById('theme-toggle-dark-icon');
+            const lightIcon = document.getElementById('theme-toggle-light-icon');
+            if (!darkIcon || !lightIcon) return;
+            
+            if (document.documentElement.classList.contains('dark')) {
+                lightIcon.classList.remove('hidden');
+                darkIcon.classList.add('hidden');
+            } else {
+                darkIcon.classList.remove('hidden');
+                lightIcon.classList.add('hidden');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            setInitialThemeIcons();
+
+            // Interceptador Global de Cliques (Tema e SPA)
+            document.body.addEventListener('click', async (e) => {
+                
+                // 1. Botão de Tema
+                const themeBtn = e.target.closest('#theme-toggle');
+                if (themeBtn) {
+                    const darkIcon = document.getElementById('theme-toggle-dark-icon');
+                    const lightIcon = document.getElementById('theme-toggle-light-icon');
+                    
+                    darkIcon.classList.toggle('hidden');
+                    lightIcon.classList.toggle('hidden');
+
+                    if (document.documentElement.classList.contains('dark')) {
+                        document.documentElement.classList.remove('dark');
+                        localStorage.setItem('color-theme', 'light');
+                    } else {
+                        document.documentElement.classList.add('dark');
+                        localStorage.setItem('color-theme', 'dark');
+                    }
+                    return;
+                }
+
+                // 2. Navegação SPA (Intercepta APENAS links internos como "Voltar")
+                const link = e.target.closest('a');
+                if (!link) return;
+
+                const url = new URL(link.href);
+                // Se o clique for para a Home ou links internos (exceto links externos e âncoras)
+                if (url.origin === window.location.origin && link.target !== '_blank') {
+                    e.preventDefault();
+                    carregarPaginaSemPiscar(url.href);
+                }
+            });
+
+            // Gerencia botão "Voltar" do celular/navegador
+            window.addEventListener('popstate', () => {
+                carregarPaginaSemPiscar(window.location.href, false);
+            });
+        });
+
+        // Função mágica do SPA
+        async function carregarPaginaSemPiscar(url, pushState = true) {
+            const mainEl = document.querySelector('main');
+            const navEl = document.querySelector('nav');
+            
+            mainEl.style.opacity = '0.3';
+            mainEl.style.transition = 'opacity 0.2s ease-in-out';
+
+            try {
+                const response = await fetch(url);
+                const htmlText = await response.text();
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlText, 'text/html');
+                
+                navEl.innerHTML = doc.querySelector('nav').innerHTML;
+                mainEl.innerHTML = doc.querySelector('main').innerHTML;
+                
+                document.title = doc.title;
+                if (pushState) window.history.pushState({}, '', url);
+                
+                setInitialThemeIcons();
+                
+                mainEl.style.opacity = '1';
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } catch (error) {
+                // Se falhar o fetch, carrega a página normal
+                window.location.href = url;
+            }
+        }
+
+        // Ticker Global (Aproveita cache da Home)
+        async function fetchMarketData() {
+            const tickerEl = document.getElementById('market-ticker');
+            const cachedHTML = sessionStorage.getItem('tickerHTML');
+            const cachedTime = sessionStorage.getItem('tickerTime');
+            const now = new Date().getTime();
+
+            if (cachedHTML && cachedTime && (now - cachedTime < 300000)) {
+                tickerEl.innerHTML = cachedHTML;
+                return;
+            }
+
+            try {
+                const resMoedas = await fetch('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL');
+                const dataMoedas = await resMoedas.json();
+                const resIndices = await fetch('https://api.hgbrasil.com/finance?format=json-cors');
+                const dataIndices = await resIndices.json();
+
+                const formatCurrency = (value) => parseFloat(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                const formatPts = (value) => parseFloat(value).toLocaleString('pt-BR') + ' pts';
+                const formatPct = (pct) => parseFloat(pct) > 0 ? `+${pct}%` : `${pct}%`;
+                const getColorClass = (pct) => parseFloat(pct) >= 0 ? 'ticker-up' : 'ticker-down';
+                
+                const usd = dataMoedas.USDBRL; const eur = dataMoedas.EURBRL; const btc = dataMoedas.BTCBRL;
+                const ibov = dataIndices.results?.stocks?.IBOVESPA || { points: 0, variation: 0 };
+                const nasdaq = dataIndices.results?.stocks?.NASDAQ || { points: 0, variation: 0 };
+                const nikkei = dataIndices.results?.stocks?.NIKKEI || { points: 0, variation: 0 };
+
+                const tickerHtml = `
+                    <span class="ticker-item"><span class="text-slate-400">🇺🇸 USD:</span> ${formatCurrency(usd.bid)} <span class="${getColorClass(usd.pctChange)}">(${formatPct(usd.pctChange)})</span></span>
+                    <span class="ticker-item"><span class="text-slate-400">🇪🇺 EUR:</span> ${formatCurrency(eur.bid)} <span class="${getColorClass(eur.pctChange)}">(${formatPct(eur.pctChange)})</span></span>
+                    <span class="ticker-item"><span class="text-slate-400">₿ BTC:</span> ${formatCurrency(btc.bid)} <span class="${getColorClass(btc.pctChange)}">(${formatPct(btc.pctChange)})</span></span>
+                    <span class="ticker-item"><span class="text-slate-400">🇧🇷 IBOV:</span> ${formatPts(ibov.points)} <span class="${getColorClass(ibov.variation)}">(${formatPct(ibov.variation)})</span></span>
+                    <span class="ticker-item"><span class="text-slate-400">🇺🇸 NASDAQ:</span> ${formatPts(nasdaq.points)} <span class="${getColorClass(nasdaq.variation)}">(${formatPct(nasdaq.variation)})</span></span>
+                    <span class="ticker-item"><span class="text-slate-400">🇯🇵 NIKKEI:</span> ${formatPts(nikkei.points)} <span class="${getColorClass(nikkei.variation)}">(${formatPct(nikkei.variation)})</span></span>
+                `;
+                
+                const fullHtml = tickerHtml + tickerHtml + tickerHtml;
+                tickerEl.innerHTML = fullHtml;
+                
+                sessionStorage.setItem('tickerHTML', fullHtml);
+                sessionStorage.setItem('tickerTime', now);
+            } catch (error) {
+                if (!cachedHTML) tickerEl.innerHTML = '<span class="ticker-item">Finanças News - Cotações e Índices em tempo real.</span>';
+            }
+        }
+        
+        fetchMarketData();
+        setInterval(fetchMarketData, 300000);
+    </script>
 </body>
 </html>
