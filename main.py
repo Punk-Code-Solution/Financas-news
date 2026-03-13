@@ -1,7 +1,6 @@
 import os
-import random
 from datetime import datetime
-
+import sqlite3
 import libsql_client
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.templating import Jinja2Templates
@@ -9,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 import uvicorn
 from dotenv import load_dotenv
+
 import core
 
 # Carrega as chaves do arquivo .env (se estiver rodando localmente)
@@ -42,69 +42,121 @@ try:
             tag TEXT
         )
     ''')
+    # Adiciona a coluna sentimento de forma segura (ignora se já existir)
+    try:
+        startup_client.execute('ALTER TABLE news ADD COLUMN sentimento TEXT')
+    except:
+        pass
     startup_client.close()
 except Exception as e:
     print(f"Aviso: Falha na inicialização do Turso: {e}")
 
+# ==========================================
+# ROTAS DE PÁGINAS (FRONTEND)
+# ==========================================
+
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request, categoria: str = None, page: int = 1):
-    client = None
-    limit = 20  # Número de notícias por página
-    offset = (page - 1) * limit  # Calcula quantas notícias pular
+async def index(request: Request, categoria: str = None, page: int = 1, q: str = None):
+    """
+    Página inicial com paginação.
+    - Em produção tenta usar Turso normalmente
+    - Localmente, se o Turso falhar (ex.: erro 505), cai para o SQLite `news.db`
+    """
+    limit = 20
+    offset = (page - 1) * limit
 
-    news = []
-    try:
-        client = get_db()
-
-        if categoria:
+    def query_turso(client):
+        if q:
+            busca = f"%{q}%"
             result = client.execute(
-                'SELECT * FROM news WHERE tag = ? ORDER BY id DESC LIMIT ? OFFSET ?',
+                "SELECT * FROM news WHERE titulo LIKE ? OR resumo LIKE ? "
+                "ORDER BY id DESC LIMIT ? OFFSET ?",
+                [busca, busca, limit, offset],
+            )
+            count_res = client.execute(
+                "SELECT COUNT(*) FROM news WHERE titulo LIKE ? OR resumo LIKE ?",
+                [busca, busca],
+            )
+        elif categoria:
+            result = client.execute(
+                "SELECT * FROM news WHERE tag = ? "
+                "ORDER BY id DESC LIMIT ? OFFSET ?",
                 [categoria, limit, offset],
+            )
+            count_res = client.execute(
+                "SELECT COUNT(*) FROM news WHERE tag = ?",
+                [categoria],
             )
         else:
             result = client.execute(
-                'SELECT * FROM news ORDER BY id DESC LIMIT ? OFFSET ?',
+                "SELECT * FROM news ORDER BY id DESC LIMIT ? OFFSET ?",
                 [limit, offset],
             )
+            count_res = client.execute("SELECT COUNT(*) FROM news")
 
         news = result.rows
-    except Exception as e:
-        # Em desenvolvimento/local, evita erro 500 quando o Turso não estiver acessível
-        print(f"Aviso: erro ao buscar notícias no banco: {e}")
+        total_news = count_res.rows[0][0]
+        return news, total_news
 
-        # Gera 30 notícias falsas em memória para testes locais,
-        # respeitando paginação (limit/offset) para testar os botões.
-        hoje = datetime.utcnow().strftime("%d/%m/%Y")
-        tags_possiveis = ["Cripto", "Economia", "Geral"]
-        sentimentos = ["Positivo", "Negativo", "Neutro"]
+    def query_sqlite():
+        conn = sqlite3.connect("news.db")
+        cur = conn.cursor()
 
-        todas_noticias = []
-        for i in range(1, 31):
-            tag = random.choice(tags_possiveis)
-            sentimento = random.choice(sentimentos)
-            todas_noticias.append(
-                {
-                    "id": i,
-                    "titulo": f"Notícia de teste #{i} sobre {tag}",
-                    "resumo": "Esta é uma notícia de teste gerada localmente para validação visual da interface.",
-                    "impacto": f"Impacto {sentimento.lower()} simulado no seu bolso para fins de desenvolvimento.",
-                    "link": "https://exemplo.local/noticia-teste",
-                    "tag": tag,
-                    "data": hoje,
-                    "sentimento": sentimento,
-                }
+        if q:
+            busca = f"%{q}%"
+            cur.execute(
+                "SELECT id, titulo, resumo, impacto, link, tag, sentimento "
+                "FROM news WHERE titulo LIKE ? OR resumo LIKE ? "
+                "ORDER BY id DESC LIMIT ? OFFSET ?",
+                (busca, busca, limit, offset),
             )
+            news = cur.fetchall()
+            cur.execute(
+                "SELECT COUNT(*) FROM news WHERE titulo LIKE ? OR resumo LIKE ?",
+                (busca, busca),
+            )
+        elif categoria:
+            cur.execute(
+                "SELECT id, titulo, resumo, impacto, link, tag, sentimento "
+                "FROM news WHERE tag = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+                (categoria, limit, offset),
+            )
+            news = cur.fetchall()
+            cur.execute(
+                "SELECT COUNT(*) FROM news WHERE tag = ?",
+                (categoria,),
+            )
+        else:
+            cur.execute(
+                "SELECT id, titulo, resumo, impacto, link, tag, sentimento "
+                "FROM news ORDER BY id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            )
+            news = cur.fetchall()
+            cur.execute("SELECT COUNT(*) FROM news")
 
-        # Aplica paginação nos dados fake
-        inicio = offset
-        fim = offset + limit
-        news = todas_noticias[inicio:fim]
+        total_news = cur.fetchone()[0]
+        conn.close()
+        return news, total_news
+
+    # Primeiro tenta Turso (produção)
+    news = []
+    total_news = 0
+    client = None
+    try:
+        client = get_db()
+        news, total_news = query_turso(client)
+    except Exception as e:
+        print(f"Aviso: erro ao buscar notícias no Turso, usando SQLite local: {e}")
+        news, total_news = query_sqlite()
     finally:
         if client is not None:
             try:
                 client.close()
             except Exception:
                 pass
+
+    total_pages = (total_news + limit - 1) // limit if total_news > 0 else 1
 
     return templates.TemplateResponse(
         "index.html",
@@ -114,9 +166,11 @@ async def index(request: Request, categoria: str = None, page: int = 1):
             "categoria_ativa": categoria,
             "page": page,
             "limit": limit,
+            "q": q,
+            "total_pages": total_pages,
         },
     )
-    
+
 @app.get("/noticia/{noticia_id}", response_class=HTMLResponse)
 async def ver_noticia(request: Request, noticia_id: int):
     client = get_db()
@@ -128,6 +182,10 @@ async def ver_noticia(request: Request, noticia_id: int):
         
     return templates.TemplateResponse("noticia.html", {"request": request, "noticia": result.rows[0]})
 
+@app.get("/quem-somos", response_class=HTMLResponse)
+async def quem_somos(request: Request):
+    return templates.TemplateResponse("quem-somos.html", {"request": request})
+
 @app.get("/privacidade", response_class=HTMLResponse)
 async def privacidade(request: Request):
     return templates.TemplateResponse("privacidade.html", {"request": request})
@@ -135,6 +193,10 @@ async def privacidade(request: Request):
 @app.get("/termos", response_class=HTMLResponse)
 async def termos(request: Request):
     return templates.TemplateResponse("termos.html", {"request": request})
+
+# ==========================================
+# ROTAS DE SEO E INTEGRAÇÕES
+# ==========================================
 
 @app.get("/ads.txt", response_class=Response)
 def get_ads_txt():
@@ -167,11 +229,18 @@ def get_sitemap():
         xml_content += f'  <url><loc>{url}</loc><changefreq>daily</changefreq><priority>0.8</priority></url>\n'
     
     for n in noticias:
-        # Acessa o ID usando o índice [0] do resultado
         xml_content += f'  <url><loc>https://financas-news.net.br/noticia/{n[0]}</loc><changefreq>weekly</changefreq><priority>0.6</priority></url>\n'
         
     xml_content += '</urlset>'
     return Response(content=xml_content, media_type="application/xml")
+
+# ==========================================
+# ROTAS DE INFRAESTRUTURA E ROBÔ
+# ==========================================
+
+@app.get("/ping")
+def ping():
+    return {"status": "Render acordado!"}
 
 @app.get("/api/rodar-robo")
 def rodar_robo(token: str = None):
@@ -193,16 +262,17 @@ def rodar_robo(token: str = None):
         check = client.execute("SELECT id FROM news WHERE link = ?", [n["original_link"]])
         
         if not check.rows:
-            # Salva definitivamente na Nuvem (Turso)
+            # Salva definitivamente na Nuvem (Turso) com a coluna Sentimento
             client.execute('''
-                INSERT INTO news (titulo, resumo, impacto, link, tag)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO news (titulo, resumo, impacto, link, tag, sentimento)
+                VALUES (?, ?, ?, ?, ?, ?)
             ''', [
                 n["titulo_viral"],
                 n["resumo_simples"],
                 n["impacto_bolso"],
                 n["original_link"],
-                n["tag"]
+                n["tag"],
+                n.get("sentimento", "Neutro") # Garante que envia o sentimento ou "Neutro"
             ])
             salvas += 1
             
@@ -212,14 +282,6 @@ def rodar_robo(token: str = None):
         "processadas_pela_ia": len(noticias_geradas), 
         "novas_salvas_no_banco": salvas
     }
-
-@app.get("/quem-somos", response_class=HTMLResponse)
-async def quem_somos(request: Request):
-    return templates.TemplateResponse("quem-somos.html", {"request": request})
-
-@app.get("/ping")
-def ping():
-    return {"status": "Render acordado!"}
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
