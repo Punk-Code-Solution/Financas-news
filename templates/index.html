@@ -46,6 +46,16 @@
         .ticker-down { color: #f87171; } 
         /* Prevenção AdSense */
         ins.adsbygoogle[data-ad-status="unfilled"] { display: none !important; }
+
+        /* CORREÇÃO DO SELECT DE PÁGINAS NO MODO ESCURO */
+        .dark select option {
+            background-color: #1e293b !important;
+            color: #ffffff !important;
+        }
+        select option {
+            background-color: #ffffff;
+            color: #000000;
+        }
     </style>
 </head>
 <body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 transition-colors duration-200 flex flex-col min-h-screen">
@@ -58,15 +68,19 @@
 
     <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] transition-colors duration-200 pt-4 pb-4 sticky top-0 z-50">
         <div class="container mx-auto px-4 flex flex-col lg:flex-row justify-between items-center gap-4">
+            
             <a href="/" class="text-2xl font-black tracking-tighter">
                 <span class="text-blue-600 dark:text-[#4ade80]">FINANÇAS</span><span class="text-gray-900 dark:text-white">NEWS</span>
             </a>
+
             <div class="flex flex-col md:flex-row items-center gap-4 lg:gap-6 w-full lg:w-auto">
+                
                 <div class="flex space-x-2 text-sm font-semibold justify-center">
                     <a href="/" class="px-4 py-1.5 rounded-md transition {% if not categoria_ativa and not q %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">Últimas Notícias</a>
                     <a href="/?categoria=Cripto" class="px-4 py-1.5 rounded-md transition {% if categoria_ativa == 'Cripto' %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">Cripto</a>
                     <a href="/?categoria=Economia" class="px-4 py-1.5 rounded-md transition {% if categoria_ativa == 'Economia' %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">Economia</a>
                 </div>
+
                 <div class="flex items-center gap-4">
                     <form action="/" method="GET" class="relative">
                         <input type="text" name="q" value="{{ q if q else '' }}" placeholder="Pesquisar..." 
@@ -75,16 +89,23 @@
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                         </button>
                     </form>
+
                     <button id="theme-toggle" type="button" class="text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 focus:outline-none rounded-lg text-sm p-2 transition-colors">
-                        <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
-                        <svg id="theme-toggle-light-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path></svg>
+                        <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
+                        </svg>
+                        <svg id="theme-toggle-light-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path>
+                        </svg>
                     </button>
                 </div>
+
             </div>
         </div>
     </nav>
 
     <main class="container mx-auto px-4 py-8 flex-grow w-full max-w-7xl">
+        
         {% if q %}
         <div class="mb-6">
             <h1 class="text-2xl font-bold text-gray-900 dark:text-white transition-colors">Resultados para: <span class="text-blue-600 dark:text-[#4ade80]">"{{ q }}"</span></h1>
@@ -92,25 +113,34 @@
         {% endif %}
 
         <div class="flex flex-col lg:flex-row gap-8 w-full items-start">
-            <div class="w-full lg:flex-1 flex flex-col gap-6">
+            
+            <div class="w-full lg:w-2/3 flex flex-col gap-6">
+                
                 {% for n in news %}
-                <article class="bg-white dark:bg-[#1e293b] rounded-xl p-6 border border-gray-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-slate-700 transition duration-300 flex flex-col shadow-sm dark:shadow-none w-full">
+                <article class="bg-white dark:bg-[#1e293b] rounded-xl p-6 border border-gray-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-slate-700 transition duration-300 flex flex-col shadow-sm dark:shadow-none">
+                    
                     <div class="flex justify-between items-center mb-4">
                         <span class="bg-blue-100 dark:bg-white text-blue-800 dark:text-blue-900 text-xs font-bold px-3 py-1 rounded-full">{{ n[5] }}</span>
                         <span class="text-gray-500 dark:text-slate-400 text-xs font-medium">Atualizado Hoje</span>
                     </div>
+
                     <a href="/noticia/{{ n[0] }}" class="group">
                         <h2 class="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mb-3 group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition-colors">{{ n[1] }}</h2>
                         <p class="text-gray-600 dark:text-slate-300 mb-6 text-sm md:text-base leading-relaxed">{{ n[2] }}</p>
                     </a>
+
                     {% set sent = (n[6] | default('Neutro', true)) | lower %}
                     {% set border_class = 'border-green-500 dark:border-[#4ade80]' if 'positivo' in sent else ('border-red-500 dark:border-[#f87171]' if 'negativo' in sent else 'border-gray-400 dark:border-slate-500') %}
+                    
                     <div class="bg-gray-50 dark:bg-[#0f172a] rounded-r-lg p-4 border-l-4 {{ border_class }} mb-6 shadow-sm dark:shadow-inner transition-colors">
                         <h3 class="text-gray-500 dark:text-slate-500 text-xs font-black uppercase tracking-wider mb-2">Impacto no seu bolso:</h3>
                         <p class="text-gray-800 dark:text-slate-200 text-sm font-medium">{{ n[3] }}</p>
                     </div>
+
                     <div class="mt-auto flex justify-between items-end">
-                        <a href="/noticia/{{ n[0] }}" class="text-blue-600 dark:text-[#4ade80] text-sm hover:text-blue-800 dark:hover:text-green-300 transition font-semibold">Ler notícia completa &rarr;</a>
+                        <a href="/noticia/{{ n[0] }}" class="text-blue-600 dark:text-[#4ade80] text-sm hover:text-blue-800 dark:hover:text-green-300 transition font-semibold">
+                            Ler notícia completa &rarr;
+                        </a>
                         <span class="text-gray-400 dark:text-slate-500 opacity-70 dark:opacity-50 hover:text-gray-600 transition">
                             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 22.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.007 4.15H5.059z"/></svg>
                         </span>
@@ -125,51 +155,97 @@
                 {% endif %}
 
                 <div class="flex justify-center items-center mt-6 space-x-3">
+                    
                     {% if page > 1 %}
-                        <a href="/?page={{ page - 1 }}{% if categoria_ativa %}&categoria={{ categoria_ativa }}{% endif %}{% if q %}&q={{ q }}{% endif %}" class="bg-white dark:bg-[#1e293b] text-gray-800 dark:text-white px-4 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-slate-700 transition border border-gray-300 dark:border-slate-700 text-sm font-semibold shadow-sm">&larr;</a>
+                        <a href="/?page={{ page - 1 }}{% if categoria_ativa %}&categoria={{ categoria_ativa }}{% endif %}{% if q %}&q={{ q }}{% endif %}" 
+                           class="bg-white dark:bg-[#1e293b] text-gray-800 dark:text-white px-4 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-slate-700 transition border border-gray-300 dark:border-slate-700 text-sm font-semibold shadow-sm">
+                            &larr;
+                        </a>
                     {% endif %}
+                    
                     {% if total_pages and total_pages > 1 %}
-                    <div class="flex items-center bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-slate-700 rounded-md px-3 py-1.5 shadow-sm">
+                    <div class="flex items-center bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-slate-700 rounded-md px-3 py-1.5 shadow-sm transition-colors relative">
                         <span class="text-gray-500 dark:text-slate-400 text-sm font-medium mr-2">Página</span>
+                        
                         <form action="/" method="GET" class="flex items-center m-0 relative">
                             {% if categoria_ativa %}<input type="hidden" name="categoria" value="{{ categoria_ativa }}">{% endif %}
                             {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
-                            <select name="page" onchange="this.form.submit()" class="bg-transparent border-none text-gray-900 dark:text-white text-sm font-bold py-0 pr-6 focus:ring-0 cursor-pointer appearance-none">
+                            
+                            <select name="page" 
+                                    onchange="this.form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))"
+                                    class="bg-gray-50 dark:bg-[#1e293b] border border-gray-200 dark:border-slate-600 text-gray-900 dark:text-white text-sm font-bold rounded focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#4ade80] py-1 pl-3 pr-8 cursor-pointer transition-colors appearance-none">
                                 {% for p in range(1, total_pages + 1) %}
                                     <option value="{{ p }}" {% if p == page %}selected{% endif %}>{{ p }} de {{ total_pages }}</option>
                                 {% endfor %}
                             </select>
+                            
+                            <div class="pointer-events-none absolute right-2 text-gray-500 dark:text-slate-400">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                            </div>
                         </form>
                     </div>
+                    {% elif news %}
+                        <span class="text-gray-500 dark:text-slate-500 font-medium text-sm">Página 1 de 1</span>
                     {% endif %}
+                    
                     {% if total_pages and page < total_pages %}
-                        <a href="/?page={{ page + 1 }}{% if categoria_ativa %}&categoria={{ categoria_ativa }}{% endif %}{% if q %}&q={{ q }}{% endif %}" class="bg-white dark:bg-[#1e293b] text-gray-800 dark:text-white px-4 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-slate-700 transition border border-gray-300 dark:border-slate-700 text-sm font-semibold shadow-sm">&rarr;</a>
+                        <a href="/?page={{ page + 1 }}{% if categoria_ativa %}&categoria={{ categoria_ativa }}{% endif %}{% if q %}&q={{ q }}{% endif %}" 
+                           class="bg-white dark:bg-[#1e293b] text-gray-800 dark:text-white px-4 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-slate-700 transition border border-gray-300 dark:border-slate-700 text-sm font-semibold shadow-sm">
+                            &rarr;
+                        </a>
                     {% endif %}
                 </div>
+
             </div>
 
-            <aside class="w-full lg:w-[350px] lg:flex-shrink-0 flex flex-col gap-6">
-                <div class="bg-gray-100 dark:bg-[#1e293b] rounded-xl border border-gray-200 dark:border-slate-800 p-2 text-center min-h-[250px] flex items-center justify-center">
-                    <ins class="adsbygoogle" style="display:block; width:100%;" data-ad-client="ca-pub-3623062544438213" data-ad-slot="1234567890" data-ad-format="auto" data-full-width-responsive="true"></ins>
+            <aside class="w-full lg:w-1/3 flex flex-col gap-6">
+                
+                <div class="bg-gray-100 dark:bg-[#1e293b] rounded-xl border border-gray-200 dark:border-slate-800 p-2 text-center min-h-[250px] flex items-center justify-center transition-colors">
+                    <ins class="adsbygoogle"
+                         style="display:block; width:100%;"
+                         data-ad-client="ca-pub-3623062544438213"
+                         data-ad-slot="1234567890"
+                         data-ad-format="auto"
+                         data-full-width-responsive="true"></ins>
                     <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
                 </div>
-                <div class="bg-gray-900 dark:bg-[#1e293b] rounded-xl p-8 border border-gray-800 dark:border-slate-800 text-center shadow-lg">
+
+                <div class="bg-gray-900 dark:bg-[#1e293b] rounded-xl p-8 border border-gray-800 dark:border-slate-800 text-center shadow-lg transition-colors">
                     <h3 class="text-[#facc15] font-black text-3xl mb-3 tracking-wide">BINANCE</h3>
                     <p class="text-white font-bold text-xl mb-3">Lucre com Cripto Hoje</p>
-                    <a href="https://accounts.binance.com/pt-BR/register" target="_blank" class="block w-full bg-[#facc15] text-black font-extrabold py-3 rounded-md hover:bg-yellow-500 transition shadow-md">Resgatar Bônus Agora 🚀</a>
+                    <p class="text-gray-400 dark:text-slate-400 text-sm mb-6 leading-relaxed">Cadastre-se na maior corretora do mundo e ganhe bônus em USDC.</p>
+                    <a href="https://accounts.binance.com/pt-BR/register" target="_blank" rel="noopener noreferrer" 
+                       class="block w-full bg-[#facc15] text-black font-extrabold py-3 rounded-md hover:bg-yellow-500 transition shadow-md">
+                        Resgatar Bônus Agora 🚀
+                    </a>
+                    <p class="text-[10px] text-gray-500 dark:text-slate-600 mt-4 uppercase tracking-widest font-bold">Publicidade Patrocinada</p>
                 </div>
+
                 <div class="bg-white dark:bg-[#1e293b] rounded-xl p-6 border border-gray-200 dark:border-slate-800 shadow-sm transition-colors">
                     <h3 class="text-gray-900 dark:text-white font-bold text-lg mb-3">Sobre o Projeto</h3>
-                    <p class="text-gray-600 dark:text-slate-400 text-sm mb-5 leading-relaxed">Agregador de notícias financeiras automatizado com Inteligência Artificial.</p>
+                    <p class="text-gray-600 dark:text-slate-400 text-sm mb-5 leading-relaxed">
+                        Agregador de notícias financeiras automatizado com Inteligência Artificial.
+                    </p>
+                    <hr class="border-gray-200 dark:border-slate-700 mb-4 transition-colors">
                     <p class="text-gray-500 dark:text-slate-500 text-xs font-medium">Atualizado a cada 3 horas.</p>
                 </div>
+
             </aside>
+
         </div>
     </main>
 
-    <footer class="border-t border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] text-center py-8 mt-auto">
+    <footer class="border-t border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] text-center py-8 mt-auto transition-colors">
         <div class="container mx-auto px-4">
-            <p class="text-sm text-gray-500 dark:text-slate-500">&copy; 2026 Finanças News. Desenvolvido por <a href="https://www.punkcodesolution.com.br/" target="_blank" class="font-semibold text-gray-700 dark:text-slate-300">Punk Code Solution</a>.</p>
+            <p class="text-sm text-gray-500 dark:text-slate-500 font-medium">
+                &copy; 2026 Finanças News. Desenvolvido por 
+                <a href="https://www.punkcodesolution.com.br/" target="_blank" rel="noopener noreferrer" class="text-gray-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-slate-100 transition font-semibold">Punk Code Solution</a>.
+            </p>
+            <div class="mt-4 space-x-4 text-xs text-gray-500 dark:text-slate-600 flex justify-center font-semibold">
+                <a href="/quem-somos" class="hover:text-blue-600 dark:hover:text-slate-300 transition">Quem Somos</a>
+                <a href="/termos" class="hover:text-blue-600 dark:hover:text-slate-300 transition">Termos de Uso</a>
+                <a href="/privacidade" class="hover:text-blue-600 dark:hover:text-slate-300 transition">Privacidade</a>
+            </div>
         </div>
     </footer>
 
@@ -178,10 +254,58 @@
             const darkIcon = document.getElementById('theme-toggle-dark-icon');
             const lightIcon = document.getElementById('theme-toggle-light-icon');
             if (!darkIcon || !lightIcon) return;
+            
             if (document.documentElement.classList.contains('dark')) {
-                lightIcon.classList.remove('hidden'); darkIcon.classList.add('hidden');
+                lightIcon.classList.remove('hidden');
+                darkIcon.classList.add('hidden');
             } else {
-                darkIcon.classList.remove('hidden'); lightIcon.classList.add('hidden');
+                darkIcon.classList.remove('hidden');
+                lightIcon.classList.add('hidden');
+            }
+        }
+
+        // Ticker Global Corrigido
+        async function fetchMarketData() {
+            const tickerEl = document.getElementById('market-ticker');
+            const cachedHTML = sessionStorage.getItem('tickerHTML');
+            const cachedTime = sessionStorage.getItem('tickerTime');
+            const now = new Date().getTime();
+
+            if (cachedHTML && cachedTime && (now - cachedTime < 300000)) {
+                tickerEl.innerHTML = cachedHTML;
+                return;
+            }
+
+            try {
+                const resMoedas = await fetch('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL');
+                const dataMoedas = await resMoedas.json();
+                const resIndices = await fetch('https://api.hgbrasil.com/finance?format=json-cors');
+                const dataIndices = await resIndices.json();
+
+                const formatCurrency = (value) => parseFloat(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                const formatPts = (value) => parseFloat(value).toLocaleString('pt-BR') + ' pts';
+                const formatPct = (pct) => parseFloat(pct) > 0 ? `+${pct}%` : `${pct}%`;
+                const getColorClass = (pct) => parseFloat(pct) >= 0 ? 'ticker-up' : 'ticker-down';
+                
+                const usd = dataMoedas.USDBRL; const eur = dataMoedas.EURBRL; const btc = dataMoedas.BTCBRL;
+                const ibov = dataIndices.results?.stocks?.IBOVESPA || { points: 0, variation: 0 };
+                const nasdaq = dataIndices.results?.stocks?.NASDAQ || { points: 0, variation: 0 };
+
+                const tickerHtml = `
+                    <span class="ticker-item"><span class="text-slate-400">🇺🇸 USD:</span> ${formatCurrency(usd.bid)} <span class="${getColorClass(usd.pctChange)}">(${formatPct(usd.pctChange)})</span></span>
+                    <span class="ticker-item"><span class="text-slate-400">🇪🇺 EUR:</span> ${formatCurrency(eur.bid)} <span class="${getColorClass(eur.pctChange)}">(${formatPct(eur.pctChange)})</span></span>
+                    <span class="ticker-item"><span class="text-slate-400">₿ BTC:</span> ${formatCurrency(btc.bid)} <span class="${getColorClass(btc.pctChange)}">(${formatPct(btc.pctChange)})</span></span>
+                    <span class="ticker-item"><span class="text-slate-400">🇧🇷 IBOV:</span> ${formatPts(ibov.points)} <span class="${getColorClass(ibov.variation)}">(${formatPct(ibov.variation)})</span></span>
+                    <span class="ticker-item"><span class="text-slate-400">🇺🇸 NASDAQ:</span> ${formatPts(nasdaq.points)} <span class="${getColorClass(nasdaq.variation)}">(${formatPct(nasdaq.variation)})</span></span>
+                `;
+                
+                const fullHtml = tickerHtml + tickerHtml + tickerHtml;
+                tickerEl.innerHTML = fullHtml;
+                
+                sessionStorage.setItem('tickerHTML', fullHtml);
+                sessionStorage.setItem('tickerTime', now);
+            } catch (error) {
+                if (!cachedHTML) tickerEl.innerHTML = '<span class="ticker-item">Finanças News - Cotações em tempo real.</span>';
             }
         }
 
@@ -189,38 +313,83 @@
             const mainEl = document.querySelector('main');
             const navEl = document.querySelector('nav');
             mainEl.style.opacity = '0.3';
+            mainEl.style.transition = 'opacity 0.2s ease-in-out';
+
             try {
                 const response = await fetch(url);
                 const htmlText = await response.text();
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(htmlText, 'text/html');
+                
                 navEl.innerHTML = doc.querySelector('nav').innerHTML;
                 mainEl.innerHTML = doc.querySelector('main').innerHTML;
+                
                 document.title = doc.title;
                 if (pushState) window.history.pushState({}, '', url);
+                
                 setInitialThemeIcons();
+                fetchMarketData(); // Reinicia o carregamento ao voltar para a home
+                
                 mainEl.style.opacity = '1';
-                window.scrollTo(0, 0); // FORÇA VOLTAR PARA O TOPO
-            } catch (error) { window.location.href = url; }
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } catch (error) {
+                window.location.href = url;
+            }
         }
 
         document.addEventListener('DOMContentLoaded', () => {
             setInitialThemeIcons();
+            fetchMarketData(); // Chamada inicial garantida
+
             document.body.addEventListener('click', async (e) => {
                 const themeBtn = e.target.closest('#theme-toggle');
                 if (themeBtn) {
-                    document.documentElement.classList.toggle('dark');
-                    localStorage.setItem('color-theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light');
-                    setInitialThemeIcons();
+                    const darkIcon = document.getElementById('theme-toggle-dark-icon');
+                    const lightIcon = document.getElementById('theme-toggle-light-icon');
+                    darkIcon.classList.toggle('hidden');
+                    lightIcon.classList.toggle('hidden');
+
+                    if (document.documentElement.classList.contains('dark')) {
+                        document.documentElement.classList.remove('dark');
+                        localStorage.setItem('color-theme', 'light');
+                    } else {
+                        document.documentElement.classList.add('dark');
+                        localStorage.setItem('color-theme', 'dark');
+                    }
                     return;
                 }
+
                 const link = e.target.closest('a');
-                if (link && new URL(link.href).origin === window.location.origin && link.target !== '_blank') {
-                    e.preventDefault(); carregarPaginaSemPiscar(link.href);
+                if (!link) return;
+                const url = new URL(link.href);
+                if (url.origin === window.location.origin && url.pathname === '/') {
+                    e.preventDefault();
+                    carregarPaginaSemPiscar(url.href);
+                }
+            });
+
+            document.body.addEventListener('submit', async (e) => {
+                const form = e.target.closest('form');
+                if (!form || form.method.toUpperCase() !== 'GET') return;
+                const url = new URL(form.action, window.location.origin);
+                if (url.pathname === '/') {
+                    e.preventDefault();
+                    const formData = new FormData(form);
+                    url.search = new URLSearchParams(formData).toString();
+                    carregarPaginaSemPiscar(url.href);
+                }
+            });
+
+            window.addEventListener('popstate', () => {
+                if (window.location.pathname === '/') {
+                    carregarPaginaSemPiscar(window.location.href, false);
+                } else {
+                    window.location.reload();
                 }
             });
         });
-        fetchMarketData();
+
+        setInterval(fetchMarketData, 300000);
     </script>
 </body>
 </html>
