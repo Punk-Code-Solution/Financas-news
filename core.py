@@ -46,7 +46,7 @@ def process_news_with_ai(title, content):
     Retorne APENAS um JSON válido neste formato exato (sem ```json):
     {{
         "titulo_viral": "título curto chamativo",
-        "resumo_simples": "resumo em 2 linhas",
+        "resumo_simples": "Aja como um analista financeiro sênior. Leia esta notícia e crie um artigo autoral completo. O campo 'resumo_simples' DEVE ter no mínimo 3 parágrafos bem detalhados (mais de 300 palavras), explicando o contexto do mercado, o que aconteceu e as projeções futuras. Não use frases curtas. Separe os parágrafos com quebras de linha.",
         "impacto_bolso": "efeito no dinheiro das pessoas",
         "tag": "escolha entre: Cripto, Economia, Dólar, Ações",
         "sentimento": "Positivo, Negativo ou Neutro"

@@ -15,6 +15,7 @@
     <meta property="og:site_name" content="Finanças News" />
     
     <script src="https://cdn.tailwindcss.com"></script>
+    
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3623062544438213" crossorigin="anonymous"></script>
 
     <script>
@@ -44,18 +45,16 @@
         .ticker-item { margin-right: 3rem; font-weight: 600; letter-spacing: 0.05em; }
         .ticker-up { color: #4ade80; } 
         .ticker-down { color: #f87171; } 
-        /* Prevenção AdSense */
+        
+        /* Oculta as setas padrão do input numérico */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+        
         ins.adsbygoogle[data-ad-status="unfilled"] { display: none !important; }
 
-        /* CORREÇÃO DO SELECT DE PÁGINAS NO MODO ESCURO */
-        .dark select option {
-            background-color: #1e293b !important;
-            color: #ffffff !important;
-        }
-        select option {
-            background-color: #ffffff;
-            color: #000000;
-        }
+        .dark select option { background-color: #1e293b !important; color: #ffffff !important; }
+        select option { background-color: #ffffff; color: #000000; }
     </style>
 </head>
 <body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 transition-colors duration-200 flex flex-col min-h-screen">
@@ -74,7 +73,6 @@
             </a>
 
             <div class="flex flex-col md:flex-row items-center gap-4 lg:gap-6 w-full lg:w-auto">
-                
                 <div class="flex space-x-2 text-sm font-semibold justify-center">
                     <a href="/" class="px-4 py-1.5 rounded-md transition {% if not categoria_ativa and not q %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">Últimas Notícias</a>
                     <a href="/?categoria=Cripto" class="px-4 py-1.5 rounded-md transition {% if categoria_ativa == 'Cripto' %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">Cripto</a>
@@ -99,13 +97,11 @@
                         </svg>
                     </button>
                 </div>
-
             </div>
         </div>
     </nav>
 
     <main class="container mx-auto px-4 py-8 flex-grow w-full max-w-7xl">
-        
         {% if q %}
         <div class="mb-6">
             <h1 class="text-2xl font-bold text-gray-900 dark:text-white transition-colors">Resultados para: <span class="text-blue-600 dark:text-[#4ade80]">"{{ q }}"</span></h1>
@@ -113,12 +109,10 @@
         {% endif %}
 
         <div class="flex flex-col lg:flex-row gap-8 w-full items-start">
-            
             <div class="w-full lg:w-2/3 flex flex-col gap-6">
                 
                 {% for n in news %}
                 <article class="bg-white dark:bg-[#1e293b] rounded-xl p-6 border border-gray-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-slate-700 transition duration-300 flex flex-col shadow-sm dark:shadow-none">
-                    
                     <div class="flex justify-between items-center mb-4">
                         <span class="bg-blue-100 dark:bg-white text-blue-800 dark:text-blue-900 text-xs font-bold px-3 py-1 rounded-full">{{ n[5] }}</span>
                         <span class="text-gray-500 dark:text-slate-400 text-xs font-medium">Atualizado Hoje</span>
@@ -126,7 +120,7 @@
 
                     <a href="/noticia/{{ n[0] }}" class="group">
                         <h2 class="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mb-3 group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition-colors">{{ n[1] }}</h2>
-                        <p class="text-gray-600 dark:text-slate-300 mb-6 text-sm md:text-base leading-relaxed">{{ n[2] }}</p>
+                        <p class="text-gray-600 dark:text-slate-300 mb-6 text-sm md:text-base leading-relaxed line-clamp-3">{{ n[2] }}</p>
                     </a>
 
                     {% set sent = (n[6] | default('Neutro', true)) | lower %}
@@ -139,11 +133,8 @@
 
                     <div class="mt-auto flex justify-between items-end">
                         <a href="/noticia/{{ n[0] }}" class="text-blue-600 dark:text-[#4ade80] text-sm hover:text-blue-800 dark:hover:text-green-300 transition font-semibold">
-                            Ler notícia completa &rarr;
+                            Ler análise completa &rarr;
                         </a>
-                        <span class="text-gray-400 dark:text-slate-500 opacity-70 dark:opacity-50 hover:text-gray-600 transition">
-                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 22.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.007 4.15H5.059z"/></svg>
-                        </span>
                     </div>
                 </article>
                 {% endfor %}
@@ -155,30 +146,23 @@
                 {% endif %}
 
                 <div class="flex justify-center items-center mt-6 space-x-3">
-                    
                     {% if page > 1 %}
                         <a href="/?page={{ page - 1 }}{% if categoria_ativa %}&categoria={{ categoria_ativa }}{% endif %}{% if q %}&q={{ q }}{% endif %}" 
-                           class="bg-white dark:bg-[#1e293b] text-gray-800 dark:text-white px-4 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-slate-700 transition border border-gray-300 dark:border-slate-700 text-sm font-semibold shadow-sm">
-                            &larr;
-                        </a>
+                           class="bg-white dark:bg-[#1e293b] text-gray-800 dark:text-white px-4 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-slate-700 transition border border-gray-300 dark:border-slate-700 text-sm font-semibold shadow-sm">&larr;</a>
                     {% endif %}
                     
                     {% if total_pages and total_pages > 1 %}
                     <div class="flex items-center bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-slate-700 rounded-md px-3 py-1.5 shadow-sm transition-colors relative">
                         <span class="text-gray-500 dark:text-slate-400 text-sm font-medium mr-2">Página</span>
-                        
                         <form action="/" method="GET" class="flex items-center m-0 relative">
                             {% if categoria_ativa %}<input type="hidden" name="categoria" value="{{ categoria_ativa }}">{% endif %}
                             {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
-                            
-                            <select name="page" 
-                                    onchange="this.form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))"
-                                    class="bg-gray-50 dark:bg-[#1e293b] border border-gray-200 dark:border-slate-600 text-gray-900 dark:text-white text-sm font-bold rounded focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#4ade80] py-1 pl-3 pr-8 cursor-pointer transition-colors appearance-none">
+                            <select name="page" onchange="this.form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))"
+                                    class="bg-gray-50 dark:bg-[#0f172a] border border-gray-200 dark:border-slate-600 text-gray-900 dark:text-white text-sm font-bold rounded focus:outline-none focus:ring-1 focus:ring-blue-500 dark:focus:ring-[#4ade80] py-1 pl-3 pr-8 cursor-pointer transition-colors appearance-none">
                                 {% for p in range(1, total_pages + 1) %}
                                     <option value="{{ p }}" {% if p == page %}selected{% endif %}>{{ p }} de {{ total_pages }}</option>
                                 {% endfor %}
                             </select>
-                            
                             <div class="pointer-events-none absolute right-2 text-gray-500 dark:text-slate-400">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                             </div>
@@ -190,16 +174,12 @@
                     
                     {% if total_pages and page < total_pages %}
                         <a href="/?page={{ page + 1 }}{% if categoria_ativa %}&categoria={{ categoria_ativa }}{% endif %}{% if q %}&q={{ q }}{% endif %}" 
-                           class="bg-white dark:bg-[#1e293b] text-gray-800 dark:text-white px-4 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-slate-700 transition border border-gray-300 dark:border-slate-700 text-sm font-semibold shadow-sm">
-                            &rarr;
-                        </a>
+                           class="bg-white dark:bg-[#1e293b] text-gray-800 dark:text-white px-4 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-slate-700 transition border border-gray-300 dark:border-slate-700 text-sm font-semibold shadow-sm">&rarr;</a>
                     {% endif %}
                 </div>
-
             </div>
 
             <aside class="w-full lg:w-1/3 flex flex-col gap-6">
-                
                 <div class="bg-gray-100 dark:bg-[#1e293b] rounded-xl border border-gray-200 dark:border-slate-800 p-2 text-center min-h-[250px] flex items-center justify-center transition-colors">
                     <ins class="adsbygoogle"
                          style="display:block; width:100%;"
@@ -218,28 +198,15 @@
                        class="block w-full bg-[#facc15] text-black font-extrabold py-3 rounded-md hover:bg-yellow-500 transition shadow-md">
                         Resgatar Bônus Agora 🚀
                     </a>
-                    <p class="text-[10px] text-gray-500 dark:text-slate-600 mt-4 uppercase tracking-widest font-bold">Publicidade Patrocinada</p>
                 </div>
-
-                <div class="bg-white dark:bg-[#1e293b] rounded-xl p-6 border border-gray-200 dark:border-slate-800 shadow-sm transition-colors">
-                    <h3 class="text-gray-900 dark:text-white font-bold text-lg mb-3">Sobre o Projeto</h3>
-                    <p class="text-gray-600 dark:text-slate-400 text-sm mb-5 leading-relaxed">
-                        Agregador de notícias financeiras automatizado com Inteligência Artificial.
-                    </p>
-                    <hr class="border-gray-200 dark:border-slate-700 mb-4 transition-colors">
-                    <p class="text-gray-500 dark:text-slate-500 text-xs font-medium">Atualizado a cada 3 horas.</p>
-                </div>
-
             </aside>
-
         </div>
     </main>
 
     <footer class="border-t border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] text-center py-8 mt-auto transition-colors">
         <div class="container mx-auto px-4">
             <p class="text-sm text-gray-500 dark:text-slate-500 font-medium">
-                &copy; 2026 Finanças News. Desenvolvido por 
-                <a href="https://www.punkcodesolution.com.br/" target="_blank" rel="noopener noreferrer" class="text-gray-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-slate-100 transition font-semibold">Punk Code Solution</a>.
+                &copy; 2026 Finanças News. Desenvolvido por <a href="https://www.punkcodesolution.com.br/" target="_blank" rel="noopener noreferrer" class="text-gray-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-slate-100 transition font-semibold">Punk Code Solution</a>.
             </p>
             <div class="mt-4 space-x-4 text-xs text-gray-500 dark:text-slate-600 flex justify-center font-semibold">
                 <a href="/quem-somos" class="hover:text-blue-600 dark:hover:text-slate-300 transition">Quem Somos</a>
@@ -254,58 +221,10 @@
             const darkIcon = document.getElementById('theme-toggle-dark-icon');
             const lightIcon = document.getElementById('theme-toggle-light-icon');
             if (!darkIcon || !lightIcon) return;
-            
             if (document.documentElement.classList.contains('dark')) {
-                lightIcon.classList.remove('hidden');
-                darkIcon.classList.add('hidden');
+                lightIcon.classList.remove('hidden'); darkIcon.classList.add('hidden');
             } else {
-                darkIcon.classList.remove('hidden');
-                lightIcon.classList.add('hidden');
-            }
-        }
-
-        // Ticker Global Corrigido
-        async function fetchMarketData() {
-            const tickerEl = document.getElementById('market-ticker');
-            const cachedHTML = sessionStorage.getItem('tickerHTML');
-            const cachedTime = sessionStorage.getItem('tickerTime');
-            const now = new Date().getTime();
-
-            if (cachedHTML && cachedTime && (now - cachedTime < 300000)) {
-                tickerEl.innerHTML = cachedHTML;
-                return;
-            }
-
-            try {
-                const resMoedas = await fetch('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL');
-                const dataMoedas = await resMoedas.json();
-                //const resIndices = await fetch('https://api.hgbrasil.com/finance?format=json-cors');
-                //const dataIndices = await resIndices.json();
-
-                const formatCurrency = (value) => parseFloat(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                const formatPts = (value) => parseFloat(value).toLocaleString('pt-BR') + ' pts';
-                const formatPct = (pct) => parseFloat(pct) > 0 ? `+${pct}%` : `${pct}%`;
-                const getColorClass = (pct) => parseFloat(pct) >= 0 ? 'ticker-up' : 'ticker-down';
-                
-                const usd = dataMoedas.USDBRL; const eur = dataMoedas.EURBRL; const btc = dataMoedas.BTCBRL;
-                const ibov = dataIndices.results?.stocks?.IBOVESPA || { points: 0, variation: 0 };
-                const nasdaq = dataIndices.results?.stocks?.NASDAQ || { points: 0, variation: 0 };
-
-                const tickerHtml = `
-                    <span class="ticker-item"><span class="text-slate-400">🇺🇸 USD:</span> ${formatCurrency(usd.bid)} <span class="${getColorClass(usd.pctChange)}">(${formatPct(usd.pctChange)})</span></span>
-                    <span class="ticker-item"><span class="text-slate-400">🇪🇺 EUR:</span> ${formatCurrency(eur.bid)} <span class="${getColorClass(eur.pctChange)}">(${formatPct(eur.pctChange)})</span></span>
-                    <span class="ticker-item"><span class="text-slate-400">₿ BTC:</span> ${formatCurrency(btc.bid)} <span class="${getColorClass(btc.pctChange)}">(${formatPct(btc.pctChange)})</span></span>
-                    <span class="ticker-item"><span class="text-slate-400">🇧🇷 IBOV:</span> ${formatPts(ibov.points)} <span class="${getColorClass(ibov.variation)}">(${formatPct(ibov.variation)})</span></span>
-                    <span class="ticker-item"><span class="text-slate-400">🇺🇸 NASDAQ:</span> ${formatPts(nasdaq.points)} <span class="${getColorClass(nasdaq.variation)}">(${formatPct(nasdaq.variation)})</span></span>
-                `;
-                
-                const fullHtml = tickerHtml + tickerHtml + tickerHtml;
-                tickerEl.innerHTML = fullHtml;
-                
-                sessionStorage.setItem('tickerHTML', fullHtml);
-                sessionStorage.setItem('tickerTime', now);
-            } catch (error) {
-                if (!cachedHTML) tickerEl.innerHTML = '<span class="ticker-item">Finanças News - Cotações em tempo real.</span>';
+                darkIcon.classList.remove('hidden'); lightIcon.classList.add('hidden');
             }
         }
 
@@ -323,13 +242,10 @@
                 
                 navEl.innerHTML = doc.querySelector('nav').innerHTML;
                 mainEl.innerHTML = doc.querySelector('main').innerHTML;
-                
                 document.title = doc.title;
                 if (pushState) window.history.pushState({}, '', url);
                 
                 setInitialThemeIcons();
-                fetchMarketData(); // Reinicia o carregamento ao voltar para a home
-                
                 mainEl.style.opacity = '1';
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             } catch (error) {
@@ -337,9 +253,44 @@
             }
         }
 
+        async function fetchMarketData() {
+            const tickerEl = document.getElementById('market-ticker');
+            const cachedHTML = sessionStorage.getItem('tickerHTML');
+            const cachedTime = sessionStorage.getItem('tickerTime');
+            const now = new Date().getTime();
+
+            if (cachedHTML && cachedTime && (now - cachedTime < 300000)) {
+                tickerEl.innerHTML = cachedHTML;
+                return;
+            }
+            try {
+                const resMoedas = await fetch('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL');
+                const dataMoedas = await resMoedas.json();
+                
+                const formatCurrency = (value) => parseFloat(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                const formatPct = (pct) => parseFloat(pct) > 0 ? `+${pct}%` : `${pct}%`;
+                const getColorClass = (pct) => parseFloat(pct) >= 0 ? 'ticker-up' : 'ticker-down';
+                
+                const usd = dataMoedas.USDBRL; const eur = dataMoedas.EURBRL; const btc = dataMoedas.BTCBRL;
+
+                const tickerHtml = `
+                    <span class="ticker-item"><span class="text-slate-400">🇺🇸 USD:</span> ${formatCurrency(usd.bid)} <span class="${getColorClass(usd.pctChange)}">(${formatPct(usd.pctChange)})</span></span>
+                    <span class="ticker-item"><span class="text-slate-400">🇪🇺 EUR:</span> ${formatCurrency(eur.bid)} <span class="${getColorClass(eur.pctChange)}">(${formatPct(eur.pctChange)})</span></span>
+                    <span class="ticker-item"><span class="text-slate-400">₿ BTC:</span> ${formatCurrency(btc.bid)} <span class="${getColorClass(btc.pctChange)}">(${formatPct(btc.pctChange)})</span></span>
+                `;
+                
+                const fullHtml = tickerHtml + tickerHtml + tickerHtml + tickerHtml;
+                tickerEl.innerHTML = fullHtml;
+                sessionStorage.setItem('tickerHTML', fullHtml);
+                sessionStorage.setItem('tickerTime', now);
+            } catch (error) {
+                if (!cachedHTML) tickerEl.innerHTML = '<span class="ticker-item">Finanças News - Cotações em tempo real.</span>';
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             setInitialThemeIcons();
-            fetchMarketData(); // Chamada inicial garantida
+            fetchMarketData();
 
             document.body.addEventListener('click', async (e) => {
                 const themeBtn = e.target.closest('#theme-toggle');
@@ -388,7 +339,6 @@
                 }
             });
         });
-
         setInterval(fetchMarketData, 300000);
     </script>
 </body>

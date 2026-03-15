@@ -91,7 +91,7 @@
                     Nós aliamos tecnologia de ponta à informação. Utilizamos um motor de Inteligência Artificial autônomo que varre continuamente as fontes mais confiáveis do mercado financeiro.
                 </p>
                 <p class="text-lg text-gray-700 dark:text-slate-300 mb-4 leading-relaxed transition-colors">
-                    Nossa IA analisa artigos longos e os processa, entregando a você um <strong class="text-gray-900 dark:text-white">resumo simples</strong> e o <strong class="text-gray-900 dark:text-white">impacto real</strong> que aquela notícia tem no seu bolso. Tudo isso mantendo o link original para a fonte da matéria, garantindo total transparência e rastreabilidade da informação.
+                    Nossa IA analisa artigos longos e os processa, entregando a você uma <strong class="text-gray-900 dark:text-white">análise detalhada</strong> e o <strong class="text-gray-900 dark:text-white">impacto real</strong> que aquela notícia tem no seu bolso. Tudo isso mantendo o link original para a fonte da matéria, garantindo total transparência e rastreabilidade da informação.
                 </p>
             </section>
 
@@ -104,19 +104,12 @@
                     A arquitetura e confiabilidade do site são lideradas por <strong class="text-gray-900 dark:text-white">Thiago de Freitas Gonçalves</strong>, CEO e Cofundador da Punk Code Solution. Com uma base acadêmica sólida em Ciência da Computação e vasta experiência prática como Analista de Testes (QA), a plataforma foi projetada sob rigorosos padrões de qualidade, resiliência em nuvem e precisão algorítmica.
                 </p>
             </section>
-
-            <section>
-                <h2 class="text-2xl font-bold text-blue-600 dark:text-[#4ade80] mb-4 transition-colors">Compromisso Editorial</h2>
-                <p class="text-lg text-gray-700 dark:text-slate-300 leading-relaxed transition-colors">
-                    Não somos uma casa de análises financeiras e não damos recomendações de investimento. O Finanças News é um agregador tecnológico de notícias focado em otimização de leitura. Nosso compromisso é com a qualidade do software e com a clareza da informação entregue ao leitor.
-                </p>
-            </section>
         </article>
     </main>
 
     <footer class="border-t border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] text-center py-8 mt-auto transition-colors">
         <div class="container mx-auto px-4">
-            <p class="text-sm text-gray-500 dark:text-slate-500 font-medium">&copy; 2026 Finanças News. Desenvolvido por <span class="text-gray-700 dark:text-slate-300">Punk Code Solution</span>.</p>
+            <p class="text-sm text-gray-500 dark:text-slate-500 font-medium">&copy; 2026 Finanças News. Desenvolvido por <a href="https://www.punkcodesolution.com.br/" target="_blank" rel="noopener noreferrer" class="text-gray-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-slate-100 transition font-semibold">Punk Code Solution</a>.</p>
             <div class="mt-4 space-x-4 text-xs text-gray-500 dark:text-slate-600 flex justify-center font-semibold">
                 <a href="/quem-somos" class="text-blue-600 dark:text-slate-300 transition">Quem Somos</a>
                 <a href="/termos" class="hover:text-blue-600 dark:hover:text-slate-300 transition">Termos de Uso</a>
@@ -126,7 +119,6 @@
     </footer>
 
     <script>
-        // 1. Configuração do Botão de Tema
         function setInitialThemeIcons() {
             const darkIcon = document.getElementById('theme-toggle-dark-icon');
             const lightIcon = document.getElementById('theme-toggle-light-icon');
@@ -141,12 +133,48 @@
             }
         }
 
+        async function fetchMarketData() {
+            const tickerEl = document.getElementById('market-ticker');
+            const cachedHTML = sessionStorage.getItem('tickerHTML');
+            const cachedTime = sessionStorage.getItem('tickerTime');
+            const now = new Date().getTime();
+
+            if (cachedHTML && cachedTime && (now - cachedTime < 300000)) {
+                tickerEl.innerHTML = cachedHTML;
+                return;
+            }
+            try {
+                const resMoedas = await fetch('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL');
+                const dataMoedas = await resMoedas.json();
+                
+                const formatCurrency = (value) => parseFloat(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                const formatPct = (pct) => parseFloat(pct) > 0 ? `+${pct}%` : `${pct}%`;
+                const getColorClass = (pct) => parseFloat(pct) >= 0 ? 'ticker-up' : 'ticker-down';
+                
+                const usd = dataMoedas.USDBRL; const eur = dataMoedas.EURBRL; const btc = dataMoedas.BTCBRL;
+
+                const tickerHtml = `
+                    <span class="ticker-item"><span class="text-slate-400">🇺🇸 USD:</span> ${formatCurrency(usd.bid)} <span class="${getColorClass(usd.pctChange)}">(${formatPct(usd.pctChange)})</span></span>
+                    <span class="ticker-item"><span class="text-slate-400">🇪🇺 EUR:</span> ${formatCurrency(eur.bid)} <span class="${getColorClass(eur.pctChange)}">(${formatPct(eur.pctChange)})</span></span>
+                    <span class="ticker-item"><span class="text-slate-400">₿ BTC:</span> ${formatCurrency(btc.bid)} <span class="${getColorClass(btc.pctChange)}">(${formatPct(btc.pctChange)})</span></span>
+                `;
+                
+                const fullHtml = tickerHtml + tickerHtml + tickerHtml + tickerHtml;
+                tickerEl.innerHTML = fullHtml;
+                sessionStorage.setItem('tickerHTML', fullHtml);
+                sessionStorage.setItem('tickerTime', now);
+            } catch (error) {
+                if (!cachedHTML) tickerEl.innerHTML = '<span class="ticker-item">Finanças News - Cotações em tempo real.</span>';
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             setInitialThemeIcons();
+            fetchMarketData();
 
-            document.body.addEventListener('click', async (e) => {
-                const themeBtn = e.target.closest('#theme-toggle');
-                if (themeBtn) {
+            const themeBtn = document.getElementById('theme-toggle');
+            if (themeBtn) {
+                themeBtn.addEventListener('click', () => {
                     const darkIcon = document.getElementById('theme-toggle-dark-icon');
                     const lightIcon = document.getElementById('theme-toggle-light-icon');
                     
@@ -160,59 +188,9 @@
                         document.documentElement.classList.add('dark');
                         localStorage.setItem('color-theme', 'dark');
                     }
-                }
-            });
+                });
+            }
         });
-
-        // 2. Ticker Financeiro Integrado (com Cache da Home)
-        async function fetchMarketData() {
-            const tickerEl = document.getElementById('market-ticker');
-            const cachedHTML = sessionStorage.getItem('tickerHTML');
-            const cachedTime = sessionStorage.getItem('tickerTime');
-            const now = new Date().getTime();
-
-            // Se você já visitou a Home nos últimos 5 minutos, ele pega os mesmos dados sem piscar
-            if (cachedHTML && cachedTime && (now - cachedTime < 300000)) {
-                tickerEl.innerHTML = cachedHTML;
-                return;
-            }
-
-            try {
-                const resMoedas = await fetch('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL');
-                const dataMoedas = await resMoedas.json();
-                //const resIndices = await fetch('https://api.hgbrasil.com/finance?format=json-cors');
-                //const dataIndices = await resIndices.json();
-
-                const formatCurrency = (value) => parseFloat(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                const formatPts = (value) => parseFloat(value).toLocaleString('pt-BR') + ' pts';
-                const formatPct = (pct) => parseFloat(pct) > 0 ? `+${pct}%` : `${pct}%`;
-                const getColorClass = (pct) => parseFloat(pct) >= 0 ? 'ticker-up' : 'ticker-down';
-                
-                const usd = dataMoedas.USDBRL; const eur = dataMoedas.EURBRL; const btc = dataMoedas.BTCBRL;
-                const ibov = dataIndices.results?.stocks?.IBOVESPA || { points: 0, variation: 0 };
-                const nasdaq = dataIndices.results?.stocks?.NASDAQ || { points: 0, variation: 0 };
-                const nikkei = dataIndices.results?.stocks?.NIKKEI || { points: 0, variation: 0 };
-
-                const tickerHtml = `
-                    <span class="ticker-item"><span class="text-slate-400">🇺🇸 USD:</span> ${formatCurrency(usd.bid)} <span class="${getColorClass(usd.pctChange)}">(${formatPct(usd.pctChange)})</span></span>
-                    <span class="ticker-item"><span class="text-slate-400">🇪🇺 EUR:</span> ${formatCurrency(eur.bid)} <span class="${getColorClass(eur.pctChange)}">(${formatPct(eur.pctChange)})</span></span>
-                    <span class="ticker-item"><span class="text-slate-400">₿ BTC:</span> ${formatCurrency(btc.bid)} <span class="${getColorClass(btc.pctChange)}">(${formatPct(btc.pctChange)})</span></span>
-                    <span class="ticker-item"><span class="text-slate-400">🇧🇷 IBOV:</span> ${formatPts(ibov.points)} <span class="${getColorClass(ibov.variation)}">(${formatPct(ibov.variation)})</span></span>
-                    <span class="ticker-item"><span class="text-slate-400">🇺🇸 NASDAQ:</span> ${formatPts(nasdaq.points)} <span class="${getColorClass(nasdaq.variation)}">(${formatPct(nasdaq.variation)})</span></span>
-                    <span class="ticker-item"><span class="text-slate-400">🇯🇵 NIKKEI:</span> ${formatPts(nikkei.points)} <span class="${getColorClass(nikkei.variation)}">(${formatPct(nikkei.variation)})</span></span>
-                `;
-                
-                const fullHtml = tickerHtml + tickerHtml + tickerHtml;
-                tickerEl.innerHTML = fullHtml;
-                
-                sessionStorage.setItem('tickerHTML', fullHtml);
-                sessionStorage.setItem('tickerTime', now);
-            } catch (error) {
-                if (!cachedHTML) tickerEl.innerHTML = '<span class="ticker-item">Finanças News - Cotações e Índices em tempo real.</span>';
-            }
-        }
-        
-        fetchMarketData();
         setInterval(fetchMarketData, 300000);
     </script>
 </body>
