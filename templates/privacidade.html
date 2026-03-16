@@ -1,26 +1,151 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Política de Privacidade | Finanças News</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacidade - Finanças News</title>
+    
+    <link rel="icon" href="/static/favicon.png" type="image/png">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800;900&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { fontFamily: { sans: ['Inter', 'sans-serif'] } } }
+        }
+        if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    </script>
+
+    <style>
+        .ticker-wrapper { overflow: hidden; white-space: nowrap; background-color: #111827; color: #cbd5e1; font-size: 0.75rem; padding: 0.25rem 0; border-bottom: 1px solid #1e293b;}
+        .ticker-content { display: inline-block; animation: ticker 30s linear infinite; }
+        @keyframes ticker { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
+        .ticker-item { margin-right: 3rem; font-weight: 600; letter-spacing: 0.05em; }
+        .ticker-up { color: #4ade80; } .ticker-down { color: #f87171; } 
+    </style>
 </head>
-<body class="bg-gray-900 text-gray-300 p-8">
-    <div class="max-w-4xl mx-auto bg-gray-800 p-8 rounded-lg shadow-xl">
-        <h1 class="text-3xl font-bold text-white mb-6">Política de Privacidade</h1>
-        <p class="mb-4">A sua privacidade é importante para nós. É política do **Finanças News** respeitar a sua privacidade em relação a qualquer informação sua que possamos coletar no site.</p>
-        
-        <h2 class="text-xl font-semibold text-green-400 mt-6 mb-2">1. Coleta de Dados</h2>
-        <p class="mb-4">Não solicitamos informações pessoais, exceto quando realmente precisamos delas para fornecer um serviço. Fazemo-lo por meios justos e legais, com o seu conhecimento e consentimento.</p>
+<body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 transition-colors duration-200 flex flex-col min-h-screen">
 
-        <h2 class="text-xl font-semibold text-green-400 mt-6 mb-2">2. Google AdSense e Cookies</h2>
-        <p class="mb-4">O Google, como fornecedor de terceiros, utiliza cookies para exibir anúncios em nosso site. Com o cookie DART, o Google pode exibir anúncios com base nas visitas que o usuário fez a este e outros sites na Internet.</p>
-
-        <h2 class="text-xl font-semibold text-green-400 mt-6 mb-2">3. Links para Terceiros</h2>
-        <p class="mb-4">Nosso site pode ter links para sites externos (como a Binance) que não são operados por nós. Não temos controle sobre o conteúdo e práticas desses sites.</p>
-
-        <p class="mt-8 text-sm text-gray-500 italic">Desenvolvido por Punk Code Solution.</p>
-        <a href="/" class="inline-block mt-4 text-green-500 hover:underline">← Voltar para a Home</a>
+    <div class="ticker-wrapper">
+        <div class="ticker-content" id="market-ticker"><span class="text-slate-500">Carregando cotações...</span></div>
     </div>
+
+    <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] transition-colors duration-200 pt-4 pb-4">
+        <div class="container mx-auto px-4 flex flex-col lg:flex-row justify-between items-center gap-4">
+            
+            <a href="/" class="text-2xl font-black tracking-tighter">
+                <span class="text-blue-600 dark:text-[#4ade80]">FINANÇAS</span><span class="text-gray-900 dark:text-white">NEWS</span>
+            </a>
+
+            <div class="flex flex-col md:flex-row items-center gap-4 w-full lg:w-auto">
+                <div class="flex items-center justify-between w-full md:w-auto">
+                    <a href="/" class="text-sm font-semibold text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white flex items-center transition-colors">
+                        &larr; Voltar para a Home
+                    </a>
+
+                    <button id="theme-toggle" type="button" class="text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 focus:outline-none rounded-lg text-sm p-2 transition-colors ml-6">
+                        <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
+                        </svg>
+                        <svg id="theme-toggle-light-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mx-auto px-4 py-10 max-w-4xl flex-grow">
+        <article class="bg-white dark:bg-[#1e293b] rounded-xl shadow-sm dark:shadow-none p-8 md:p-12 border border-gray-200 dark:border-slate-800 transition-colors">
+            <h1 class="text-3xl md:text-4xl font-extrabold text-gray-900 dark:text-white mb-8 border-b border-gray-200 dark:border-slate-800 pb-4">Política de Privacidade</h1>
+            
+            <p class="text-lg text-gray-700 dark:text-slate-300 mb-6">A sua privacidade é importante para nós. É política do <strong>Finanças News</strong> respeitar a sua privacidade em relação a qualquer informação sua que possamos coletar no site.</p>
+
+            <h2 class="text-2xl font-bold text-blue-600 dark:text-[#4ade80] mb-4 mt-8">1. Coleta de Dados</h2>
+            <p class="text-lg text-gray-700 dark:text-slate-300 mb-4">Não solicitamos informações pessoais, exceto quando realmente precisamos delas para fornecer um serviço. Fazemo-lo por meios justos e legais, com o seu conhecimento e consentimento.</p>
+
+            <h2 class="text-2xl font-bold text-blue-600 dark:text-[#4ade80] mb-4 mt-8">2. Google AdSense e Cookies</h2>
+            <p class="text-lg text-gray-700 dark:text-slate-300 mb-4">O Google, como fornecedor de terceiros, utiliza cookies para exibir anúncios em nosso site. Com o cookie DART, o Google pode exibir anúncios com base nas visitas que o usuário fez a este e outros sites na Internet.</p>
+
+            <h2 class="text-2xl font-bold text-blue-600 dark:text-[#4ade80] mb-4 mt-8">3. Links para Terceiros</h2>
+            <p class="text-lg text-gray-700 dark:text-slate-300 mb-8">Nosso site pode ter links para sites externos (como a corretora Binance) que não são operados por nós. Não temos controle sobre o conteúdo e práticas desses sites.</p>
+        </article>
+    </main>
+
+    <footer class="border-t border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] text-center py-8 mt-auto transition-colors">
+        <div class="container mx-auto px-4">
+            <p class="text-sm text-gray-500 dark:text-slate-500 font-medium">&copy; 2026 Finanças News. Desenvolvido por <a href="https://www.punkcodesolution.com.br/" target="_blank" rel="noopener noreferrer" class="text-gray-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-slate-100 transition font-semibold">Punk Code Solution</a>.</p>
+            <div class="mt-4 space-x-4 text-xs text-gray-500 dark:text-slate-600 flex justify-center font-semibold">
+                <a href="/quem-somos" class="hover:text-blue-600 dark:hover:text-slate-300 transition">Quem Somos</a>
+                <a href="/termos" class="hover:text-blue-600 dark:hover:text-slate-300 transition">Termos de Uso</a>
+                <a href="/privacidade" class="text-blue-600 dark:text-slate-300 transition">Privacidade</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        function setInitialThemeIcons() {
+            const darkIcon = document.getElementById('theme-toggle-dark-icon');
+            const lightIcon = document.getElementById('theme-toggle-light-icon');
+            if (!darkIcon || !lightIcon) return;
+            
+            if (document.documentElement.classList.contains('dark')) {
+                lightIcon.classList.remove('hidden');
+                darkIcon.classList.add('hidden');
+            } else {
+                darkIcon.classList.remove('hidden');
+                lightIcon.classList.add('hidden');
+            }
+        }
+
+        async function fetchMarketData() {
+            const tickerEl = document.getElementById('market-ticker');
+            const cachedHTML = sessionStorage.getItem('tickerHTML');
+            if (cachedHTML) { tickerEl.innerHTML = cachedHTML; return; }
+            try {
+                const resMoedas = await fetch('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL');
+                const dataMoedas = await resMoedas.json();
+                const formatCurrency = (value) => parseFloat(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                const formatPct = (pct) => parseFloat(pct) > 0 ? `+${pct}%` : `${pct}%`;
+                const getColorClass = (pct) => parseFloat(pct) >= 0 ? 'ticker-up' : 'ticker-down';
+                const usd = dataMoedas.USDBRL; const eur = dataMoedas.EURBRL; const btc = dataMoedas.BTCBRL;
+                const tickerHtml = `<span class="ticker-item"><span class="text-slate-400">🇺🇸 USD:</span> ${formatCurrency(usd.bid)} <span class="${getColorClass(usd.pctChange)}">(${formatPct(usd.pctChange)})</span></span><span class="ticker-item"><span class="text-slate-400">🇪🇺 EUR:</span> ${formatCurrency(eur.bid)} <span class="${getColorClass(eur.pctChange)}">(${formatPct(eur.pctChange)})</span></span><span class="ticker-item"><span class="text-slate-400">₿ BTC:</span> ${formatCurrency(btc.bid)} <span class="${getColorClass(btc.pctChange)}">(${formatPct(btc.pctChange)})</span></span>`;
+                const fullHtml = tickerHtml + tickerHtml + tickerHtml + tickerHtml;
+                tickerEl.innerHTML = fullHtml;
+                sessionStorage.setItem('tickerHTML', fullHtml);
+            } catch (error) { tickerEl.innerHTML = '<span class="ticker-item">Finanças News - Cotações em tempo real.</span>'; }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            setInitialThemeIcons();
+            fetchMarketData();
+
+            // Adiciona o funcionamento ao botão de tema
+            const themeBtn = document.getElementById('theme-toggle');
+            if (themeBtn) {
+                themeBtn.addEventListener('click', () => {
+                    const darkIcon = document.getElementById('theme-toggle-dark-icon');
+                    const lightIcon = document.getElementById('theme-toggle-light-icon');
+                    
+                    darkIcon.classList.toggle('hidden');
+                    lightIcon.classList.toggle('hidden');
+
+                    if (document.documentElement.classList.contains('dark')) {
+                        document.documentElement.classList.remove('dark');
+                        localStorage.setItem('color-theme', 'light');
+                    } else {
+                        document.documentElement.classList.add('dark');
+                        localStorage.setItem('color-theme', 'dark');
+                    }
+                });
+            }
+        });
+    </script>
 </body>
 </html>
