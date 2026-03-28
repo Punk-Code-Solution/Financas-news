@@ -94,9 +94,17 @@
                 </div>
             </div>
 
-            <div class="mt-12 pt-8 border-t border-gray-200 dark:border-slate-800 flex flex-col sm:flex-row justify-between items-center transition-colors">
-                <a href="{{ noticia[4] }}" target="_blank" class="bg-gray-900 dark:bg-[#4ade80] text-white dark:text-black px-6 py-3.5 rounded-md font-extrabold hover:bg-gray-800 dark:hover:bg-green-500 transition shadow-md w-full sm:w-auto text-center mb-4 sm:mb-0">Ler matéria original &rarr;</a>
-                <p class="text-sm text-gray-500 dark:text-slate-500 italic font-medium">Curadoria automatizada por Punk Code Solution</p>
+            <div class="mt-12 pt-6 border-t border-gray-200 dark:border-slate-800 transition-colors">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <p class="text-base font-bold text-gray-900 dark:text-white mb-1">Equipe de Análise - Finanças News</p>
+                        <p class="text-sm text-gray-500 dark:text-slate-400">Conteúdo gerado e revisado por motores de Inteligência Artificial da Punk Code Solution.</p>
+                    </div>
+                    <a href="{{ noticia[4] }}" target="_blank" rel="nofollow" class="text-sm text-blue-600 dark:text-[#4ade80] hover:underline font-medium flex items-center">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                        Acessar fonte da reportagem
+                    </a>
+                </div>
             </div>
         </article>
     </main>
