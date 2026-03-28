@@ -1,6 +1,5 @@
 import os
 from datetime import datetime
-import sqlite3
 import libsql_client
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.templating import Jinja2Templates
@@ -20,14 +19,21 @@ if os.path.exists("static"):
     app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# Captura as credenciais da nuvem
-TURSO_URL = os.environ.get("TURSO_DATABASE_URL")
-TURSO_TOKEN = os.environ.get("TURSO_AUTH_TOKEN")
-
+# ==========================================
+# CONEXÃO COM O BANCO DE DADOS
+# ==========================================
 def get_db():
-    if not TURSO_URL or not TURSO_TOKEN:
-        raise ValueError("Credenciais do Turso não encontradas.")
-    return libsql_client.create_client_sync(url=TURSO_URL, auth_token=TURSO_TOKEN)
+    # Puxa a URL direto do ambiente e já corrige na mesma hora, ignorando o cache
+    url = os.environ.get("TURSO_DATABASE_URL", "")
+    if url.startswith("wss://"):
+        url = url.replace("wss://", "libsql://")
+        
+    token = os.environ.get("TURSO_AUTH_TOKEN")
+    
+    if not url or not token:
+        raise ValueError("Credenciais do Turso não encontradas. Verifique seu arquivo .env ou variáveis de ambiente.")
+        
+    return libsql_client.create_client_sync(url=url, auth_token=token)
 
 # Garante que a tabela existe no novo banco de dados em nuvem ao iniciar
 try:
@@ -42,7 +48,6 @@ try:
             tag TEXT
         )
     ''')
-    # Adiciona a coluna sentimento de forma segura (ignora se já existir)
     try:
         startup_client.execute('ALTER TABLE news ADD COLUMN sentimento TEXT')
     except:
@@ -52,123 +57,48 @@ except Exception as e:
     print(f"Aviso: Falha na inicialização do Turso: {e}")
 
 # ==========================================
-# ROTAS DE PÁGINAS (FRONTEND)
+# ROTAS DE PÁGINAS (FRONTEND) - ATUALIZADAS PARA FASTAPI MODERNO
 # ==========================================
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, categoria: str = None, page: int = 1, q: str = None):
-    """
-    Página inicial com paginação.
-    - Em produção tenta usar Turso normalmente
-    - Localmente, se o Turso falhar (ex.: erro 505), cai para o SQLite `news.db`
-    """
+    client = get_db()
     limit = 20
     offset = (page - 1) * limit
-
-    def query_turso(client):
-        if q:
-            busca = f"%{q}%"
-            result = client.execute(
-                "SELECT * FROM news WHERE titulo LIKE ? OR resumo LIKE ? "
-                "ORDER BY id DESC LIMIT ? OFFSET ?",
-                [busca, busca, limit, offset],
-            )
-            count_res = client.execute(
-                "SELECT COUNT(*) FROM news WHERE titulo LIKE ? OR resumo LIKE ?",
-                [busca, busca],
-            )
-        elif categoria:
-            result = client.execute(
-                "SELECT * FROM news WHERE tag = ? "
-                "ORDER BY id DESC LIMIT ? OFFSET ?",
-                [categoria, limit, offset],
-            )
-            count_res = client.execute(
-                "SELECT COUNT(*) FROM news WHERE tag = ?",
-                [categoria],
-            )
-        else:
-            result = client.execute(
-                "SELECT * FROM news ORDER BY id DESC LIMIT ? OFFSET ?",
-                [limit, offset],
-            )
-            count_res = client.execute("SELECT COUNT(*) FROM news")
-
-        news = result.rows
-        total_news = count_res.rows[0][0]
-        return news, total_news
-
-    def query_sqlite():
-        conn = sqlite3.connect("news.db")
-        cur = conn.cursor()
-
-        if q:
-            busca = f"%{q}%"
-            cur.execute(
-                "SELECT id, titulo, resumo, impacto, link, tag, sentimento "
-                "FROM news WHERE titulo LIKE ? OR resumo LIKE ? "
-                "ORDER BY id DESC LIMIT ? OFFSET ?",
-                (busca, busca, limit, offset),
-            )
-            news = cur.fetchall()
-            cur.execute(
-                "SELECT COUNT(*) FROM news WHERE titulo LIKE ? OR resumo LIKE ?",
-                (busca, busca),
-            )
-        elif categoria:
-            cur.execute(
-                "SELECT id, titulo, resumo, impacto, link, tag, sentimento "
-                "FROM news WHERE tag = ? ORDER BY id DESC LIMIT ? OFFSET ?",
-                (categoria, limit, offset),
-            )
-            news = cur.fetchall()
-            cur.execute(
-                "SELECT COUNT(*) FROM news WHERE tag = ?",
-                (categoria,),
-            )
-        else:
-            cur.execute(
-                "SELECT id, titulo, resumo, impacto, link, tag, sentimento "
-                "FROM news ORDER BY id DESC LIMIT ? OFFSET ?",
-                (limit, offset),
-            )
-            news = cur.fetchall()
-            cur.execute("SELECT COUNT(*) FROM news")
-
-        total_news = cur.fetchone()[0]
-        conn.close()
-        return news, total_news
-
-    # Primeiro tenta Turso (produção)
-    news = []
-    total_news = 0
-    client = None
-    try:
-        client = get_db()
-        news, total_news = query_turso(client)
-    except Exception as e:
-        print(f"Aviso: erro ao buscar notícias no Turso, usando SQLite local: {e}")
-        news, total_news = query_sqlite()
-    finally:
-        if client is not None:
-            try:
-                client.close()
-            except Exception:
-                pass
-
-    total_pages = (total_news + limit - 1) // limit if total_news > 0 else 1
-
+    
+    if q:
+        busca = f"%{q}%"
+        result = client.execute('SELECT * FROM news WHERE titulo LIKE ? OR resumo LIKE ? ORDER BY id DESC LIMIT ? OFFSET ?', [busca, busca, limit, offset])
+        count_res = client.execute('SELECT COUNT(*) FROM news WHERE titulo LIKE ? OR resumo LIKE ?', [busca, busca])
+    elif categoria:
+        result = client.execute('SELECT * FROM news WHERE tag = ? ORDER BY id DESC LIMIT ? OFFSET ?', [categoria, limit, offset])
+        count_res = client.execute('SELECT COUNT(*) FROM news WHERE tag = ?', [categoria])
+    else:
+        result = client.execute('SELECT * FROM news ORDER BY id DESC LIMIT ? OFFSET ?', [limit, offset])
+        count_res = client.execute('SELECT COUNT(*) FROM news')
+    
+    news = result.rows
+    
+    total_news = count_res.rows[0][0]
+    total_pages = (total_news + limit - 1) // limit
+    if total_pages == 0:
+        total_pages = 1
+        
+    client.close()
+    
+    # FORMATO CORRIGIDO PARA EVITAR ERRO 500 (TypeError)
     return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
-            "news": news,
+        request=request,
+        name="index.html", 
+        context={
+            "request": request, 
+            "news": news, 
             "categoria_ativa": categoria,
             "page": page,
             "limit": limit,
             "q": q,
-            "total_pages": total_pages,
-        },
+            "total_pages": total_pages
+        }
     )
 
 @app.get("/noticia/{noticia_id}", response_class=HTMLResponse)
@@ -180,19 +110,35 @@ async def ver_noticia(request: Request, noticia_id: int):
     if not result.rows:
         raise HTTPException(status_code=404, detail="Notícia não encontrada")
         
-    return templates.TemplateResponse("noticia.html", {"request": request, "noticia": result.rows[0]})
+    return templates.TemplateResponse(
+        request=request,
+        name="noticia.html", 
+        context={"request": request, "noticia": result.rows[0]}
+    )
 
 @app.get("/quem-somos", response_class=HTMLResponse)
 async def quem_somos(request: Request):
-    return templates.TemplateResponse("quem-somos.html", {"request": request})
+    return templates.TemplateResponse(
+        request=request,
+        name="quem-somos.html", 
+        context={"request": request}
+    )
 
 @app.get("/privacidade", response_class=HTMLResponse)
 async def privacidade(request: Request):
-    return templates.TemplateResponse("privacidade.html", {"request": request})
+    return templates.TemplateResponse(
+        request=request,
+        name="privacidade.html", 
+        context={"request": request}
+    )
 
 @app.get("/termos", response_class=HTMLResponse)
 async def termos(request: Request):
-    return templates.TemplateResponse("termos.html", {"request": request})
+    return templates.TemplateResponse(
+        request=request,
+        name="termos.html", 
+        context={"request": request}
+    )
 
 # ==========================================
 # ROTAS DE SEO E INTEGRAÇÕES
@@ -244,7 +190,6 @@ def ping():
 
 @app.get("/api/rodar-robo")
 def rodar_robo(token: str = None):
-    # Proteção: Só roda se a senha estiver na URL
     if token != "punkcode2026":
         raise HTTPException(status_code=401, detail="Não autorizado")
         
@@ -258,11 +203,9 @@ def rodar_robo(token: str = None):
     salvas = 0
     
     for n in noticias_geradas:
-        # QA: Verifica se a notícia já existe no banco (evita duplicidade)
         check = client.execute("SELECT id FROM news WHERE link = ?", [n["original_link"]])
         
         if not check.rows:
-            # Salva definitivamente na Nuvem (Turso) com a coluna Sentimento
             client.execute('''
                 INSERT INTO news (titulo, resumo, impacto, link, tag, sentimento)
                 VALUES (?, ?, ?, ?, ?, ?)
@@ -272,7 +215,7 @@ def rodar_robo(token: str = None):
                 n["impacto_bolso"],
                 n["original_link"],
                 n["tag"],
-                n.get("sentimento", "Neutro") # Garante que envia o sentimento ou "Neutro"
+                n.get("sentimento", "Neutro")
             ])
             salvas += 1
             
