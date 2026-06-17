@@ -10,7 +10,7 @@
     
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Finanças News | O Essencial do Mercado" />
-    <meta property="og:description" content="Agregador de notícias financeiras automatizado por IA." />
+    <meta property="og:description" content="Análises financeiras com dados de mercado, indicadores do Banco Central e cruzamento de fontes." />
     <meta property="og:url" content="{{ request.url }}" />
     <meta property="og:site_name" content="Finanças News" />
     
@@ -77,6 +77,8 @@
                     <a href="/" class="px-4 py-1.5 rounded-md transition {% if not categoria_ativa and not q %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">Últimas Notícias</a>
                     <a href="/?categoria=Cripto" class="px-4 py-1.5 rounded-md transition {% if categoria_ativa == 'Cripto' %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">Cripto</a>
                     <a href="/?categoria=Economia" class="px-4 py-1.5 rounded-md transition {% if categoria_ativa == 'Economia' %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">Economia</a>
+                    <a href="/?categoria=Dólar" class="px-4 py-1.5 rounded-md transition {% if categoria_ativa == 'Dólar' %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">Dólar</a>
+                    <a href="/?categoria=Ações" class="px-4 py-1.5 rounded-md transition {% if categoria_ativa == 'Ações' %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">Ações</a>
                 </div>
 
                 <div class="flex items-center gap-4">
@@ -115,7 +117,10 @@
                 <article class="bg-white dark:bg-[#1e293b] rounded-xl p-6 border border-gray-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-slate-700 transition duration-300 flex flex-col shadow-sm dark:shadow-none">
                     <div class="flex justify-between items-center mb-4">
                         <span class="bg-blue-100 dark:bg-white text-blue-800 dark:text-blue-900 text-xs font-bold px-3 py-1 rounded-full">{{ n[5] }}</span>
-                        <span class="text-gray-500 dark:text-slate-400 text-xs font-medium">Atualizado Hoje</span>
+                        <span class="text-gray-500 dark:text-slate-400 text-xs font-medium">
+                            {% if n|length > 7 and n[7] %}{{ n[7] }}{% else %}Atualizado Hoje{% endif %}
+                            {% if n|length > 8 and n[8] %} · {{ n[8] }}{% endif %}
+                        </span>
                     </div>
 
                     <a href="/noticia/{{ n[0] }}" class="group">

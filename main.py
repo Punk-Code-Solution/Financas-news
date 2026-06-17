@@ -1,6 +1,5 @@
 import os
-from datetime import datetime
-import libsql_client
+import json
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -9,8 +8,8 @@ import uvicorn
 from dotenv import load_dotenv
 
 import core
+from db import get_db, ensure_schema
 
-# Carrega as chaves do arquivo .env (se estiver rodando localmente)
 load_dotenv()
 
 app = FastAPI()
@@ -19,39 +18,9 @@ if os.path.exists("static"):
     app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# ==========================================
-# CONEXÃO COM O BANCO DE DADOS
-# ==========================================
-def get_db():
-    # Puxa a URL direto do ambiente e já corrige na mesma hora, ignorando o cache
-    url = os.environ.get("TURSO_DATABASE_URL", "")
-    if url.startswith("wss://"):
-        url = url.replace("wss://", "libsql://")
-        
-    token = os.environ.get("TURSO_AUTH_TOKEN")
-    
-    if not url or not token:
-        raise ValueError("Credenciais do Turso não encontradas. Verifique seu arquivo .env ou variáveis de ambiente.")
-        
-    return libsql_client.create_client_sync(url=url, auth_token=token)
-
-# Garante que a tabela existe no novo banco de dados em nuvem ao iniciar
 try:
     startup_client = get_db()
-    startup_client.execute('''
-        CREATE TABLE IF NOT EXISTS news (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            titulo TEXT,
-            resumo TEXT,
-            impacto TEXT,
-            link TEXT,
-            tag TEXT
-        )
-    ''')
-    try:
-        startup_client.execute('ALTER TABLE news ADD COLUMN sentimento TEXT')
-    except:
-        pass
+    ensure_schema(startup_client)
     startup_client.close()
 except Exception as e:
     print(f"Aviso: Falha na inicialização do Turso: {e}")
@@ -109,11 +78,23 @@ async def ver_noticia(request: Request, noticia_id: int):
     
     if not result.rows:
         raise HTTPException(status_code=404, detail="Notícia não encontrada")
-        
+
+    noticia = result.rows[0]
+    dados_mercado = {}
+    if len(noticia) > 9 and noticia[9]:
+        try:
+            dados_mercado = json.loads(noticia[9])
+        except json.JSONDecodeError:
+            pass
+
     return templates.TemplateResponse(
         request=request,
-        name="noticia.html", 
-        context={"request": request, "noticia": result.rows[0]}
+        name="noticia.html",
+        context={
+            "request": request,
+            "noticia": noticia,
+            "dados_mercado": dados_mercado,
+        },
     )
 
 @app.get("/quem-somos", response_class=HTMLResponse)
@@ -207,15 +188,19 @@ def rodar_robo(token: str = None):
         
         if not check.rows:
             client.execute('''
-                INSERT INTO news (titulo, resumo, impacto, link, tag, sentimento)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO news (titulo, resumo, impacto, link, tag, sentimento, published_at, fonte, dados_mercado, contexto_editorial)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', [
                 n["titulo_viral"],
                 n["resumo_simples"],
                 n["impacto_bolso"],
                 n["original_link"],
                 n["tag"],
-                n.get("sentimento", "Neutro")
+                n.get("sentimento", "Neutro"),
+                n.get("published_at"),
+                n.get("fonte"),
+                n.get("dados_mercado"),
+                n.get("contexto_editorial", ""),
             ])
             salvas += 1
             
