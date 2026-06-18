@@ -5,6 +5,8 @@ import os
 from bs4 import BeautifulSoup
 from datetime import datetime
 import json
+import re
+import time
 from typing import Any
 from dotenv import load_dotenv
 import requests
@@ -12,7 +14,15 @@ import requests
 from db import get_editorial_context
 
 load_dotenv()
-api_key = os.getenv("GOOGLE_API_KEY")
+api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+
+DEFAULT_GEMINI_MODELOS = [
+    "gemini-3.1-flash-lite-preview",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
+]
+
+_exhausted_models: set[str] = set()
 
 if not api_key:
     print("❌ ERRO CRÍTICO: Chave API não encontrada no .env")
@@ -26,8 +36,8 @@ HEADERS = {
 
 RSS_FEEDS = [
     {
-        "url": "https://br.cointelegraph.com/rss",
-        "fonte": "Cointelegraph Brasil",
+        "url": "https://livecoins.com.br/feed/",
+        "fonte": "Livecoins",
         "tag_hint": "Cripto",
     },
     {
@@ -154,6 +164,80 @@ def format_data_context(market, bcb, db_context):
     return "\n".join(lines)
 
 
+def get_gemini_modelos() -> list[str]:
+    raw = os.getenv("GEMINI_MODELOS", "")
+    if raw.strip():
+        return [m.strip() for m in raw.split(",") if m.strip()]
+    return DEFAULT_GEMINI_MODELOS.copy()
+
+
+def _is_daily_quota_error(exc: Exception) -> bool:
+    msg = str(exc)
+    return "PerDay" in msg or "PerDayPerProjectPerModel" in msg
+
+
+def _is_rpm_quota_error(exc: Exception) -> bool:
+    msg = str(exc)
+    return "PerMinute" in msg or "PerMinutePerProjectPerModel" in msg
+
+
+def _extract_retry_delay(exc: Exception) -> float:
+    match = re.search(r"retry in (\d+(?:\.\d+)?)s", str(exc), re.IGNORECASE)
+    if match:
+        return float(match.group(1))
+    return 35.0
+
+
+def generate_content_with_fallback(prompt: str) -> str | None:
+    """Tenta modelos em ordem; troca em cota diária; espera só em limite por minuto."""
+    if not client:
+        return None
+
+    modelos = [m for m in get_gemini_modelos() if m not in _exhausted_models]
+    if not modelos:
+        print("   ❌ Todos os modelos Gemini esgotaram a cota diária nesta execução.")
+        return None
+
+    config = types.GenerateContentConfig(
+        response_mime_type="application/json",
+        temperature=0.7,
+    )
+
+    for model in modelos:
+        rpm_retries = 0
+        max_rpm_retries = 3
+
+        while rpm_retries <= max_rpm_retries:
+            try:
+                print(f"   🤖 Modelo: {model}")
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=config,
+                )
+                if not response.text:
+                    return None
+                return response.text
+
+            except Exception as e:
+                if _is_daily_quota_error(e):
+                    print(f"   ⚠️ Cota diária esgotada em {model} — próximo modelo.")
+                    _exhausted_models.add(model)
+                    break
+
+                if _is_rpm_quota_error(e) and rpm_retries < max_rpm_retries:
+                    delay = _extract_retry_delay(e)
+                    print(f"   ⏳ Limite por minuto em {model}, aguardando {delay:.0f}s...")
+                    time.sleep(delay)
+                    rpm_retries += 1
+                    continue
+
+                print(f"   ❌ Erro na IA ({model}): {e}")
+                break
+
+    return None
+
+
 def process_news_with_ai(title, content, fonte, tag_hint, market_context):
     if not client:
         return None
@@ -205,20 +289,13 @@ Retorne APENAS JSON válido (sem ```json):
 """
 
     try:
-        response = client.models.generate_content(
-            model="gemini-flash-latest",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.7,
-            ),
-        )
-        if not response.text:
+        text = generate_content_with_fallback(prompt)
+        if not text:
             return None
-        text = response.text.replace("```json", "").replace("```", "").strip()
+        text = text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
     except Exception as e:
-        print(f"   ❌ Erro na IA: {e}")
+        print(f"   ❌ Erro ao processar resposta da IA: {e}")
         return None
 
 
@@ -236,7 +313,9 @@ def extract_entry_content(entry) -> str:
 
 def fetch_and_process(max_per_feed=2):
     noticias_processadas = []
+    _exhausted_models.clear()
     print(f"\n--- Iniciando Varredura: {datetime.now()} ---")
+    print(f"   🧠 Modelos Gemini: {', '.join(get_gemini_modelos())}")
 
     market = fetch_market_snapshot()
     bcb = fetch_bcb_snapshot()
@@ -273,6 +352,10 @@ def fetch_and_process(max_per_feed=2):
                     continue
 
                 ai_data = process_news_with_ai(entry.title, clean_text, fonte, tag_hint, data_context)
+
+                if ai_data is None and len(_exhausted_models) >= len(get_gemini_modelos()):
+                    print("   🛑 Cota diária esgotada em todos os modelos — interrompendo varredura.")
+                    return noticias_processadas
 
                 if ai_data:
                     published = datetime.now().strftime("%d/%m/%Y %H:%M")
