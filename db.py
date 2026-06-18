@@ -31,11 +31,19 @@ def ensure_schema(client):
         ("fonte", "TEXT"),
         ("dados_mercado", "TEXT"),
         ("contexto_editorial", "TEXT"),
+        ("created_at", "TEXT"),
     ]:
         try:
             client.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
         except Exception:
             pass
+
+    client.execute("""
+        UPDATE news
+        SET created_at = published_at
+        WHERE (created_at IS NULL OR created_at = '')
+          AND published_at IS NOT NULL AND published_at != ''
+    """)
 
 
 def get_editorial_context(tag_hint=None, limit=6):

@@ -29,6 +29,13 @@ except Exception as e:
 # ROTAS DE PÁGINAS (FRONTEND) - ATUALIZADAS PARA FASTAPI MODERNO
 # ==========================================
 
+NEWS_SELECT = """
+    SELECT id, titulo, resumo, impacto, link, tag, sentimento,
+           COALESCE(NULLIF(published_at, ''), created_at) AS data_publicacao,
+           fonte, dados_mercado, contexto_editorial
+    FROM news
+"""
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, categoria: str = None, page: int = 1, q: str = None):
     client = get_db()
@@ -37,13 +44,19 @@ async def index(request: Request, categoria: str = None, page: int = 1, q: str =
     
     if q:
         busca = f"%{q}%"
-        result = client.execute('SELECT * FROM news WHERE titulo LIKE ? OR resumo LIKE ? ORDER BY id DESC LIMIT ? OFFSET ?', [busca, busca, limit, offset])
+        result = client.execute(
+            NEWS_SELECT + " WHERE titulo LIKE ? OR resumo LIKE ? ORDER BY id DESC LIMIT ? OFFSET ?",
+            [busca, busca, limit, offset],
+        )
         count_res = client.execute('SELECT COUNT(*) FROM news WHERE titulo LIKE ? OR resumo LIKE ?', [busca, busca])
     elif categoria:
-        result = client.execute('SELECT * FROM news WHERE tag = ? ORDER BY id DESC LIMIT ? OFFSET ?', [categoria, limit, offset])
+        result = client.execute(
+            NEWS_SELECT + " WHERE tag = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+            [categoria, limit, offset],
+        )
         count_res = client.execute('SELECT COUNT(*) FROM news WHERE tag = ?', [categoria])
     else:
-        result = client.execute('SELECT * FROM news ORDER BY id DESC LIMIT ? OFFSET ?', [limit, offset])
+        result = client.execute(NEWS_SELECT + " ORDER BY id DESC LIMIT ? OFFSET ?", [limit, offset])
         count_res = client.execute('SELECT COUNT(*) FROM news')
     
     news = result.rows
@@ -73,7 +86,7 @@ async def index(request: Request, categoria: str = None, page: int = 1, q: str =
 @app.get("/noticia/{noticia_id}", response_class=HTMLResponse)
 async def ver_noticia(request: Request, noticia_id: int):
     client = get_db()
-    result = client.execute('SELECT * FROM news WHERE id = ?', [noticia_id])
+    result = client.execute(NEWS_SELECT + " WHERE id = ?", [noticia_id])
     client.close()
     
     if not result.rows:
@@ -187,9 +200,10 @@ def rodar_robo(token: str = None):
         check = client.execute("SELECT id FROM news WHERE link = ?", [n["original_link"]])
         
         if not check.rows:
+            agora = n.get("published_at")
             client.execute('''
-                INSERT INTO news (titulo, resumo, impacto, link, tag, sentimento, published_at, fonte, dados_mercado, contexto_editorial)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO news (titulo, resumo, impacto, link, tag, sentimento, published_at, fonte, dados_mercado, contexto_editorial, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', [
                 n["titulo_viral"],
                 n["resumo_simples"],
@@ -197,10 +211,11 @@ def rodar_robo(token: str = None):
                 n["original_link"],
                 n["tag"],
                 n.get("sentimento", "Neutro"),
-                n.get("published_at"),
+                agora,
                 n.get("fonte"),
                 n.get("dados_mercado"),
                 n.get("contexto_editorial", ""),
+                agora,
             ])
             salvas += 1
             

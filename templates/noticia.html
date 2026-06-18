@@ -82,13 +82,13 @@
             <h1 class="text-3xl md:text-5xl font-black text-gray-900 dark:text-white mb-4 leading-tight">{{ noticia[1] }}</h1>
 
             <div class="flex flex-wrap items-center gap-3 mb-8 text-sm text-gray-500 dark:text-slate-400">
-                {% if noticia|length > 7 and noticia[7] %}
+                {% if noticia[7] %}
                 <span class="flex items-center gap-1">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                    {{ noticia[7] }}
+                    Publicado em {{ noticia[7] }}
                 </span>
                 {% endif %}
-                {% if noticia|length > 8 and noticia[8] %}
+                {% if noticia[8] %}
                 <span class="flex items-center gap-1">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path></svg>
                     Fonte: {{ noticia[8] }}
@@ -96,7 +96,7 @@
                 {% endif %}
             </div>
 
-            {% if noticia|length > 10 and noticia[10] %}
+            {% if noticia[10] %}
             <div class="mb-8 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-xl p-6">
                 <h3 class="text-xs font-black text-blue-700 dark:text-blue-300 uppercase tracking-wider mb-2">📊 Panorama de Mercado no Momento da Análise</h3>
                 <p class="text-base text-blue-900 dark:text-blue-100 leading-relaxed">{{ noticia[10] }}</p>
