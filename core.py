@@ -5,6 +5,7 @@ import os
 from bs4 import BeautifulSoup
 from datetime import datetime
 import json
+from typing import Any
 from dotenv import load_dotenv
 import requests
 
@@ -78,9 +79,9 @@ def _format_brl(value):
         return "n/d"
 
 
-def fetch_market_snapshot():
+def fetch_market_snapshot() -> dict[str, Any]:
     """Cotações em tempo real via AwesomeAPI."""
-    snapshot = {"coletado_em": datetime.now().strftime("%d/%m/%Y %H:%M")}
+    snapshot: dict[str, Any] = {"coletado_em": datetime.now().strftime("%d/%m/%Y %H:%M")}
     try:
         res = requests.get(
             "https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL",
@@ -103,9 +104,9 @@ def fetch_market_snapshot():
     return snapshot
 
 
-def fetch_bcb_snapshot():
+def fetch_bcb_snapshot() -> dict[str, dict[str, Any]]:
     """Indicadores macro do Banco Central do Brasil."""
-    snapshot = {}
+    snapshot: dict[str, dict[str, Any]] = {}
     labels = {
         "selic_meta": "Selic meta (% a.a.)",
         "ipca_12m": "IPCA acumulado 12 meses (%)",
@@ -212,11 +213,25 @@ Retorne APENAS JSON válido (sem ```json):
                 temperature=0.7,
             ),
         )
+        if not response.text:
+            return None
         text = response.text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
     except Exception as e:
         print(f"   ❌ Erro na IA: {e}")
         return None
+
+
+def extract_entry_content(entry) -> str:
+    summary = entry.get("summary")
+    if summary:
+        return str(summary)
+    content_list = entry.get("content") or []
+    if not content_list:
+        return ""
+    first_item = content_list[0]
+    value = first_item.get("value") if hasattr(first_item, "get") else getattr(first_item, "value", "")
+    return str(value or "")
 
 
 def fetch_and_process(max_per_feed=2):
@@ -250,7 +265,7 @@ def fetch_and_process(max_per_feed=2):
             for entry in feed.entries[:max_per_feed]:
                 print(f"   📄 Encontrada: {entry.title[:60]}...")
 
-                raw_content = entry.get("summary", "") or entry.get("content", [{"value": ""}])[0]["value"]
+                raw_content = extract_entry_content(entry)
                 clean_text = clean_html(raw_content)
 
                 if len(clean_text) < 80:
