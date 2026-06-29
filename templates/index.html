@@ -73,12 +73,11 @@
             </a>
 
             <div class="flex flex-col md:flex-row items-center gap-4 lg:gap-6 w-full lg:w-auto">
-                <div class="flex space-x-2 text-sm font-semibold justify-center">
-                    <a href="/" class="px-4 py-1.5 rounded-md transition {% if not categoria_ativa and not q %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">Últimas Notícias</a>
-                    <a href="/?categoria=Cripto" class="px-4 py-1.5 rounded-md transition {% if categoria_ativa == 'Cripto' %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">Cripto</a>
-                    <a href="/?categoria=Economia" class="px-4 py-1.5 rounded-md transition {% if categoria_ativa == 'Economia' %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">Economia</a>
-                    <a href="/?categoria=Dólar" class="px-4 py-1.5 rounded-md transition {% if categoria_ativa == 'Dólar' %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">Dólar</a>
-                    <a href="/?categoria=Ações" class="px-4 py-1.5 rounded-md transition {% if categoria_ativa == 'Ações' %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">Ações</a>
+                <div class="flex flex-wrap gap-1.5 text-xs md:text-sm font-semibold justify-center max-w-3xl">
+                    <a href="/" class="px-3 py-1.5 rounded-md transition whitespace-nowrap {% if not categoria_ativa and not q %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">Últimas</a>
+                    {% for cat in categorias %}
+                    <a href="/?categoria={{ cat | urlencode }}" class="px-3 py-1.5 rounded-md transition whitespace-nowrap {% if categoria_ativa == cat %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">{{ cat }}</a>
+                    {% endfor %}
                 </div>
 
                 <div class="flex items-center gap-4">
@@ -110,11 +109,24 @@
         </div>
         {% endif %}
 
+        {% if request.query_params.get('newsletter') == 'ok' %}
+        <div class="mb-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 text-center">
+            <p class="text-green-800 dark:text-green-300 font-semibold text-sm">✅ Inscrição registrada! Em breve você receberá nossas análises.</p>
+        </div>
+        {% endif %}
+
         <div class="flex flex-col lg:flex-row gap-8 w-full items-start">
             <div class="w-full lg:w-2/3 flex flex-col gap-6">
                 
                 {% for n in news %}
-                <article class="bg-white dark:bg-[#1e293b] rounded-xl p-6 border border-gray-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-slate-700 transition duration-300 flex flex-col shadow-sm dark:shadow-none">
+                <article class="bg-white dark:bg-[#1e293b] rounded-xl overflow-hidden border border-gray-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-slate-700 transition duration-300 flex flex-col shadow-sm dark:shadow-none">
+                    {% if n[11] %}
+                    <a href="/noticia/{{ n[0] }}" class="block">
+                        <img src="{{ n[11] }}" alt="{{ n[1] }}" loading="lazy"
+                             class="w-full h-48 object-cover">
+                    </a>
+                    {% endif %}
+                    <div class="p-6 flex flex-col flex-grow">
                     <div class="flex justify-between items-center mb-4">
                         <span class="bg-blue-100 dark:bg-white text-blue-800 dark:text-blue-900 text-xs font-bold px-3 py-1 rounded-full">{{ n[5] }}</span>
                         <span class="text-gray-500 dark:text-slate-400 text-xs font-medium">
@@ -141,6 +153,7 @@
                         <a href="/noticia/{{ n[0] }}" class="text-blue-600 dark:text-[#4ade80] text-sm hover:text-blue-800 dark:hover:text-green-300 transition font-semibold">
                             Ler análise completa &rarr;
                         </a>
+                    </div>
                     </div>
                 </article>
                 {% endfor %}
@@ -186,25 +199,7 @@
             </div>
 
             <aside class="w-full lg:w-1/3 flex flex-col gap-6">
-                <div class="bg-gray-100 dark:bg-[#1e293b] rounded-xl border border-gray-200 dark:border-slate-800 p-2 text-center min-h-[250px] flex items-center justify-center transition-colors">
-                    <ins class="adsbygoogle"
-                         style="display:block; width:100%;"
-                         data-ad-client="ca-pub-3623062544438213"
-                         data-ad-slot="1234567890"
-                         data-ad-format="auto"
-                         data-full-width-responsive="true"></ins>
-                    <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
-                </div>
-
-                <div class="bg-gray-900 dark:bg-[#1e293b] rounded-xl p-8 border border-gray-800 dark:border-slate-800 text-center shadow-lg transition-colors">
-                    <h3 class="text-[#facc15] font-black text-3xl mb-3 tracking-wide">BINANCE</h3>
-                    <p class="text-white font-bold text-xl mb-3">Lucre com Cripto Hoje</p>
-                    <p class="text-gray-400 dark:text-slate-400 text-sm mb-6 leading-relaxed">Cadastre-se na maior corretora do mundo e ganhe bônus em USDC.</p>
-                    <a href="https://accounts.binance.com/pt-BR/register" target="_blank" rel="noopener noreferrer" 
-                       class="block w-full bg-[#facc15] text-black font-extrabold py-3 rounded-md hover:bg-yellow-500 transition shadow-md">
-                        Resgatar Bônus Agora 🚀
-                    </a>
-                </div>
+                {% include "partials/sidebar_monetization.html" %}
             </aside>
         </div>
     </main>

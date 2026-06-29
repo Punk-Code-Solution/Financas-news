@@ -1,22 +1,32 @@
 import os
 import json
-from fastapi import FastAPI, Request, Response, HTTPException
+from datetime import datetime
+from fastapi import FastAPI, Request, Response, HTTPException, Form
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 import uvicorn
 from dotenv import load_dotenv
 
 import core
 from db import get_db, ensure_schema
+from monetization import get_monetization_config
 
 load_dotenv()
 
 app = FastAPI()
 
+ARTICLE_IMAGES_DIR = os.getenv("ARTICLE_IMAGES_DIR", "static/images/articles")
+os.makedirs(ARTICLE_IMAGES_DIR, exist_ok=True)
+os.makedirs("static/images/articles", exist_ok=True)
+
 if os.path.exists("static"):
     app.mount("/static", StaticFiles(directory="static"), name="static")
+if os.path.isdir(ARTICLE_IMAGES_DIR):
+    app.mount("/media/articles", StaticFiles(directory=ARTICLE_IMAGES_DIR), name="article_images")
 templates = Jinja2Templates(directory="templates")
+
+CATEGORIAS = core.VALID_TAGS
 
 try:
     startup_client = get_db()
@@ -32,7 +42,7 @@ except Exception as e:
 NEWS_SELECT = """
     SELECT id, titulo, resumo, impacto, link, tag, sentimento,
            COALESCE(NULLIF(published_at, ''), created_at) AS data_publicacao,
-           fonte, dados_mercado, contexto_editorial
+           fonte, dados_mercado, contexto_editorial, imagem_url
     FROM news
 """
 
@@ -76,10 +86,12 @@ async def index(request: Request, categoria: str = None, page: int = 1, q: str =
             "request": request, 
             "news": news, 
             "categoria_ativa": categoria,
+            "categorias": CATEGORIAS,
             "page": page,
             "limit": limit,
             "q": q,
-            "total_pages": total_pages
+            "total_pages": total_pages,
+            "monetization": get_monetization_config(),
         }
     )
 
@@ -107,8 +119,32 @@ async def ver_noticia(request: Request, noticia_id: int):
             "request": request,
             "noticia": noticia,
             "dados_mercado": dados_mercado,
+            "monetization": get_monetization_config(),
+            "categorias": CATEGORIAS,
         },
     )
+
+@app.post("/api/newsletter")
+async def newsletter_signup(email: str = Form(...)):
+    email = email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="E-mail inválido")
+
+    config = get_monetization_config()
+    if config["newsletter_external_url"]:
+        return RedirectResponse(url=config["newsletter_external_url"], status_code=303)
+
+    agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+    client = get_db()
+    try:
+        client.execute(
+            "INSERT INTO newsletter_subscribers (email, created_at) VALUES (?, ?)",
+            [email, agora],
+        )
+    except Exception:
+        pass
+    client.close()
+    return RedirectResponse(url="/?newsletter=ok", status_code=303)
 
 @app.get("/quem-somos", response_class=HTMLResponse)
 async def quem_somos(request: Request):
@@ -202,8 +238,8 @@ def rodar_robo(token: str = None):
         if not check.rows:
             agora = n.get("published_at")
             client.execute('''
-                INSERT INTO news (titulo, resumo, impacto, link, tag, sentimento, published_at, fonte, dados_mercado, contexto_editorial, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO news (titulo, resumo, impacto, link, tag, sentimento, published_at, fonte, dados_mercado, contexto_editorial, created_at, imagem_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', [
                 n["titulo_viral"],
                 n["resumo_simples"],
@@ -216,6 +252,7 @@ def rodar_robo(token: str = None):
                 n.get("dados_mercado"),
                 n.get("contexto_editorial", ""),
                 agora,
+                n.get("imagem_url"),
             ])
             salvas += 1
             

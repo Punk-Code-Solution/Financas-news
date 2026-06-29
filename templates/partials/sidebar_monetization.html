@@ -1,0 +1,53 @@
+{# Sidebar de monetização — AdSense preservado + afiliados + newsletter #}
+<div class="bg-gray-100 dark:bg-[#1e293b] rounded-xl border border-gray-200 dark:border-slate-800 p-2 text-center min-h-[250px] flex items-center justify-center transition-colors">
+    <ins class="adsbygoogle"
+         style="display:block; width:100%;"
+         data-ad-client="ca-pub-3623062544438213"
+         data-ad-slot="1234567890"
+         data-ad-format="auto"
+         data-full-width-responsive="true"></ins>
+    <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+</div>
+
+{% for aff in monetization.affiliates %}
+<div class="rounded-xl p-6 border text-center shadow-lg transition-colors
+    {% if aff.destaque %}bg-gray-900 dark:bg-[#1e293b] border-gray-800 dark:border-slate-800{% else %}bg-white dark:bg-[#1e293b] border-gray-200 dark:border-slate-800{% endif %}">
+    <p class="text-xs font-bold uppercase tracking-wider mb-1 {% if aff.destaque %}text-[#facc15]{% else %}text-blue-600 dark:text-[#4ade80]{% endif %}">{{ aff.nome }}</p>
+    <h3 class="{% if aff.destaque %}text-white{% else %}text-gray-900 dark:text-white{% endif %} font-bold text-lg mb-2">{{ aff.titulo }}</h3>
+    <p class="{% if aff.destaque %}text-gray-400{% else %}text-gray-600 dark:text-slate-400{% endif %} text-sm mb-4 leading-relaxed">{{ aff.descricao }}</p>
+    <a href="{{ aff.url }}" target="_blank" rel="noopener sponsored"
+       class="block w-full font-extrabold py-2.5 rounded-md transition text-sm
+       {% if aff.destaque %}bg-[#facc15] text-black hover:bg-yellow-500{% else %}bg-blue-600 dark:bg-[#4ade80] text-white dark:text-gray-900 hover:opacity-90{% endif %}">
+        {{ aff.cta }}
+    </a>
+    <p class="text-[10px] text-gray-500 dark:text-slate-500 mt-2">Link de afiliado/parceiro</p>
+</div>
+{% endfor %}
+
+{% if monetization.amazon_books_url %}
+<div class="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-5 border border-amber-200 dark:border-amber-800/50">
+    <h3 class="text-sm font-black text-amber-800 dark:text-amber-300 uppercase tracking-wider mb-2">📚 Leitura Recomendada</h3>
+    <p class="text-sm text-amber-900 dark:text-amber-100 mb-3">Livros sobre finanças e investimentos na Amazon Brasil.</p>
+    <a href="{{ monetization.amazon_books_url }}" target="_blank" rel="noopener sponsored"
+       class="text-sm font-bold text-amber-700 dark:text-amber-300 hover:underline">Ver livros na Amazon →</a>
+</div>
+{% endif %}
+
+<div class="bg-gradient-to-br from-blue-600 to-indigo-700 dark:from-slate-800 dark:to-slate-900 rounded-xl p-6 border border-blue-500/30 text-white">
+    <h3 class="font-black text-xl mb-2">📬 Newsletter Finanças News</h3>
+    <p class="text-blue-100 dark:text-slate-300 text-sm mb-4">Receba as principais análises e alertas de mercado no seu e-mail. Grátis.</p>
+    {% if monetization.newsletter_external_url %}
+    <a href="{{ monetization.newsletter_external_url }}" target="_blank" rel="noopener"
+       class="block w-full bg-white text-blue-700 font-bold py-2.5 rounded-md hover:bg-blue-50 transition text-center text-sm">
+        Inscrever-se
+    </a>
+    {% else %}
+    <form action="/api/newsletter" method="POST" class="flex flex-col gap-2">
+        <input type="email" name="email" required placeholder="seu@email.com"
+               class="rounded-md px-3 py-2 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-white/50">
+        <button type="submit" class="bg-[#4ade80] text-gray-900 font-bold py-2.5 rounded-md hover:bg-green-400 transition text-sm">
+            Quero receber análises
+        </button>
+    </form>
+    {% endif %}
+</div>

@@ -7,6 +7,8 @@ services:
     envVars:
       - key: GOOGLE_API_KEY
         sync: false
+      - key: ARTICLE_IMAGES_DIR
+        value: /var/data/article_images
     disk:
       name: sqlite-data
       mountPath: /var/data

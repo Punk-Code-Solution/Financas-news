@@ -4,7 +4,9 @@ import feedparser
 import os
 from bs4 import BeautifulSoup
 from datetime import datetime
+import hashlib
 import json
+from pathlib import Path
 import re
 import time
 from typing import Any
@@ -15,6 +17,19 @@ from db import get_editorial_context
 
 load_dotenv()
 api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+
+VALID_TAGS = [
+    "Cripto",
+    "Economia",
+    "Dólar",
+    "Ações",
+    "Juros",
+    "Inflação",
+    "Imóveis",
+    "Fintech",
+    "Commodities",
+    "Política Econômica",
+]
 
 DEFAULT_GEMINI_MODELOS = [
     "gemini-3.1-flash-lite-preview",
@@ -59,6 +74,51 @@ RSS_FEEDS = [
         "url": "https://exame.com/feed/",
         "fonte": "Exame",
         "tag_hint": "Economia",
+    },
+    {
+        "url": "https://www.moneytimes.com.br/feed/",
+        "fonte": "Money Times",
+        "tag_hint": "Ações",
+    },
+    {
+        "url": "https://neofeed.com.br/feed/",
+        "fonte": "NeoFeed",
+        "tag_hint": "Fintech",
+    },
+    {
+        "url": "https://valor.globo.com/financas/rss.xml",
+        "fonte": "Valor Econômico",
+        "tag_hint": "Economia",
+    },
+    {
+        "url": "https://www.infomoney.com.br/temas/mercado-imobiliario/feed/",
+        "fonte": "InfoMoney Imóveis",
+        "tag_hint": "Imóveis",
+    },
+    {
+        "url": "https://br.investing.com/rss/news_301.rss",
+        "fonte": "Investing Commodities",
+        "tag_hint": "Commodities",
+    },
+    {
+        "url": "https://g1.globo.com/dynamo/politica/rss2.xml",
+        "fonte": "G1 Política",
+        "tag_hint": "Política Econômica",
+    },
+    {
+        "url": "https://www.infomoney.com.br/temas/inflacao/feed/",
+        "fonte": "InfoMoney Inflação",
+        "tag_hint": "Inflação",
+    },
+    {
+        "url": "https://www.infomoney.com.br/temas/juros/feed/",
+        "fonte": "InfoMoney Juros",
+        "tag_hint": "Juros",
+    },
+    {
+        "url": "https://br.investing.com/rss/news_25.rss",
+        "fonte": "Investing Forex",
+        "tag_hint": "Dólar",
     },
 ]
 
@@ -188,6 +248,105 @@ def _extract_retry_delay(exc: Exception) -> float:
     return 35.0
 
 
+def get_article_images_dir() -> Path:
+    base = os.getenv("ARTICLE_IMAGES_DIR", "static/images/articles")
+    path = Path(base)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def get_gemini_image_models() -> list[str]:
+    raw = os.getenv("GEMINI_IMAGE_MODELOS", "")
+    if raw.strip():
+        return [m.strip() for m in raw.split(",") if m.strip()]
+    return [
+        "gemini-2.5-flash-image",
+        "gemini-2.0-flash-preview-image-generation",
+        "imagen-4.0-fast-generate-001",
+    ]
+
+
+def _save_image_bytes(data: bytes, mime_type: str, slug: str) -> str | None:
+    ext = "png" if "png" in (mime_type or "") else "jpg"
+    filename = f"{slug}.{ext}"
+    filepath = get_article_images_dir() / filename
+    filepath.write_bytes(data)
+    return f"/media/articles/{filename}"
+
+
+def _extract_image_from_response(response) -> tuple[bytes, str] | None:
+    candidates = getattr(response, "candidates", None) or []
+    for candidate in candidates:
+        content = getattr(candidate, "content", None)
+        if not content:
+            continue
+        for part in getattr(content, "parts", None) or []:
+            inline = getattr(part, "inline_data", None)
+            if inline and getattr(inline, "data", None):
+                return inline.data, getattr(inline, "mime_type", "image/jpeg")
+
+    generated = getattr(response, "generated_images", None) or []
+    for item in generated:
+        image = getattr(item, "image", None)
+        if image and getattr(image, "image_bytes", None):
+            return image.image_bytes, getattr(image, "mime_type", "image/jpeg")
+    return None
+
+
+def generate_article_image(title: str, tag: str, link: str) -> str | None:
+    """Gera capa editorial; retorna URL pública ou None em caso de falha."""
+    if not client:
+        return None
+
+    slug = hashlib.sha256(link.encode()).hexdigest()[:16]
+    images_dir = get_article_images_dir()
+    for existing in images_dir.glob(f"{slug}.*"):
+        return f"/media/articles/{existing.name}"
+
+    prompt = (
+        f"Editorial cover illustration for a Brazilian financial news article. "
+        f"Topic: {tag}. Headline theme: {title[:120]}. "
+        f"Professional, modern, no text overlays, no logos, no watermarks. "
+        f"Colors suited to finance journalism, abstract market visuals."
+    )
+
+    for model in get_gemini_image_models():
+        try:
+            print(f"   🖼️ Gerando imagem ({model})...")
+            if model.startswith("imagen"):
+                response = client.models.generate_images(
+                    model=model,
+                    prompt=prompt,
+                    config=types.GenerateImagesConfig(
+                        number_of_images=1,
+                        output_mime_type="image/jpeg",
+                        aspect_ratio="16:9",
+                    ),
+                )
+            else:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["IMAGE"],
+                        image_config=types.ImageConfig(aspect_ratio="16:9"),
+                    ),
+                )
+
+            extracted = _extract_image_from_response(response)
+            if extracted:
+                data, mime_type = extracted
+                url = _save_image_bytes(data, mime_type, slug)
+                print(f"   ✅ Imagem salva: {url}")
+                return url
+        except Exception as e:
+            print(f"   ⚠️ Falha na geração de imagem ({model}): {e}")
+            continue
+
+    print("   ⚠️ Imagem não gerada — artigo seguirá sem capa.")
+    return None
+
+
 def generate_content_with_fallback(prompt: str) -> str | None:
     """Tenta modelos em ordem; troca em cota diária; espera só em limite por minuto."""
     if not client:
@@ -244,6 +403,7 @@ def process_news_with_ai(title, content, fonte, tag_hint, market_context):
 
     print(f"   🤖 Enviando para IA: {title[:40]}...")
 
+    tags_list = ", ".join(VALID_TAGS)
     prompt = f"""
 Você é o editor-chefe de análise do portal "Finanças News" (financas-news.net.br), especializado em economia brasileira, mercado de capitais e criptoativos.
 
@@ -282,7 +442,7 @@ Retorne APENAS JSON válido (sem ```json):
     "resumo_simples": "Artigo completo de 6 parágrafos com \\n\\n entre eles. Mínimo 500 palavras.",
     "contexto_mercado": "Box de 3-4 frases com os principais números citados (cotações, Selic, IPCA) formatados para leitura rápida.",
     "impacto_bolso": "3 frases diretas: impacto no bolso, na poupança/investimentos e no custo de vida.",
-    "tag": "UMA de: Cripto, Economia, Dólar, Ações",
+    "tag": "UMA de: {tags_list}",
     "sentimento": "UM de: Positivo, Negativo, Neutro",
     "dados_citados": ["lista dos dados numéricos que você efetivamente usou no texto"]
 }}
@@ -358,11 +518,23 @@ def fetch_and_process(max_per_feed=2):
                     return noticias_processadas
 
                 if ai_data:
+                    tag = ai_data.get("tag", tag_hint)
+                    if tag not in VALID_TAGS:
+                        tag = tag_hint if tag_hint in VALID_TAGS else "Economia"
+                        ai_data["tag"] = tag
+
+                    imagem_url = generate_article_image(
+                        ai_data.get("titulo_viral", entry.title),
+                        tag,
+                        entry.link,
+                    )
+
                     published = datetime.now().strftime("%d/%m/%Y %H:%M")
                     news_item = {
                         "original_link": entry.link,
                         "fonte": fonte,
                         "published_at": published,
+                        "imagem_url": imagem_url,
                         "dados_mercado": json.dumps(
                             {"cotacoes": market, "bcb": bcb, "dados_citados": ai_data.get("dados_citados", [])},
                             ensure_ascii=False,

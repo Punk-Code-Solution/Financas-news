@@ -32,6 +32,7 @@ def ensure_schema(client):
         ("dados_mercado", "TEXT"),
         ("contexto_editorial", "TEXT"),
         ("created_at", "TEXT"),
+        ("imagem_url", "TEXT"),
     ]:
         try:
             client.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
@@ -43,6 +44,14 @@ def ensure_schema(client):
         SET created_at = published_at
         WHERE (created_at IS NULL OR created_at = '')
           AND published_at IS NOT NULL AND published_at != ''
+    """)
+
+    client.execute("""
+        CREATE TABLE IF NOT EXISTS newsletter_subscribers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            created_at TEXT NOT NULL
+        )
     """)
 
 
