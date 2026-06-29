@@ -139,6 +139,9 @@ async def newsletter_signup(email: str = Form(...)):
         raise HTTPException(status_code=400, detail="E-mail inválido")
 
     config = get_monetization_config()
+    if not config.get("newsletter_enabled"):
+        raise HTTPException(status_code=404, detail="Newsletter indisponível")
+
     newsletter_url = config.get("newsletter_external_url")
     if isinstance(newsletter_url, str) and newsletter_url:
         return RedirectResponse(url=newsletter_url, status_code=303)

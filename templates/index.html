@@ -16,7 +16,9 @@
     
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3623062544438213" crossorigin="anonymous"></script>
+    {% if monetization.adsense.enabled %}
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ monetization.adsense.client }}" crossorigin="anonymous"></script>
+    {% endif %}
 
     <script>
         tailwind.config = {
@@ -53,6 +55,12 @@
         
         ins.adsbygoogle[data-ad-status="unfilled"] { display: none !important; }
 
+        .filter-scroll {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .filter-scroll::-webkit-scrollbar { display: none; }
+
         .dark select option { background-color: #1e293b !important; color: #ffffff !important; }
         select option { background-color: #ffffff; color: #000000; }
     </style>
@@ -65,25 +73,17 @@
         </div>
     </div>
 
-    <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] transition-colors duration-200 pt-4 pb-4 sticky top-0 z-50">
-        <div class="container mx-auto px-4 flex flex-col lg:flex-row justify-between items-center gap-4">
-            
-            <a href="/" class="text-2xl font-black tracking-tighter">
-                <span class="text-blue-600 dark:text-[#4ade80]">FINANÇAS</span><span class="text-gray-900 dark:text-white">NEWS</span>
-            </a>
+    <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] transition-colors duration-200 sticky top-0 z-50">
+        <div class="container mx-auto px-4 pt-3 pb-2">
+            <div class="flex justify-between items-center gap-3">
+                <a href="/" class="text-2xl font-black tracking-tighter shrink-0">
+                    <span class="text-blue-600 dark:text-[#4ade80]">FINANÇAS</span><span class="text-gray-900 dark:text-white">NEWS</span>
+                </a>
 
-            <div class="flex flex-col md:flex-row items-center gap-4 lg:gap-6 w-full lg:w-auto">
-                <div class="flex flex-wrap gap-1.5 text-xs md:text-sm font-semibold justify-center max-w-3xl">
-                    <a href="/" class="px-3 py-1.5 rounded-md transition whitespace-nowrap {% if not categoria_ativa and not q %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">Últimas</a>
-                    {% for cat in categorias %}
-                    <a href="/?categoria={{ cat | urlencode }}" class="px-3 py-1.5 rounded-md transition whitespace-nowrap {% if categoria_ativa == cat %}bg-gray-100 dark:bg-[#1e293b] text-blue-700 dark:text-white{% else %}text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white{% endif %}">{{ cat }}</a>
-                    {% endfor %}
-                </div>
-
-                <div class="flex items-center gap-4">
-                    <form action="/" method="GET" class="relative">
-                        <input type="text" name="q" value="{{ q if q else '' }}" placeholder="Pesquisar..." 
-                               class="bg-gray-100 dark:bg-[#1e293b] border border-gray-300 dark:border-slate-700 text-gray-800 dark:text-slate-200 text-sm rounded-full px-4 py-1.5 focus:outline-none focus:border-blue-500 dark:focus:border-slate-500 placeholder-gray-500 dark:placeholder-slate-500 w-48 transition-colors">
+                <div class="flex items-center gap-2 shrink-0">
+                    <form action="/" method="GET" class="relative hidden sm:block">
+                        <input type="text" name="q" value="{{ q if q else '' }}" placeholder="Pesquisar..."
+                               class="bg-gray-100 dark:bg-[#1e293b] border border-gray-300 dark:border-slate-700 text-gray-800 dark:text-slate-200 text-sm rounded-full px-4 py-1.5 focus:outline-none focus:border-blue-500 dark:focus:border-slate-500 placeholder-gray-500 dark:placeholder-slate-500 w-40 lg:w-48 transition-colors">
                         <button type="submit" class="absolute right-3 top-2 text-gray-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                         </button>
@@ -99,6 +99,21 @@
                     </button>
                 </div>
             </div>
+
+            <div class="filter-scroll flex items-center gap-1 overflow-x-auto mt-2 pb-2 -mx-1 px-1">
+                <a href="/" class="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition {% if not categoria_ativa and not q %}bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-900{% else %}text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800{% endif %}">Últimas</a>
+                {% for cat in categorias %}
+                <a href="/?categoria={{ cat | urlencode }}" class="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition {% if categoria_ativa == cat %}bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-900{% else %}text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800{% endif %}">{{ cat }}</a>
+                {% endfor %}
+            </div>
+
+            <form action="/" method="GET" class="relative sm:hidden mt-1 pb-1">
+                <input type="text" name="q" value="{{ q if q else '' }}" placeholder="Pesquisar..."
+                       class="w-full bg-gray-100 dark:bg-[#1e293b] border border-gray-300 dark:border-slate-700 text-gray-800 dark:text-slate-200 text-sm rounded-full px-4 py-1.5 focus:outline-none focus:border-blue-500 placeholder-gray-500">
+                <button type="submit" class="absolute right-3 top-2 text-gray-500 dark:text-slate-400">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </button>
+            </form>
         </div>
     </nav>
 
@@ -116,7 +131,7 @@
         {% endif %}
 
         <div class="flex flex-col lg:flex-row gap-8 w-full items-start">
-            <div class="w-full lg:w-2/3 flex flex-col gap-6">
+            <div class="w-full {% if monetization.sidebar_visible %}lg:w-2/3{% endif %} flex flex-col gap-6">
                 
                 {% for n in news %}
                 <article class="bg-white dark:bg-[#1e293b] rounded-xl overflow-hidden border border-gray-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-slate-700 transition duration-300 flex flex-col shadow-sm dark:shadow-none">
@@ -198,9 +213,11 @@
                 </div>
             </div>
 
+            {% if monetization.sidebar_visible %}
             <aside class="w-full lg:w-1/3 flex flex-col gap-6">
                 {% include "partials/sidebar_monetization.html" %}
             </aside>
+            {% endif %}
         </div>
     </main>
 

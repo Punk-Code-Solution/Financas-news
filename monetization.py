@@ -1,4 +1,4 @@
-"""Configuração de monetização — links via variáveis de ambiente."""
+"""Configuração de monetização — só exibe blocos com variáveis de ambiente definidas."""
 import os
 from typing import TypedDict
 
@@ -21,7 +21,7 @@ DEFAULT_AFFILIATES: list[AffiliateItem] = [
         "titulo": "Lucre com Cripto Hoje",
         "descricao": "Cadastre-se na maior corretora do mundo e ganhe bônus em USDC.",
         "cta": "Resgatar Bônus Agora",
-        "url": "https://accounts.binance.com/pt-BR/register",
+        "url": "",
         "destaque": True,
         "cor": "yellow",
     },
@@ -31,7 +31,7 @@ DEFAULT_AFFILIATES: list[AffiliateItem] = [
         "titulo": "Invista na Bolsa Brasileira",
         "descricao": "Abra conta na maior corretora do Brasil e acesse fundos, ações e renda fixa.",
         "cta": "Abrir Conta na XP",
-        "url": "https://www.xpi.com.br/",
+        "url": "",
         "destaque": False,
         "cor": "blue",
     },
@@ -41,7 +41,7 @@ DEFAULT_AFFILIATES: list[AffiliateItem] = [
         "titulo": "Cripto com Segurança BR",
         "descricao": "A exchange brasileira pioneira em bitcoin e altcoins regulamentada.",
         "cta": "Começar na MB",
-        "url": "https://www.mercadobitcoin.com.br/",
+        "url": "",
         "destaque": False,
         "cor": "green",
     },
@@ -51,7 +51,7 @@ DEFAULT_AFFILIATES: list[AffiliateItem] = [
         "titulo": "Banco de Investimentos",
         "descricao": "Produtos exclusivos, renda fixa e gestão patrimonial de alto nível.",
         "cta": "Conhecer o BTG",
-        "url": "https://www.btgpactual.com/",
+        "url": "",
         "destaque": False,
         "cor": "slate",
     },
@@ -65,47 +65,75 @@ ENV_AFFILIATE_KEYS = {
 }
 
 
-def get_monetization_config() -> dict[str, object]:
-    amazon_tag = os.getenv("AMAZON_AFFILIATE_TAG", "").strip()
-    newsletter_external = os.getenv("NEWSLETTER_URL", "").strip()
-    sponsored_url = os.getenv("SPONSORED_SLOT_URL", "").strip()
-    sponsored_label = os.getenv("SPONSORED_SLOT_LABEL", "Patrocínio").strip()
+def _env(key: str) -> str:
+    return os.getenv(key, "").strip()
 
-    affiliates = []
+
+def get_monetization_config() -> dict[str, object]:
+    adsense_client = _env("GOOGLE_ADSENSE_CLIENT")
+    adsense_slot = _env("ADSENSE_AD_SLOT")
+    adsense_enabled = bool(adsense_client)
+
+    affiliates: list[dict[str, object]] = []
     for item in DEFAULT_AFFILIATES:
         env_key = ENV_AFFILIATE_KEYS.get(item["id"])
-        base_url = item["url"]
-        url = os.getenv(env_key, base_url).strip() if env_key else base_url
+        if not env_key:
+            continue
+        url = _env(env_key)
         if url:
             affiliates.append({**item, "url": url})
 
-    amazon_url = ""
-    if amazon_tag:
-        amazon_url = (
-            f"https://www.amazon.com.br/s?k=finanças+investimentos&tag={amazon_tag}"
-        )
+    amazon_tag = _env("AMAZON_AFFILIATE_TAG")
+    amazon_url = (
+        f"https://www.amazon.com.br/s?k=finanças+investimentos&tag={amazon_tag}"
+        if amazon_tag
+        else ""
+    )
+
+    newsletter_external = _env("NEWSLETTER_URL")
+    newsletter_enabled = bool(newsletter_external) or _env("NEWSLETTER_ENABLED").lower() == "true"
+
+    sponsored_url = _env("SPONSORED_SLOT_URL")
+    sponsored_enabled = bool(sponsored_url)
+
+    premium_enabled = _env("PREMIUM_TEASER_ENABLED").lower() == "true"
+
+    sidebar_visible = (
+        adsense_enabled
+        or bool(affiliates)
+        or bool(amazon_url)
+        or newsletter_enabled
+    )
+
+    article_extras_visible = sponsored_enabled or premium_enabled or adsense_enabled
 
     return {
+        "adsense": {
+            "enabled": adsense_enabled,
+            "client": adsense_client,
+            "slot": adsense_slot or "1234567890",
+        },
         "affiliates": affiliates,
         "amazon_books_url": amazon_url,
         "newsletter_external_url": newsletter_external,
-        "newsletter_capture_local": not newsletter_external,
+        "newsletter_enabled": newsletter_enabled,
+        "newsletter_capture_local": newsletter_enabled and not newsletter_external,
         "sponsored": {
-            "enabled": bool(sponsored_url),
+            "enabled": sponsored_enabled,
             "url": sponsored_url,
-            "label": sponsored_label,
-            "titulo": os.getenv("SPONSORED_SLOT_TITLE", "Oportunidade para investidores"),
-            "descricao": os.getenv(
-                "SPONSORED_SLOT_DESC",
-                "Conheça produtos e serviços selecionados pela nossa equipe editorial.",
-            ),
+            "label": _env("SPONSORED_SLOT_LABEL") or "Patrocínio",
+            "titulo": _env("SPONSORED_SLOT_TITLE") or "Oportunidade para investidores",
+            "descricao": _env("SPONSORED_SLOT_DESC")
+            or "Conheça produtos e serviços selecionados pela nossa equipe editorial.",
         },
         "premium_teaser": {
-            "enabled": os.getenv("PREMIUM_TEASER_ENABLED", "true").lower() != "false",
+            "enabled": premium_enabled,
             "titulo": "Análises Premium em breve",
             "descricao": (
                 "Alertas personalizados, relatórios semanais e cenários exclusivos "
                 "para quem quer ir além das manchetes."
             ),
         },
+        "sidebar_visible": sidebar_visible,
+        "article_extras_visible": article_extras_visible,
     }

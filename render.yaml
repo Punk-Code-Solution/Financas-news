@@ -10,6 +10,12 @@ services:
         value: 3.13.7
       - key: GOOGLE_API_KEY
         sync: false
+      - key: GOOGLE_ADSENSE_CLIENT
+        sync: false
+      - key: ADSENSE_AD_SLOT
+        sync: false
+      - key: AFFILIATE_BINANCE_URL
+        sync: false
       - key: TURSO_DATABASE_URL
         sync: false
       - key: TURSO_AUTH_TOKEN

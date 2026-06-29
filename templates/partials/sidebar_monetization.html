@@ -1,13 +1,15 @@
-{# Sidebar de monetização — AdSense preservado + afiliados + newsletter #}
+{# Só renderiza blocos com variáveis de ambiente configuradas #}
+{% if monetization.adsense.enabled %}
 <div class="bg-gray-100 dark:bg-[#1e293b] rounded-xl border border-gray-200 dark:border-slate-800 p-2 text-center min-h-[250px] flex items-center justify-center transition-colors">
     <ins class="adsbygoogle"
          style="display:block; width:100%;"
-         data-ad-client="ca-pub-3623062544438213"
-         data-ad-slot="1234567890"
+         data-ad-client="{{ monetization.adsense.client }}"
+         data-ad-slot="{{ monetization.adsense.slot }}"
          data-ad-format="auto"
          data-full-width-responsive="true"></ins>
     <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
 </div>
+{% endif %}
 
 {% for aff in monetization.affiliates %}
 <div class="rounded-xl p-6 border text-center shadow-lg transition-colors
@@ -33,6 +35,7 @@
 </div>
 {% endif %}
 
+{% if monetization.newsletter_enabled %}
 <div class="bg-gradient-to-br from-blue-600 to-indigo-700 dark:from-slate-800 dark:to-slate-900 rounded-xl p-6 border border-blue-500/30 text-white">
     <h3 class="font-black text-xl mb-2">📬 Newsletter Finanças News</h3>
     <p class="text-blue-100 dark:text-slate-300 text-sm mb-4">Receba as principais análises e alertas de mercado no seu e-mail. Grátis.</p>
@@ -51,3 +54,4 @@
     </form>
     {% endif %}
 </div>
+{% endif %}
