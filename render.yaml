@@ -2,10 +2,17 @@ services:
   - type: web
     name: invest-auto-news
     env: python
+    runtime: python-3.13.7
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.7
       - key: GOOGLE_API_KEY
+        sync: false
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
         sync: false
       - key: ARTICLE_IMAGES_DIR
         value: /var/data/article_images
