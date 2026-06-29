@@ -47,7 +47,7 @@ NEWS_SELECT = """
 """
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request, categoria: str = None, page: int = 1, q: str = None):
+async def index(request: Request, categoria: str | None = None, page: int = 1, q: str | None = None):
     client = get_db()
     limit = 20
     offset = (page - 1) * limit
@@ -71,7 +71,13 @@ async def index(request: Request, categoria: str = None, page: int = 1, q: str =
     
     news = result.rows
     
-    total_news = count_res.rows[0][0]
+    row_count = count_res.rows[0][0]
+    if isinstance(row_count, (int, float)):
+        total_news = int(row_count)
+    elif isinstance(row_count, str):
+        total_news = int(row_count)
+    else:
+        total_news = 0
     total_pages = (total_news + limit - 1) // limit
     if total_pages == 0:
         total_pages = 1
@@ -108,7 +114,9 @@ async def ver_noticia(request: Request, noticia_id: int):
     dados_mercado = {}
     if len(noticia) > 9 and noticia[9]:
         try:
-            dados_mercado = json.loads(noticia[9])
+            raw_dados = noticia[9]
+            if isinstance(raw_dados, (str, bytes, bytearray)):
+                dados_mercado = json.loads(raw_dados)
         except json.JSONDecodeError:
             pass
 
@@ -131,8 +139,9 @@ async def newsletter_signup(email: str = Form(...)):
         raise HTTPException(status_code=400, detail="E-mail inválido")
 
     config = get_monetization_config()
-    if config["newsletter_external_url"]:
-        return RedirectResponse(url=config["newsletter_external_url"], status_code=303)
+    newsletter_url = config.get("newsletter_external_url")
+    if isinstance(newsletter_url, str) and newsletter_url:
+        return RedirectResponse(url=newsletter_url, status_code=303)
 
     agora = datetime.now().strftime("%d/%m/%Y %H:%M")
     client = get_db()
@@ -219,7 +228,7 @@ def ping():
     return {"status": "Render acordado!"}
 
 @app.get("/api/rodar-robo")
-def rodar_robo(token: str = None):
+def rodar_robo(token: str | None = None):
     if token != "punkcode2026":
         raise HTTPException(status_code=401, detail="Não autorizado")
         

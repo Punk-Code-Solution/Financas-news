@@ -523,15 +523,16 @@ def fetch_and_process(max_per_feed=2):
                         tag = tag_hint if tag_hint in VALID_TAGS else "Economia"
                         ai_data["tag"] = tag
 
+                    entry_link = str(getattr(entry, "link", "") or "")
                     imagem_url = generate_article_image(
                         ai_data.get("titulo_viral", entry.title),
                         tag,
-                        entry.link,
+                        entry_link,
                     )
 
                     published = datetime.now().strftime("%d/%m/%Y %H:%M")
                     news_item = {
-                        "original_link": entry.link,
+                        "original_link": entry_link,
                         "fonte": fonte,
                         "published_at": published,
                         "imagem_url": imagem_url,

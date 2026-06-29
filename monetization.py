@@ -1,7 +1,20 @@
 """Configuração de monetização — links via variáveis de ambiente."""
 import os
+from typing import TypedDict
 
-DEFAULT_AFFILIATES = [
+
+class AffiliateItem(TypedDict):
+    id: str
+    nome: str
+    titulo: str
+    descricao: str
+    cta: str
+    url: str
+    destaque: bool
+    cor: str
+
+
+DEFAULT_AFFILIATES: list[AffiliateItem] = [
     {
         "id": "binance",
         "nome": "Binance",
@@ -52,7 +65,7 @@ ENV_AFFILIATE_KEYS = {
 }
 
 
-def get_monetization_config() -> dict:
+def get_monetization_config() -> dict[str, object]:
     amazon_tag = os.getenv("AMAZON_AFFILIATE_TAG", "").strip()
     newsletter_external = os.getenv("NEWSLETTER_URL", "").strip()
     sponsored_url = os.getenv("SPONSORED_SLOT_URL", "").strip()
@@ -61,7 +74,8 @@ def get_monetization_config() -> dict:
     affiliates = []
     for item in DEFAULT_AFFILIATES:
         env_key = ENV_AFFILIATE_KEYS.get(item["id"])
-        url = os.getenv(env_key, item["url"]).strip() if env_key else item["url"]
+        base_url = item["url"]
+        url = os.getenv(env_key, base_url).strip() if env_key else base_url
         if url:
             affiliates.append({**item, "url": url})
 
