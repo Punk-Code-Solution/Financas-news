@@ -1,6 +1,5 @@
 import html
 import re
-import threading
 from typing import Any
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
@@ -876,38 +875,18 @@ def build_article_enrichment(
     tag: str,
     dados_mercado: dict[str, Any],
     resumo: str = "",
+    published_at: object = None,
+    created_at: object = None,
 ) -> dict[str, Any]:
     import core
 
-    market_data = dict(dados_mercado)
-    # Preferir dados salvos no artigo; rede só via cache/timeout curto.
-    if not market_data.get("cotacoes") and not market_data.get("bcb"):
-        from concurrent.futures import ThreadPoolExecutor
-
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            f_m = pool.submit(core.fetch_market_snapshot, False)
-            f_b = pool.submit(core.fetch_bcb_snapshot, False)
-            market_data["cotacoes"] = f_m.result()
-            market_data["bcb"] = f_b.result()
-    elif not market_data.get("cotacoes"):
-        market_data["cotacoes"] = core.fetch_market_snapshot(blocking=False)
-    elif not market_data.get("bcb"):
-        market_data["bcb"] = core.fetch_bcb_snapshot(blocking=False)
-
-    if not market_data.get("historico"):
-        cached_hist = core._cache_get("market_hist_30_90") or core._cache_get_stale("market_hist_30_90")
-        if cached_hist:
-            market_data["historico"] = cached_hist
-        else:
-            market_data["historico"] = {}
-
-            def _warm_hist():
-                try:
-                    core.fetch_market_historical()
-                except Exception:
-                    pass
-
-            threading.Thread(target=_warm_hist, daemon=True).start()
+    # Dados do período da análise — nunca injeta cotações de "hoje".
+    market_data = core.resolve_article_market_data(
+        dados_mercado,
+        published_at=published_at,
+        created_at=created_at,
+        blocking_hist=False,
+    )
 
     refs = market_data.get("referencias_internas") or []
     if refs:
@@ -924,6 +903,8 @@ def build_article_enrichment(
         tag,
         noticia_id,
     )
+    if market_data.get("periodo_analise"):
+        market_stats["periodo_analise"] = market_data["periodo_analise"]
 
     faq_items = []
     for item in market_data.get("faq") or []:
@@ -937,11 +918,18 @@ def build_article_enrichment(
             "resposta_html": link_inline_html(resposta, market_data.get("referencias_internas")),
         })
 
+    charts = build_historical_charts(market_data.get("historico", {}), tag)
+    periodo = market_data.get("periodo_analise")
+    if periodo:
+        for chart in charts:
+            if "até" not in (chart.get("label") or ""):
+                chart["label"] = f"{chart.get('label', '')} (até {periodo})"
+
     return {
         "market_stats": market_stats,
         "related_articles": related_articles,
         "acervo_stats": acervo,
-        "historical_charts": build_historical_charts(market_data.get("historico", {}), tag),
+        "historical_charts": charts,
         "before_after": build_before_after(market_data),
         "relevance": build_relevance_meta(market_data),
         "trust": build_trust_box(market_data, acervo["total"], tag),
@@ -957,4 +945,5 @@ def build_article_enrichment(
         "data_source_links": DATA_SOURCE_LINKS,
         "linked_resumo": "".join(linked_parts),
         "linked_resumo_parts": linked_parts,
+        "periodo_analise": periodo,
     }

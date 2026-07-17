@@ -3,6 +3,7 @@ import json
 import threading
 import time
 from datetime import datetime
+from typing import Any
 from fastapi import FastAPI, Request, Response, HTTPException, Form
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -11,7 +12,7 @@ import uvicorn
 from dotenv import load_dotenv
 
 import core
-from db import get_db, ensure_schema
+from db import QueryResult, get_db, ensure_schema
 from monetization import get_monetization_config, get_contextual_affiliate
 from article_enrichment import (
     build_article_enrichment,
@@ -38,7 +39,7 @@ templates = Jinja2Templates(directory="templates")
 CATEGORIAS = core.VALID_TAGS
 
 # Cache curto da listagem da home (evita round-trips repetidos no Turso).
-_HOME_CACHE: dict[str, tuple[float, dict]] = {}
+_HOME_CACHE: dict[str, tuple[float, dict[str, object]]] = {}
 _HOME_CACHE_LOCK = threading.Lock()
 _HOME_CACHE_TTL = float(os.getenv("HOME_CACHE_TTL", "20"))
 
@@ -114,7 +115,7 @@ def _home_cache_key(categoria: str | None, page: int, q: str | None) -> str:
     return f"{categoria or ''}|{page}|{(q or '').strip().lower()}"
 
 
-def _load_home_listing(categoria: str | None, page: int, q: str | None) -> dict:
+def _load_home_listing(categoria: str | None, page: int, q: str | None) -> dict[str, object]:
     cache_key = _home_cache_key(categoria, page, q)
     now = time.time()
     with _HOME_CACHE_LOCK:
@@ -126,6 +127,8 @@ def _load_home_listing(categoria: str | None, page: int, q: str | None) -> dict:
     limit = 20
     offset = (page - 1) * limit
 
+    result: QueryResult
+    count_res: QueryResult
     if q:
         busca = f"%{q}%"
         result = client.execute(
@@ -150,7 +153,7 @@ def _load_home_listing(categoria: str | None, page: int, q: str | None) -> dict:
         count_res = client.execute("SELECT COUNT(*) FROM news")
 
     news = result.rows
-    suggested_news = []
+    suggested_news: list[Any] = []
     if not news and (categoria or q):
         if categoria:
             suggested_result = client.execute(
@@ -164,7 +167,7 @@ def _load_home_listing(categoria: str | None, page: int, q: str | None) -> dict:
             )
         suggested_news = suggested_result.rows
 
-    row_count = count_res.rows[0][0]
+    row_count = count_res.rows[0][0] if count_res.rows else 0
     if isinstance(row_count, (int, float)):
         total_news = int(row_count)
     elif isinstance(row_count, str):
@@ -175,7 +178,7 @@ def _load_home_listing(categoria: str | None, page: int, q: str | None) -> dict:
     if total_pages == 0:
         total_pages = 1
 
-    payload = {
+    payload: dict[str, object] = {
         "news": news,
         "suggested_news": suggested_news,
         "total_pages": total_pages,
@@ -246,6 +249,8 @@ def ver_noticia(request: Request, noticia_id: int):
         tag,
         dados_mercado,
         resumo=resumo,
+        published_at=noticia[7] if len(noticia) > 7 else None,
+        created_at=None,
     )
     contextual_affiliate = get_contextual_affiliate(tag)
 

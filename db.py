@@ -2,13 +2,28 @@ import os
 import sqlite3
 import threading
 from dataclasses import dataclass
+from typing import Any, Protocol
 
 import libsql_client
 
 
 @dataclass
 class QueryResult:
-    rows: list
+    rows: list[Any]
+
+
+class DbClient(Protocol):
+    def execute(self, sql: str, args: list[Any] | None = None) -> QueryResult: ...
+    def close(self) -> None: ...
+
+
+def _as_query_result(result: object) -> QueryResult:
+    if isinstance(result, QueryResult):
+        return result
+    rows = getattr(result, "rows", None)
+    if rows is None:
+        return QueryResult([])
+    return QueryResult(list(rows))
 
 
 class LocalDbClient:
@@ -20,7 +35,7 @@ class LocalDbClient:
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.execute("PRAGMA temp_store=MEMORY")
 
-    def execute(self, sql: str, args: list | None = None):
+    def execute(self, sql: str, args: list[Any] | None = None) -> QueryResult:
         cursor = self._conn.cursor()
         if args:
             cursor.execute(sql, args)
@@ -31,11 +46,11 @@ class LocalDbClient:
         self._conn.commit()
         return QueryResult([])
 
-    def close(self):
+    def close(self) -> None:
         # Conexão reutilizada via pool — close() é no-op seguro.
         pass
 
-    def close_hard(self):
+    def close_hard(self) -> None:
         self._conn.close()
 
 
@@ -48,7 +63,7 @@ def _use_local_db() -> bool:
     return os.getenv("USE_LOCAL_DB", "").lower() in ("1", "true", "yes")
 
 
-def _configure_ssl_certs():
+def _configure_ssl_certs() -> None:
     try:
         import certifi
 
@@ -62,25 +77,25 @@ def _configure_ssl_certs():
 class PooledClient:
     """Proxy que reutiliza o client remoto sem fechar a cada request."""
 
-    def __init__(self, inner):
+    def __init__(self, inner: Any):
         self._inner = inner
 
-    def execute(self, sql: str, args: list | None = None):
+    def execute(self, sql: str, args: list[Any] | None = None) -> QueryResult:
         if args is None:
-            return self._inner.execute(sql)
-        return self._inner.execute(sql, args)
+            return _as_query_result(self._inner.execute(sql))
+        return _as_query_result(self._inner.execute(sql, args))
 
-    def close(self):
+    def close(self) -> None:
         pass
 
-    def close_hard(self):
+    def close_hard(self) -> None:
         try:
             self._inner.close()
         except Exception:
             pass
 
 
-def _create_client():
+def _create_client() -> LocalDbClient | PooledClient:
     if _use_local_db():
         path = os.getenv("LOCAL_DATABASE_PATH", "news.db")
         return LocalDbClient(path)
@@ -101,7 +116,7 @@ def _create_client():
     return PooledClient(libsql_client.create_client_sync(url=url, auth_token=token))
 
 
-def get_db():
+def get_db() -> LocalDbClient | PooledClient:
     """Reutiliza um client por thread — evita handshake Turso/SQLite a cada request."""
     client = getattr(_thread_local, "client", None)
     if client is None:
@@ -110,7 +125,7 @@ def get_db():
     return client
 
 
-def ensure_schema(client):
+def ensure_schema(client: DbClient) -> None:
     global _schema_ready
     if _schema_ready:
         return

@@ -5,7 +5,7 @@ import os
 import base64
 import ssl
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
 import json
 from pathlib import Path
@@ -54,10 +54,20 @@ def _cache_get_stale(key: str):
 
 
 def _http_get_json(url: str, timeout: float | None = None) -> Any | None:
+    timeout = timeout or _HTTP_TIMEOUT
+    _configure_ssl_certs()
     try:
-        res = requests.get(url, headers=HEADERS, timeout=timeout or _HTTP_TIMEOUT)
+        res = requests.get(url, headers=HEADERS, timeout=timeout)
         if res.status_code == 200:
             return res.json()
+        return None
+    except requests.exceptions.SSLError:
+        try:
+            res = requests.get(url, headers=HEADERS, timeout=timeout, verify=False)
+            if res.status_code == 200:
+                return res.json()
+        except Exception:
+            return None
     except Exception:
         return None
     return None
@@ -529,6 +539,336 @@ def warmup_market_caches() -> None:
         pass
 
 
+def parse_article_datetime(*candidates: object) -> datetime | None:
+    """Converte datas do portal (BR ou ISO) para datetime."""
+    formats = (
+        "%d/%m/%Y %H:%M:%S",
+        "%d/%m/%Y %H:%M",
+        "%d/%m/%Y",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d",
+    )
+    for raw in candidates:
+        if raw is None:
+            continue
+        text = str(raw).strip()
+        if not text:
+            continue
+        if text.endswith("Z"):
+            text = text[:-1]
+        # Descarta fração de segundos em ISO
+        if "." in text and "T" in text:
+            text = text.split(".", 1)[0]
+        for fmt in formats:
+            try:
+                return datetime.strptime(text, fmt)
+            except ValueError:
+                continue
+    return None
+
+
+def _has_market_payload(payload: object) -> bool:
+    if not isinstance(payload, dict) or not payload:
+        return False
+    return any(
+        isinstance(v, dict) and k not in ("coletado_em", "erro_cotacoes", "referencia")
+        for k, v in payload.items()
+    )
+
+
+def fetch_market_snapshot_as_of(as_of: datetime) -> dict[str, Any]:
+    """Cotações próximas à data da análise (não usa 'hoje')."""
+    day_key = as_of.strftime("%Y%m%d")
+    cache_key = f"market_asof_{day_key}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    start = as_of - timedelta(days=7)
+    snapshot: dict[str, Any] = {
+        "coletado_em": as_of.strftime("%d/%m/%Y %H:%M"),
+        "referencia": "histórico na data da análise",
+    }
+
+    pairs = [
+        ("USD-BRL", "Dólar (USD/BRL)"),
+        ("EUR-BRL", "Euro (EUR/BRL)"),
+        ("BTC-BRL", "Bitcoin (BTC/BRL)"),
+    ]
+
+    def _one(pair: str, label: str):
+        url = (
+            f"https://economia.awesomeapi.com.br/json/daily/{pair}/"
+            f"?start_date={start.strftime('%Y%m%d')}&end_date={day_key}"
+        )
+        dados = _http_get_json(url, timeout=_HTTP_TIMEOUT)
+        if not isinstance(dados, list) or not dados:
+            return None
+        # API costuma devolver do mais recente ao mais antigo
+        item = dados[0]
+        return label, {
+            "cotacao": _format_brl(item.get("bid")),
+            "variacao_24h": _format_pct(item.get("pctChange")),
+            "maxima": _format_brl(item.get("high")),
+            "minima": _format_brl(item.get("low")),
+            "data_ref": datetime.fromtimestamp(int(item["timestamp"])).strftime("%d/%m/%Y")
+            if item.get("timestamp")
+            else as_of.strftime("%d/%m/%Y"),
+        }
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures = [pool.submit(_one, pair, label) for pair, label in pairs]
+        for fut in as_completed(futures):
+            try:
+                result = fut.result()
+            except Exception:
+                continue
+            if result:
+                label, payload = result
+                snapshot[label] = payload
+
+    if not _has_market_payload(snapshot):
+        stale = _cache_get_stale(cache_key)
+        if stale and _has_market_payload(stale):
+            return stale
+        return snapshot
+
+    return _cache_set(cache_key, snapshot, _CACHE_TTL_HISTORICAL)
+
+
+def fetch_bcb_snapshot_as_of(as_of: datetime) -> dict[str, dict[str, Any]]:
+    """Indicadores BCB vigentes na data da análise."""
+    day_key = as_of.strftime("%Y%m%d")
+    cache_key = f"bcb_asof_{day_key}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    labels = {
+        "selic_meta": "Selic meta (% a.a.)",
+        "ipca_12m": "IPCA acumulado 12 meses (%)",
+        "dolar_comercial": "Dólar comercial (R$/US$)",
+    }
+    start = as_of - timedelta(days=120)
+    snapshot: dict[str, dict[str, Any]] = {}
+
+    def _one(key: str, series_id: int):
+        url = (
+            f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{series_id}/dados"
+            f"?formato=json&dataInicial={start.strftime('%d/%m/%Y')}"
+            f"&dataFinal={as_of.strftime('%d/%m/%Y')}"
+        )
+        dados = _http_get_json(url, timeout=_HTTP_TIMEOUT)
+        if not isinstance(dados, list) or not dados:
+            return None
+        last = dados[-1]
+        return labels[key], {
+            "valor": last.get("valor"),
+            "data": last.get("data"),
+        }
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures = [pool.submit(_one, key, sid) for key, sid in BCB_SERIES.items()]
+        for fut in as_completed(futures):
+            try:
+                result = fut.result()
+            except Exception:
+                continue
+            if result:
+                label, payload = result
+                snapshot[label] = payload
+
+    if not snapshot:
+        stale = _cache_get_stale(cache_key)
+        if stale:
+            return stale
+        return snapshot
+
+    return _cache_set(cache_key, snapshot, _CACHE_TTL_HISTORICAL)
+
+
+def fetch_market_historical_as_of(
+    as_of: datetime,
+    days_short: int = 30,
+    days_long: int = 90,
+    blocking: bool = True,
+) -> dict[str, Any]:
+    """Séries históricas terminando na data da análise."""
+    day_key = as_of.strftime("%Y%m%d")
+    cache_key = f"market_hist_asof_{day_key}_{days_short}_{days_long}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+    stale = _cache_get_stale(cache_key) or {}
+
+    def _awesome_range(days: int) -> dict[str, Any]:
+        start = as_of - timedelta(days=days)
+        series: dict[str, Any] = {}
+        for label, pair in AWESOME_HISTORICAL.items():
+            url = (
+                f"https://economia.awesomeapi.com.br/json/daily/{pair}/"
+                f"?start_date={start.strftime('%Y%m%d')}&end_date={day_key}"
+            )
+            dados = _http_get_json(url, timeout=_HTTP_TIMEOUT)
+            if not isinstance(dados, list) or not dados:
+                continue
+            dados = list(reversed(dados))
+            series[label] = {
+                "labels": [
+                    datetime.fromtimestamp(int(d.get("timestamp", 0))).strftime("%d/%m")
+                    for d in dados
+                    if d.get("timestamp")
+                ],
+                "values": [float(d.get("bid", 0)) for d in dados if d.get("bid") is not None],
+                "periodo_dias": days,
+                "fonte": "AwesomeAPI",
+                "ate": as_of.strftime("%d/%m/%Y"),
+            }
+        return series
+
+    def _bcb_range(days: int) -> dict[str, Any]:
+        start = as_of - timedelta(days=days)
+        series: dict[str, Any] = {}
+        for key, series_id in BCB_SERIES.items():
+            label = BCB_HISTORICAL_LABELS[key]
+            url = (
+                f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{series_id}/dados"
+                f"?formato=json&dataInicial={start.strftime('%d/%m/%Y')}"
+                f"&dataFinal={as_of.strftime('%d/%m/%Y')}"
+            )
+            dados = _http_get_json(url, timeout=_HTTP_TIMEOUT)
+            if not isinstance(dados, list) or not dados:
+                continue
+            series[label] = {
+                "labels": [d.get("data", "")[:5] for d in dados],
+                "values": [float(str(d.get("valor", "0")).replace(",", ".")) for d in dados],
+                "periodo_dias": days,
+                "fonte": "BCB",
+                "ate": as_of.strftime("%d/%m/%Y"),
+            }
+        return series
+
+    def _load() -> dict[str, Any]:
+        short: dict[str, Any] = {}
+        long_: dict[str, Any] = {}
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            f_a30 = pool.submit(_awesome_range, days_short)
+            f_b30 = pool.submit(_bcb_range, min(days_short, 40))
+            f_a90 = pool.submit(_awesome_range, days_long)
+            f_b90 = pool.submit(_bcb_range, days_long)
+            for fut, target in (
+                (f_a30, short),
+                (f_b30, short),
+                (f_a90, long_),
+                (f_b90, long_),
+            ):
+                try:
+                    target.update(fut.result() or {})
+                except Exception:
+                    pass
+        payload = {
+            "30d": short,
+            "90d": long_,
+            "coletado_em": as_of.strftime("%d/%m/%Y %H:%M"),
+            "referencia": f"séries até {as_of.strftime('%d/%m/%Y')}",
+        }
+        if short or long_:
+            return _cache_set(cache_key, payload, _CACHE_TTL_HISTORICAL)
+        return stale or payload
+
+    if not blocking:
+        if stale:
+            _refresh_in_background(cache_key, _load)
+            return stale
+        # Sem cache: carrega de forma limitada (bloqueia pouco) para não ficar vazio.
+        return _load()
+
+    return _load()
+
+
+def _snapshot_aligned_to_period(payload: object, as_of: datetime | None) -> bool:
+    """True se o snapshot parece pertencer ao período da análise (não a 'hoje')."""
+    if not _has_market_payload(payload):
+        return False
+    assert isinstance(payload, dict)
+    if payload.get("referencia"):
+        return True
+    if as_of is None:
+        # Sem data da análise: não confiar em snapshot sem marca histórica.
+        return False
+    coletado = parse_article_datetime(payload.get("coletado_em"))
+    if not coletado:
+        return False
+    delta = (coletado.date() - as_of.date()).days
+    return -5 <= delta <= 5
+
+
+def _historico_aligned_to_period(hist: object, as_of: datetime | None) -> bool:
+    if not isinstance(hist, dict) or not (hist.get("30d") or hist.get("90d")):
+        return False
+    if hist.get("referencia"):
+        return True
+    if as_of is None:
+        return False
+    coletado = parse_article_datetime(hist.get("coletado_em"))
+    if not coletado:
+        return False
+    return abs((coletado.date() - as_of.date()).days) <= 5
+
+
+def resolve_article_market_data(
+    dados_mercado: dict[str, Any] | None,
+    *,
+    published_at: object = None,
+    created_at: object = None,
+    blocking_hist: bool = False,
+) -> dict[str, Any]:
+    """Garante cotacoes/bcb/historico do período da análise — nunca substitui por 'hoje'."""
+    market_data = dict(dados_mercado or {})
+
+    # Snapshot original preservado tem prioridade sobre refresh posterior.
+    if _has_market_payload(market_data.get("cotacoes_publicacao")):
+        market_data["cotacoes"] = market_data["cotacoes_publicacao"]
+    if _has_market_payload(market_data.get("bcb_publicacao")):
+        market_data["bcb"] = market_data["bcb_publicacao"]
+    if _historico_aligned_to_period(market_data.get("historico_publicacao"), None):
+        market_data["historico"] = market_data["historico_publicacao"]
+
+    as_of = parse_article_datetime(published_at, created_at)
+
+    needs_cot = not _snapshot_aligned_to_period(market_data.get("cotacoes"), as_of)
+    needs_bcb = not _snapshot_aligned_to_period(market_data.get("bcb"), as_of)
+    needs_hist = not _historico_aligned_to_period(market_data.get("historico"), as_of)
+
+    if as_of and (needs_cot or needs_bcb or needs_hist):
+        try:
+            if needs_cot:
+                market_data["cotacoes"] = fetch_market_snapshot_as_of(as_of)
+            if needs_bcb:
+                market_data["bcb"] = fetch_bcb_snapshot_as_of(as_of)
+            if needs_hist:
+                market_data["historico"] = fetch_market_historical_as_of(
+                    as_of,
+                    blocking=blocking_hist,
+                )
+        except Exception:
+            pass
+    elif needs_cot or needs_bcb or needs_hist:
+        # Sem data da análise: não inventa cotações de hoje.
+        if needs_cot:
+            market_data["cotacoes"] = {}
+        if needs_bcb:
+            market_data["bcb"] = {}
+        if needs_hist:
+            market_data["historico"] = {}
+
+    if as_of:
+        market_data["periodo_analise"] = as_of.strftime("%d/%m/%Y")
+
+    return market_data
+
+
 def format_data_context(market, bcb, db_context):
     """Monta bloco de dados para injetar no prompt da IA."""
     lines = [
@@ -590,10 +930,12 @@ def get_gemini_image_models() -> list[str]:
     raw = os.getenv("GEMINI_IMAGE_MODELOS", "")
     if raw.strip():
         return [m.strip() for m in raw.split(",") if m.strip()]
+    # Modelos atuais de geração de imagem (Nano Banana / Gemini Image).
+    # Imagen 4 e gemini-2.0-flash-preview-image-generation foram descontinuados.
     return [
+        "gemini-3.1-flash-image",
+        "gemini-3.1-flash-lite-image",
         "gemini-2.5-flash-image",
-        "gemini-2.0-flash-preview-image-generation",
-        "imagen-4.0-fast-generate-001",
     ]
 
 
@@ -669,6 +1011,16 @@ def _is_image_quota_error(exc: Exception) -> bool:
     return "PerDay" in msg or "Quota" in msg or "RESOURCE_EXHAUSTED" in msg
 
 
+def _is_image_model_unavailable(exc: Exception) -> bool:
+    msg = str(exc)
+    return (
+        "NOT_FOUND" in msg
+        or "no longer available" in msg
+        or "is not found" in msg
+        or "not supported for generateContent" in msg
+    )
+
+
 def generate_article_image(
     title: str,
     tag: str,
@@ -709,7 +1061,7 @@ def generate_article_image(
                     model=model,
                     contents=prompt,
                     config=types.GenerateContentConfig(
-                        response_modalities=["IMAGE"],
+                        response_modalities=["IMAGE", "TEXT"],
                         image_config=types.ImageConfig(aspect_ratio="16:9"),
                     ),
                 )
@@ -720,9 +1072,12 @@ def generate_article_image(
                 url = _save_image_bytes(data, mime_type, slug)
                 print(f"   [img] Imagem salva: {url}")
                 return url
+            print(f"   [img] Resposta sem imagem ({model}).")
         except Exception as e:
-            if _is_image_quota_error(e):
+            if _is_image_quota_error(e) or _is_image_model_unavailable(e):
                 _exhausted_image_models.add(model)
+                if _is_image_model_unavailable(e):
+                    print(f"   [img] Modelo indisponivel, removendo da fila: {model}")
             print(f"   [img] Falha ({model}): {e}")
             continue
 
@@ -945,10 +1300,14 @@ def _build_dados_mercado_payload(market, bcb, ai_data, historico=None) -> str:
 
 
 def refresh_article_market_data(article_id: int, add_update_note: bool = True) -> dict[str, Any] | None:
-    """Atualiza cotações e indicadores de um artigo antigo."""
+    """Compara cotações atuais com o snapshot da publicação — sem sobrescrever o período da análise."""
     client = get_db()
     result = client.execute(
-        "SELECT id, titulo, tag, dados_mercado, contexto_editorial, versao_analise FROM news WHERE id = ?",
+        """
+        SELECT id, titulo, tag, dados_mercado, contexto_editorial, versao_analise,
+               COALESCE(NULLIF(published_at, ''), created_at) AS data_ref
+        FROM news WHERE id = ?
+        """,
         [article_id],
     )
     if not result.rows:
@@ -956,7 +1315,9 @@ def refresh_article_market_data(article_id: int, add_update_note: bool = True) -
         return None
 
     row = result.rows[0]
-    noticia_id, titulo, tag, raw_dados, contexto_editorial, versao = row[0], row[1], row[2], row[3], row[4], row[5]
+    noticia_id, titulo, tag, raw_dados, contexto_editorial, versao, data_ref = (
+        row[0], row[1], row[2], row[3], row[4], row[5], row[6]
+    )
     versao = int(versao or 1)
 
     old_dados: dict[str, Any] = {}
@@ -966,53 +1327,65 @@ def refresh_article_market_data(article_id: int, add_update_note: bool = True) -
         except json.JSONDecodeError:
             pass
 
-    market = fetch_market_snapshot()
-    bcb = fetch_bcb_snapshot()
-    historico = fetch_market_historical()
+    # Garante snapshot do período da análise antes de qualquer comparação.
+    as_of = parse_article_datetime(data_ref, (old_dados.get("cotacoes") or {}).get("coletado_em"))
+    base = resolve_article_market_data(
+        old_dados,
+        published_at=data_ref,
+        blocking_hist=True,
+    )
+
+    market_now = fetch_market_snapshot(blocking=True)
+    bcb_now = fetch_bcb_snapshot(blocking=True)
     agora = datetime.now().strftime("%d/%m/%Y %H:%M")
 
+    # Preserva originais
+    if _has_market_payload(base.get("cotacoes")) and not _has_market_payload(base.get("cotacoes_publicacao")):
+        base["cotacoes_publicacao"] = base["cotacoes"]
+    if _has_market_payload(base.get("bcb")) and not _has_market_payload(base.get("bcb_publicacao")):
+        base["bcb_publicacao"] = base["bcb"]
+    if isinstance(base.get("historico"), dict) and (
+        base["historico"].get("30d") or base["historico"].get("90d")
+    ) and not base.get("historico_publicacao"):
+        base["historico_publicacao"] = base["historico"]
+
+    base["cotacoes_atuais"] = market_now
+    base["bcb_atuais"] = bcb_now
+
     atualizacao = None
-    if add_update_note and old_dados.get("cotacoes"):
-        old_cot = old_dados["cotacoes"]
+    if add_update_note and _has_market_payload(base.get("cotacoes_publicacao")):
+        old_cot = base["cotacoes_publicacao"]
         changes = []
-        for label, info in market.items():
-            if label in ("coletado_em", "erro_cotacoes") or not isinstance(info, dict):
+        for label, info in market_now.items():
+            if label in ("coletado_em", "erro_cotacoes", "referencia") or not isinstance(info, dict):
                 continue
             old_info = old_cot.get(label, {})
             if isinstance(old_info, dict) and old_info.get("cotacao") != info.get("cotacao"):
                 changes.append(f"{label}: {old_info.get('cotacao', 'n/d')} → {info.get('cotacao', 'n/d')}")
         if changes:
+            periodo = (as_of.strftime("%d/%m/%Y") if as_of else "a publicação")
             atualizacao = (
-                f"Atualização em {agora}: desde a publicação original, "
-                f"as cotações mudaram — {'; '.join(changes[:4])}."
+                f"Atualização em {agora}: desde {periodo}, "
+                f"as cotações mudaram — {'; '.join(changes[:4])}. "
+                f"Os gráficos e o painel principal continuam no período da análise."
             )
 
-    new_dados = dict(old_dados)
-    new_dados["cotacoes"] = market
-    new_dados["bcb"] = bcb
-    new_dados["historico"] = historico
     if atualizacao:
-        new_dados["atualizacao"] = atualizacao
+        base["atualizacao"] = atualizacao
 
-    contexto_lines = []
-    for key, val in market.items():
-        if key in ("coletado_em", "erro_cotacoes") or not isinstance(val, dict):
-            continue
-        contexto_lines.append(f"{key}: {val.get('cotacao')} ({val.get('variacao_24h')} em 24h)")
-    for key, val in bcb.items():
-        if isinstance(val, dict):
-            contexto_lines.append(f"{key}: {val.get('valor')} (ref. {val.get('data')})")
-    novo_contexto = contexto_editorial or ""
-    if contexto_lines:
-        novo_contexto = " | ".join(contexto_lines[:6])
+    # Mantém cotacoes/bcb/historico = período da análise (nunca troca pelo "hoje")
+    base["cotacoes"] = base.get("cotacoes_publicacao") or base.get("cotacoes") or {}
+    base["bcb"] = base.get("bcb_publicacao") or base.get("bcb") or {}
+    if base.get("historico_publicacao"):
+        base["historico"] = base["historico_publicacao"]
 
     client.execute(
         """
         UPDATE news
-        SET dados_mercado = ?, contexto_editorial = ?, updated_at = ?, versao_analise = ?
+        SET dados_mercado = ?, updated_at = ?, versao_analise = ?
         WHERE id = ?
         """,
-        [json.dumps(new_dados, ensure_ascii=False), novo_contexto, agora, versao + 1, noticia_id],
+        [json.dumps(base, ensure_ascii=False), agora, versao + 1, noticia_id],
     )
     client.close()
     return {
@@ -1021,6 +1394,7 @@ def refresh_article_market_data(article_id: int, add_update_note: bool = True) -
         "versao_analise": versao + 1,
         "atualizacao": atualizacao,
         "coletado_em": agora,
+        "periodo_analise": as_of.strftime("%d/%m/%Y") if as_of else None,
     }
 
 
