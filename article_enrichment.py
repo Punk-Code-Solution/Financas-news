@@ -390,7 +390,8 @@ def get_related_articles(client, tag: str, exclude_id: int, limit: int = 4) -> l
     result = client.execute(
         """
         SELECT id, titulo, tag, sentimento,
-               COALESCE(NULLIF(published_at, ''), created_at) AS data_publicacao
+               COALESCE(NULLIF(published_at, ''), created_at) AS data_publicacao,
+               resumo
         FROM news
         WHERE tag = ? AND id != ?
         ORDER BY id DESC
@@ -398,16 +399,22 @@ def get_related_articles(client, tag: str, exclude_id: int, limit: int = 4) -> l
         """,
         [tag, exclude_id, limit],
     )
-    return [
-        {
-            "id": row[0],
-            "titulo": row[1],
-            "tag": row[2],
-            "sentimento": row[3] or "Neutro",
-            "data": row[4],
-        }
-        for row in result.rows
-    ]
+    articles: list[dict[str, Any]] = []
+    for row in result.rows:
+        resumo = (row[5] or "").strip().replace("\n", " ")
+        if len(resumo) > 140:
+            resumo = resumo[:137].rsplit(" ", 1)[0] + "…"
+        articles.append(
+            {
+                "id": row[0],
+                "titulo": row[1],
+                "tag": row[2],
+                "sentimento": row[3] or "Neutro",
+                "data": row[4],
+                "trecho": resumo,
+            }
+        )
+    return articles
 
 
 def resolve_pontos_chave_links(
@@ -462,15 +469,43 @@ def get_acervo_stats(client, tag: str) -> dict[str, Any]:
         by_sentiment[sentimento or "Neutro"] = count
 
     total = sum(by_sentiment.values())
+    positivo = by_sentiment.get("Positivo", 0)
+    negativo = by_sentiment.get("Negativo", 0)
+    neutro = by_sentiment.get("Neutro", 0)
+
+    if total == 0:
+        insight = "Ainda não há histórico suficiente nesta categoria."
+        tom = "Neutro"
+    elif negativo > positivo and negativo >= neutro:
+        insight = (
+            f"O tom recente em {tag} está mais cauteloso: {negativo} de {total} "
+            f"análises com viés negativo. Vale cruzar com as matérias abaixo."
+        )
+        tom = "Negativo"
+    elif positivo > negativo and positivo >= neutro:
+        insight = (
+            f"O acervo em {tag} pende ao otimismo: {positivo} de {total} "
+            f"análises positivas. Confira o que sustentou esse viés."
+        )
+        tom = "Positivo"
+    else:
+        insight = (
+            f"O histórico em {tag} está equilibrado/neutro ({neutro} neutras de {total}). "
+            f"Use as matérias relacionadas para ver o que mudou entre as publicações."
+        )
+        tom = "Neutro"
+
     return {
         "total": total,
-        "positivo": by_sentiment.get("Positivo", 0),
-        "negativo": by_sentiment.get("Negativo", 0),
-        "neutro": by_sentiment.get("Neutro", 0),
+        "positivo": positivo,
+        "negativo": negativo,
+        "neutro": neutro,
+        "tom": tom,
+        "insight": insight,
         "chart": [
-            {"label": "Positivo", "count": by_sentiment.get("Positivo", 0), "color": "#4ade80"},
-            {"label": "Negativo", "count": by_sentiment.get("Negativo", 0), "color": "#f87171"},
-            {"label": "Neutro", "count": by_sentiment.get("Neutro", 0), "color": "#94a3b8"},
+            {"label": "Positivo", "count": positivo, "color": "#4ade80"},
+            {"label": "Negativo", "count": negativo, "color": "#f87171"},
+            {"label": "Neutro", "count": neutro, "color": "#94a3b8"},
         ],
     }
 

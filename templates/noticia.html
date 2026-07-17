@@ -224,27 +224,40 @@
             {% include "partials/article_enrichment.html" %}
 
             <div class="prose prose-lg max-w-none text-gray-700 dark:text-slate-300">
-                <div class="mb-8 bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-700 p-6 md:p-8 rounded-xl shadow-sm transition-colors">
-                    <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
-                        <h2 class="text-sm font-black text-gray-500 dark:text-slate-500 uppercase tracking-wider flex items-center">Impacto no seu Bolso</h2>
-                        <button type="button" id="btn-ouvir-resumo" class="text-xs font-bold px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-[#4ade80] hover:bg-blue-200 dark:hover:bg-blue-900/50 transition flex items-center gap-1">
-                            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.617.793L4.5 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.5l3.883-3.793a1 1 0 011.617.793zM14.657 5.343a1 1 0 011.414 0 6 6 0 010 8.486 1 1 0 01-1.414-1.414 4 4 0 000-5.656 1 1 0 010-1.416zm2.829 2.828a1 1 0 011.414 0 10 10 0 010 14.142 1 1 0 01-1.414-1.414 8 8 0 000-11.314 1 1 0 010-1.414z"></path></svg>
-                            Ouvir resumo
-                        </button>
-                    </div>
-                    <p class="text-lg text-gray-800 dark:text-slate-200 font-medium leading-relaxed" id="impacto-texto">{{ noticia[3] }}</p>
+                <section class="mb-8 rounded-2xl overflow-hidden border border-emerald-200/60 dark:border-emerald-900/40 bg-gradient-to-br from-emerald-50/90 via-white to-white dark:from-emerald-950/30 dark:via-[#1e293b] dark:to-[#1e293b] shadow-sm">
+                    <div class="p-6 md:p-8">
+                        <div class="flex flex-wrap items-start justify-between gap-4 mb-5">
+                            <div class="flex items-start gap-3">
+                                <span class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-[#4ade80]" aria-hidden="true">
+                                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                </span>
+                                <div>
+                                    <p class="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-[#4ade80]">Guia prático</p>
+                                    <h2 class="text-xl md:text-2xl font-black text-gray-900 dark:text-white mt-0.5">Impacto no seu Bolso</h2>
+                                    <p class="mt-1 text-xs text-gray-500 dark:text-slate-400">O que muda na sua carteira e no dia a dia</p>
+                                </div>
+                            </div>
+                            <button type="button" id="btn-ouvir-resumo" class="shrink-0 text-xs font-bold px-4 py-2 rounded-full bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-[#4ade80] hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition flex items-center gap-2 shadow-sm">
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.617.793L4.5 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.5l3.883-3.793a1 1 0 011.617.793zM14.657 5.343a1 1 0 011.414 0 6 6 0 010 8.486 1 1 0 01-1.414-1.414 4 4 0 000-5.656 1 1 0 010-1.416zm2.829 2.828a1 1 0 011.414 0 10 10 0 010 14.142 1 1 0 01-1.414-1.414 8 8 0 000-11.314 1 1 0 010-1.414z"></path></svg>
+                                Ouvir resumo
+                            </button>
+                        </div>
+                        <blockquote class="not-prose border-0 p-0 m-0">
+                            <p class="text-lg md:text-xl text-gray-800 dark:text-slate-100 font-medium leading-relaxed" id="impacto-texto">{{ noticia[3] }}</p>
+                        </blockquote>
 
                     {% if contextual_affiliate %}
-                    <div class="mt-5 pt-5 border-t border-gray-200 dark:border-slate-700">
-                        <p class="text-[10px] font-black uppercase text-gray-500 dark:text-slate-400 mb-2">Guia prático · Parceiro</p>
-                        <a href="{{ contextual_affiliate.url }}" target="_blank" rel="noopener sponsored" class="block bg-gray-50 dark:bg-[#0f172a] border border-gray-200 dark:border-slate-700 rounded-lg p-4 hover:border-blue-400 dark:hover:border-[#4ade80] transition">
+                    <div class="mt-6 pt-6 border-t border-emerald-200/60 dark:border-emerald-900/40">
+                        <p class="text-[10px] font-black uppercase text-gray-500 dark:text-slate-400 mb-2">Próximo passo · Parceiro</p>
+                        <a href="{{ contextual_affiliate.url }}" target="_blank" rel="noopener sponsored" class="block bg-white/80 dark:bg-[#0f172a] border border-gray-200 dark:border-slate-700 rounded-xl p-4 hover:border-emerald-400 dark:hover:border-[#4ade80] transition">
                             <p class="text-sm font-black text-gray-900 dark:text-white">{{ contextual_affiliate.titulo }}</p>
                             <p class="mt-1 text-xs text-gray-600 dark:text-slate-400">{{ contextual_affiliate.descricao }}</p>
-                            <span class="mt-2 inline-block text-xs font-bold text-blue-600 dark:text-[#4ade80]">{{ contextual_affiliate.cta }} →</span>
+                            <span class="mt-2 inline-block text-xs font-bold text-emerald-700 dark:text-[#4ade80]">{{ contextual_affiliate.cta }} →</span>
                         </a>
                     </div>
                     {% endif %}
-                </div>
+                    </div>
+                </section>
 
                 {% if enrichment.faq %}
                 <section class="mb-8">
@@ -284,16 +297,28 @@
             </div>
             {% endif %}
 
-            <div class="px-6 md:px-12 pb-6 md:pb-12 pt-0 border-t border-gray-200 dark:border-slate-800 transition-colors mt-0">
-                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div>
-                        <p class="text-base font-bold text-gray-900 dark:text-white mb-1">Equipe de Análise - Finanças News</p>
-                        <p class="text-sm text-gray-500 dark:text-slate-400">Análise editorial com cruzamento de cotações (AwesomeAPI), indicadores do Banco Central e acervo do portal. Revisada por IA da Punk Code Solution.</p>
+            <div class="px-6 md:px-12 pb-6 md:pb-12 pt-6 mt-2">
+                <div class="rounded-2xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-[#0f172a] p-5 md:p-6">
+                    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+                        <div class="flex items-start gap-4 min-w-0">
+                            <span class="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-100 dark:bg-slate-800 text-blue-700 dark:text-[#4ade80] font-black text-sm">FN</span>
+                            <div>
+                                <p class="text-base font-black text-gray-900 dark:text-white">Equipe de Análise · Finanças News</p>
+                                <p class="mt-1 text-sm text-gray-600 dark:text-slate-400 leading-relaxed max-w-xl">
+                                    Análise editorial com cruzamento de cotações, indicadores do Banco Central e acervo do portal.
+                                </p>
+                                <div class="mt-3 flex flex-wrap gap-2">
+                                    <span class="text-[10px] font-bold uppercase px-2.5 py-1 rounded-full bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-400">AwesomeAPI</span>
+                                    <span class="text-[10px] font-bold uppercase px-2.5 py-1 rounded-full bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-400">BCB</span>
+                                    <span class="text-[10px] font-bold uppercase px-2.5 py-1 rounded-full bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-400">IA editorial</span>
+                                </div>
+                            </div>
+                        </div>
+                        <a href="{{ noticia[4] }}" target="_blank" rel="nofollow noopener" class="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-950 text-sm font-bold hover:bg-blue-700 dark:hover:bg-emerald-400 transition shadow-sm">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                            Fonte original
+                        </a>
                     </div>
-                    <a href="{{ noticia[4] }}" target="_blank" rel="nofollow" class="text-sm text-blue-600 dark:text-[#4ade80] hover:underline font-medium flex items-center">
-                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
-                        Acessar fonte da reportagem
-                    </a>
                 </div>
             </div>
             </div>

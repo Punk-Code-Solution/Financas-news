@@ -40,11 +40,12 @@
     </script>
 
     <style>
-        .ticker-wrapper { overflow-x: auto; white-space: nowrap; background-color: #111827; color: #cbd5e1; border-bottom: 1px solid #1e293b; scrollbar-width: none; }
-        .ticker-wrapper::-webkit-scrollbar { display: none; }
-        .ticker-content { display: flex; align-items: center; justify-content: center; min-width: max-content; }
-        .ticker-item { padding: 0.55rem 1.5rem; border-right: 1px solid #263244; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.025em; }
-        .ticker-up { color: #4ade80; } 
+        .ticker-wrapper { overflow: hidden; white-space: nowrap; background-color: #111827; color: #cbd5e1; font-size: 0.75rem; padding: 0.25rem 0; border-bottom: 1px solid #1e293b; }
+        .ticker-content { display: inline-block; animation: ticker 35s linear infinite; }
+        .ticker-content:hover { animation-play-state: paused; cursor: default; }
+        @keyframes ticker { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
+        .ticker-item { margin-right: 3rem; font-weight: 700; letter-spacing: 0.05em; }
+        .ticker-up { color: #4ade80; }
         .ticker-down { color: #f87171; } 
         .featured-gradient { background: linear-gradient(180deg, transparent 25%, rgba(2, 6, 23, .92) 100%); }
         
@@ -71,7 +72,7 @@
 <body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 transition-colors duration-200 flex flex-col min-h-screen">
 
     <div class="ticker-wrapper" aria-label="Cotações do mercado">
-        <div class="ticker-content mx-auto" id="market-ticker">
+        <div class="ticker-content" id="market-ticker" data-ticker-animated="true">
             <span class="ticker-item text-slate-500">Carregando mercado...</span>
         </div>
     </div>
