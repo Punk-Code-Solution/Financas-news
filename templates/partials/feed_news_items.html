@@ -1,0 +1,19 @@
+{% for n in feed_news %}
+<article class="relative py-5 border-b border-gray-200 dark:border-slate-800">
+    <a href="/noticia/{{ n[0] }}" class="group flex gap-4">
+        <img src="{{ n[11] or category_image(n[5]) }}" alt="{{ n[1] }}" loading="lazy" class="w-28 h-24 md:w-32 md:h-28 rounded-lg object-cover object-center shrink-0">
+        <div class="relative min-w-0 flex-1 pr-20 md:pr-24">
+            <svg class="sparkline" viewBox="0 0 84 38" aria-hidden="true" data-sparkline="market"></svg>
+            <div class="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider">
+                <span class="text-blue-600 dark:text-[#4ade80]">{{ n[5] }}</span>
+                {% set sent = (n[6] | default('Neutro', true)) | lower %}
+                <span class="{% if 'positivo' in sent %}text-green-600{% elif 'negativo' in sent %}text-red-500{% else %}text-gray-400{% endif %}">● {{ n[6] | default('Neutro', true) }}</span>
+            </div>
+            <h3 class="mt-1 text-base md:text-lg font-bold leading-snug text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition line-clamp-3">{{ n[1] }}</h3>
+            <p class="mt-2 text-xs text-gray-500 dark:text-slate-500 line-clamp-1">
+                {% if n[8] %}{{ n[8] }}{% endif %}{% if n[8] and n[7] %} · {% endif %}{% if n[7] %}{{ n[7] }}{% endif %}
+            </p>
+        </div>
+    </a>
+</article>
+{% endfor %}

@@ -109,8 +109,9 @@ def run() -> int:
             "Busca vazia",
             r.status_code == 200 and ("Nenhuma" in r.text or "Outras" in r.text or "Ver todas" in r.text),
         )
-        r = client.get("/", params={"page": 2})
-        check("Paginação page=2", r.status_code == 200)
+        r = client.get("/api/feed", params={"offset": 8})
+        check("Feed carregar mais", r.status_code == 200)
+        check("Feed tem artigos ou vazio", "noticia" in r.text.lower() or r.text.strip() == "" or "<article" in r.text)
 
         db = main.get_db()
         ids = [row[0] for row in db.execute("SELECT id FROM news ORDER BY id DESC LIMIT 5").rows]

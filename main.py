@@ -111,12 +111,33 @@ def _invalidate_home_cache() -> None:
         _HOME_CACHE.clear()
 
 
-def _home_cache_key(categoria: str | None, page: int, q: str | None) -> str:
-    return f"{categoria or ''}|{page}|{(q or '').strip().lower()}"
+FEED_BATCH = 8
+FEATURED_COUNT = 4
 
 
-def _load_home_listing(categoria: str | None, page: int, q: str | None) -> dict[str, object]:
-    cache_key = _home_cache_key(categoria, page, q)
+def _home_cache_key(categoria: str | None, offset: int, limit: int, q: str | None) -> str:
+    return f"{categoria or ''}|{offset}|{limit}|{(q or '').strip().lower()}"
+
+
+def _parse_count(row_count: object) -> int:
+    if isinstance(row_count, (int, float)):
+        return int(row_count)
+    if isinstance(row_count, str):
+        return int(row_count)
+    return 0
+
+
+def _load_home_listing(
+    categoria: str | None,
+    offset: int,
+    limit: int,
+    q: str | None,
+    *,
+    include_suggestions: bool = True,
+) -> dict[str, object]:
+    offset = max(0, offset)
+    limit = max(1, min(limit, 40))
+    cache_key = _home_cache_key(categoria, offset, limit, q)
     now = time.time()
     with _HOME_CACHE_LOCK:
         cached = _HOME_CACHE.get(cache_key)
@@ -124,8 +145,6 @@ def _load_home_listing(categoria: str | None, page: int, q: str | None) -> dict[
             return cached[1]
 
     client = get_db()
-    limit = 20
-    offset = (page - 1) * limit
 
     result: QueryResult
     count_res: QueryResult
@@ -154,35 +173,31 @@ def _load_home_listing(categoria: str | None, page: int, q: str | None) -> dict[
 
     news = result.rows
     suggested_news: list[Any] = []
-    if not news and (categoria or q):
+    if include_suggestions and not news and (categoria or q):
         if categoria:
             suggested_result = client.execute(
                 NEWS_LIST_SELECT + " WHERE tag != ? ORDER BY id DESC LIMIT ?",
-                [categoria, 8],
+                [categoria, FEED_BATCH],
             )
         else:
             suggested_result = client.execute(
                 NEWS_LIST_SELECT + " ORDER BY id DESC LIMIT ?",
-                [8],
+                [FEED_BATCH],
             )
         suggested_news = suggested_result.rows
 
-    row_count = count_res.rows[0][0] if count_res.rows else 0
-    if isinstance(row_count, (int, float)):
-        total_news = int(row_count)
-    elif isinstance(row_count, str):
-        total_news = int(row_count)
-    else:
-        total_news = 0
-    total_pages = (total_news + limit - 1) // limit
-    if total_pages == 0:
-        total_pages = 1
+    total_news = _parse_count(count_res.rows[0][0] if count_res.rows else 0)
+    next_offset = offset + len(news)
+    has_more = next_offset < total_news
 
     payload: dict[str, object] = {
         "news": news,
         "suggested_news": suggested_news,
-        "total_pages": total_pages,
+        "total_news": total_news,
         "limit": limit,
+        "offset": offset,
+        "next_offset": next_offset,
+        "has_more": has_more,
     }
     with _HOME_CACHE_LOCK:
         _HOME_CACHE[cache_key] = (now + _HOME_CACHE_TTL, payload)
@@ -190,8 +205,10 @@ def _load_home_listing(categoria: str | None, page: int, q: str | None) -> dict[
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request, categoria: str | None = None, page: int = 1, q: str | None = None):
-    listing = _load_home_listing(categoria, max(1, page), q)
+def index(request: Request, categoria: str | None = None, q: str | None = None):
+    # Sem busca: 4 destaques + 8 no feed (2 colunas). Com busca: só o feed de 8.
+    initial_limit = FEED_BATCH if q else FEATURED_COUNT + FEED_BATCH
+    listing = _load_home_listing(categoria, 0, initial_limit, q)
     sparklines = core.fetch_sparkline_data(blocking=False)
 
     response = templates.TemplateResponse(
@@ -202,10 +219,10 @@ def index(request: Request, categoria: str | None = None, page: int = 1, q: str 
             "news": listing["news"],
             "categoria_ativa": categoria,
             "categorias": CATEGORIAS,
-            "page": max(1, page),
-            "limit": listing["limit"],
             "q": q,
-            "total_pages": listing["total_pages"],
+            "has_more": listing["has_more"],
+            "next_offset": listing["next_offset"],
+            "feed_batch": FEED_BATCH,
             "monetization": get_monetization_config(),
             "suggested_news": listing["suggested_news"],
             "sparklines": sparklines,
@@ -213,6 +230,38 @@ def index(request: Request, categoria: str | None = None, page: int = 1, q: str 
     )
     response.headers["Cache-Control"] = "public, max-age=15, stale-while-revalidate=30"
     return response
+
+
+@app.get("/api/feed", response_class=HTMLResponse)
+def api_feed(
+    request: Request,
+    offset: int = 0,
+    categoria: str | None = None,
+    q: str | None = None,
+):
+    listing = _load_home_listing(
+        categoria,
+        max(0, offset),
+        FEED_BATCH,
+        q,
+        include_suggestions=False,
+    )
+    sparklines = core.fetch_sparkline_data(blocking=False)
+    html = templates.get_template("partials/feed_news_items.html").render(
+        {
+            "feed_news": listing["news"],
+            "sparklines": sparklines,
+            "request": request,
+        }
+    )
+    return HTMLResponse(
+        content=html,
+        headers={
+            "X-Has-More": "1" if listing["has_more"] else "0",
+            "X-Next-Offset": str(listing["next_offset"]),
+            "Cache-Control": "public, max-age=15, stale-while-revalidate=30",
+        },
+    )
 
 
 @app.get("/noticia/{noticia_id}", response_class=HTMLResponse)

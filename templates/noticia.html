@@ -110,9 +110,65 @@
         @media (min-width: 768px) {
             .analise-completa .analise-p { font-size: 1.3rem; line-height: 1.9; }
         }
+
+        #analise-refine-overlay {
+            position: fixed; inset: 0; z-index: 9999;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(15, 23, 42, 0.92);
+            backdrop-filter: blur(10px);
+            transition: opacity 0.45s ease, visibility 0.45s ease;
+        }
+        #analise-refine-overlay.is-done {
+            opacity: 0; visibility: hidden; pointer-events: none;
+        }
+        .refine-card {
+            width: min(92vw, 420px);
+            text-align: center;
+            padding: 2rem 1.5rem;
+        }
+        .refine-ring {
+            width: 56px; height: 56px; margin: 0 auto 1.25rem;
+            border-radius: 9999px;
+            border: 3px solid rgba(74, 222, 128, 0.2);
+            border-top-color: #4ade80;
+            animation: refine-spin 0.85s linear infinite;
+        }
+        @keyframes refine-spin { to { transform: rotate(360deg); } }
+        .refine-title {
+            font-size: 1.05rem; font-weight: 900; color: #f8fafc;
+            letter-spacing: -0.02em; margin-bottom: 0.5rem;
+        }
+        .refine-status {
+            min-height: 1.5rem;
+            font-size: 0.875rem; color: #94a3b8; font-weight: 500;
+            transition: opacity 0.25s ease;
+        }
+        .refine-bar {
+            margin: 1.25rem auto 0; width: 180px; height: 3px;
+            border-radius: 9999px; background: rgba(148, 163, 184, 0.2);
+            overflow: hidden;
+        }
+        .refine-bar > span {
+            display: block; height: 100%; width: 40%;
+            border-radius: inherit; background: #4ade80;
+            animation: refine-progress 1.4s ease-in-out infinite;
+        }
+        @keyframes refine-progress {
+            0% { transform: translateX(-120%); }
+            100% { transform: translateX(320%); }
+        }
     </style>
 </head>
 <body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 transition-colors duration-200 flex flex-col min-h-screen">
+
+    <div id="analise-refine-overlay" role="status" aria-live="polite" aria-busy="true">
+        <div class="refine-card">
+            <div class="refine-ring" aria-hidden="true"></div>
+            <p class="refine-title">Refinando a análise</p>
+            <p class="refine-status" id="refine-status">Cruzando indicadores do período...</p>
+            <div class="refine-bar" aria-hidden="true"><span></span></div>
+        </div>
+    </div>
 
     <div class="ticker-wrapper">
         <div class="ticker-content" id="market-ticker"><span class="text-slate-500">Cotações em tempo real...</span></div>
@@ -396,6 +452,45 @@
         document.addEventListener('DOMContentLoaded', () => {
             setInitialThemeIcons();
 
+            // Overlay editorial: "refinamento" enquanto a página estabiliza
+            (function initRefineOverlay() {
+                const overlay = document.getElementById('analise-refine-overlay');
+                const statusEl = document.getElementById('refine-status');
+                if (!overlay || !statusEl) return;
+
+                const steps = [
+                    'Cruzando indicadores do período...',
+                    'Alinhando cotações à data da análise...',
+                    'Organizando pontos-chave e contexto...',
+                    'Quase pronto — abrindo a leitura...',
+                ];
+                let step = 0;
+                const started = Date.now();
+                const minMs = 1100;
+                const rotate = setInterval(() => {
+                    step = Math.min(step + 1, steps.length - 1);
+                    statusEl.style.opacity = '0';
+                    setTimeout(() => {
+                        statusEl.textContent = steps[step];
+                        statusEl.style.opacity = '1';
+                    }, 180);
+                }, 700);
+
+                function finish() {
+                    clearInterval(rotate);
+                    const wait = Math.max(0, minMs - (Date.now() - started));
+                    setTimeout(() => {
+                        statusEl.textContent = steps[steps.length - 1];
+                        overlay.classList.add('is-done');
+                        overlay.setAttribute('aria-busy', 'false');
+                        setTimeout(() => overlay.remove(), 500);
+                    }, wait);
+                }
+
+                if (document.readyState === 'complete') finish();
+                else window.addEventListener('load', finish, { once: true });
+            })();
+
             // Personalização de perfil — funcional de ponta a ponta
             const PERFIL_LABELS = {
                 conservador: 'Iniciante',
@@ -492,6 +587,27 @@
                     }
                 });
             }
+
+            // Transição editorial ao abrir outra notícia
+            document.body.addEventListener('click', (e) => {
+                const link = e.target.closest('a[href^="/noticia/"]');
+                if (!link || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                e.preventDefault();
+                const overlay = document.createElement('div');
+                overlay.id = 'analise-refine-overlay';
+                overlay.setAttribute('role', 'status');
+                overlay.setAttribute('aria-live', 'polite');
+                overlay.setAttribute('aria-busy', 'true');
+                overlay.innerHTML = `
+                    <div class="refine-card">
+                        <div class="refine-ring" aria-hidden="true"></div>
+                        <p class="refine-title">Refinando a análise</p>
+                        <p class="refine-status">Cruzando indicadores do período...</p>
+                        <div class="refine-bar" aria-hidden="true"><span></span></div>
+                    </div>`;
+                document.body.appendChild(overlay);
+                window.location.href = link.href;
+            });
         });
     </script>
     <script src="/static/js/market-ticker.js" defer></script>
