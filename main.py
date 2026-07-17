@@ -70,6 +70,20 @@ async def index(request: Request, categoria: str | None = None, page: int = 1, q
         count_res = client.execute('SELECT COUNT(*) FROM news')
     
     news = result.rows
+
+    suggested_news = []
+    if not news and (categoria or q):
+        if categoria:
+            suggested_result = client.execute(
+                NEWS_SELECT + " WHERE tag != ? ORDER BY id DESC LIMIT ?",
+                [categoria, 8],
+            )
+        else:
+            suggested_result = client.execute(
+                NEWS_SELECT + " ORDER BY id DESC LIMIT ?",
+                [8],
+            )
+        suggested_news = suggested_result.rows
     
     row_count = count_res.rows[0][0]
     if isinstance(row_count, (int, float)):
@@ -98,6 +112,7 @@ async def index(request: Request, categoria: str | None = None, page: int = 1, q
             "q": q,
             "total_pages": total_pages,
             "monetization": get_monetization_config(),
+            "suggested_news": suggested_news,
         }
     )
 
@@ -229,6 +244,17 @@ def get_sitemap():
 @app.get("/ping")
 def ping():
     return {"status": "Render acordado!"}
+
+@app.get("/api/gerar-imagens")
+def gerar_imagens(token: str | None = None, limit: int = 10):
+    if token != "punkcode2026":
+        raise HTTPException(status_code=401, detail="Nao autorizado")
+
+    limit = max(1, min(limit, 20))
+    print(f"Gerando imagens para ate {limit} artigos sem capa...")
+    resultado = core.backfill_missing_images(limit=limit)
+    return {"status": "Sucesso", **resultado}
+
 
 @app.get("/api/rodar-robo")
 def rodar_robo(token: str | None = None):

@@ -7,4 +7,5 @@ feedparser
 beautifulsoup4
 requests
 google-genai
+certifi
 libsql-client

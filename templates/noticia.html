@@ -72,6 +72,8 @@
         <article class="bg-white dark:bg-[#1e293b] rounded-xl shadow-sm overflow-hidden border border-gray-200 dark:border-slate-800 transition-colors">
             {% if noticia[11] %}
             <img src="{{ noticia[11] }}" alt="{{ noticia[1] }}" class="w-full h-56 md:h-72 object-cover">
+            {% else %}
+            <div class="w-full h-56 md:h-72 bg-gradient-to-br from-blue-700 via-slate-800 to-slate-950" aria-hidden="true"></div>
             {% endif %}
             <div class="p-6 md:p-12">
             <div class="flex items-center space-x-3 mb-6">

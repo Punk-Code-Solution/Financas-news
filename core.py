@@ -2,6 +2,8 @@ from google import genai
 from google.genai import types
 import feedparser
 import os
+import base64
+import ssl
 from bs4 import BeautifulSoup
 from datetime import datetime
 import hashlib
@@ -13,10 +15,9 @@ from typing import Any
 from dotenv import load_dotenv
 import requests
 
-from db import get_editorial_context
+from db import get_db, get_editorial_context
 
 load_dotenv()
-api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
 
 VALID_TAGS = [
     "Cripto",
@@ -38,12 +39,44 @@ DEFAULT_GEMINI_MODELOS = [
 ]
 
 _exhausted_models: set[str] = set()
+_exhausted_image_models: set[str] = set()
 
-if not api_key:
-    print("❌ ERRO CRÍTICO: Chave API não encontrada no .env")
+
+def _configure_ssl_certs() -> None:
+    try:
+        import certifi
+
+        bundle = certifi.where()
+        os.environ.setdefault("SSL_CERT_FILE", bundle)
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", bundle)
+    except ImportError:
+        pass
+
+
+def _create_genai_client():
+    _configure_ssl_certs()
+    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return None
+
+    http_options = None
+    if os.getenv("GEMINI_SSL_VERIFY", "true").lower() in ("0", "false", "no"):
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        http_options = types.HttpOptions(
+            client_args={"verify": ctx},
+            async_client_args={"verify": ctx},
+        )
+
+    return genai.Client(api_key=api_key.strip(), http_options=http_options)
+
+
+if not (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")):
+    print("ERRO CRITICO: Chave API nao encontrada no .env")
     client = None
 else:
-    client = genai.Client(api_key=api_key)
+    client = _create_genai_client()
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -266,6 +299,46 @@ def get_gemini_image_models() -> list[str]:
     ]
 
 
+TAG_IMAGE_VISUALS = {
+    "Cripto": "Bitcoin, cryptocurrency coins, blockchain network, digital finance",
+    "Economia": "macroeconomy, GDP charts, Brazilian economy skyline, business district",
+    "Dólar": "US dollar bills, currency exchange, forex trading screens",
+    "Ações": "stock market tickers, trading floor, rising charts, B3 style visuals",
+    "Juros": "interest rates, central bank building, yield curve charts",
+    "Inflação": "shopping prices, inflation chart, consumer goods, price tags",
+    "Imóveis": "modern apartments, real estate, city buildings, property keys",
+    "Fintech": "mobile banking app, digital payments, fintech innovation",
+    "Commodities": "oil barrels, gold bars, agricultural fields, commodity trading",
+    "Política Econômica": "government building, fiscal policy, parliament, budget documents",
+}
+
+
+def _article_image_slug(link: str, article_id: int | None = None) -> str:
+    key = link.strip() if link else f"article-{article_id or 0}"
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+def _build_image_prompt(title: str, tag: str, resumo: str = "") -> str:
+    visual = TAG_IMAGE_VISUALS.get(tag, "financial markets, economy, professional journalism")
+    summary = (resumo or "").strip()[:220]
+    return (
+        f"Create a high-quality editorial cover photo for a Brazilian financial news website. "
+        f"Headline topic: {title[:140]}. "
+        f"Category: {tag}. "
+        f"Article context: {summary}. "
+        f"Visual elements: {visual}. "
+        f"Style: cinematic, professional photojournalism or polished digital illustration, "
+        f"dramatic lighting, rich colors, 16:9 composition. "
+        f"Strict rules: no text, no letters, no logos, no watermarks, no brand names, no faces."
+    )
+
+
+def _normalize_image_bytes(data: bytes | str) -> bytes:
+    if isinstance(data, str):
+        return base64.b64decode(data)
+    return data
+
+
 def _save_image_bytes(data: bytes, mime_type: str, slug: str) -> str | None:
     ext = "png" if "png" in (mime_type or "") else "jpg"
     filename = f"{slug}.{ext}"
@@ -283,36 +356,46 @@ def _extract_image_from_response(response) -> tuple[bytes, str] | None:
         for part in getattr(content, "parts", None) or []:
             inline = getattr(part, "inline_data", None)
             if inline and getattr(inline, "data", None):
-                return inline.data, getattr(inline, "mime_type", "image/jpeg")
+                return _normalize_image_bytes(inline.data), getattr(inline, "mime_type", "image/jpeg")
 
     generated = getattr(response, "generated_images", None) or []
     for item in generated:
         image = getattr(item, "image", None)
         if image and getattr(image, "image_bytes", None):
-            return image.image_bytes, getattr(image, "mime_type", "image/jpeg")
+            return _normalize_image_bytes(image.image_bytes), getattr(image, "mime_type", "image/jpeg")
     return None
 
 
-def generate_article_image(title: str, tag: str, link: str) -> str | None:
+def _is_image_quota_error(exc: Exception) -> bool:
+    msg = str(exc)
+    return "PerDay" in msg or "Quota" in msg or "RESOURCE_EXHAUSTED" in msg
+
+
+def generate_article_image(
+    title: str,
+    tag: str,
+    link: str,
+    resumo: str = "",
+    article_id: int | None = None,
+) -> str | None:
     """Gera capa editorial; retorna URL pública ou None em caso de falha."""
     if not client:
         return None
 
-    slug = hashlib.sha256(link.encode()).hexdigest()[:16]
+    slug = _article_image_slug(link, article_id)
     images_dir = get_article_images_dir()
     for existing in images_dir.glob(f"{slug}.*"):
         return f"/media/articles/{existing.name}"
 
-    prompt = (
-        f"Editorial cover illustration for a Brazilian financial news article. "
-        f"Topic: {tag}. Headline theme: {title[:120]}. "
-        f"Professional, modern, no text overlays, no logos, no watermarks. "
-        f"Colors suited to finance journalism, abstract market visuals."
-    )
+    prompt = _build_image_prompt(title, tag, resumo)
+    modelos = [m for m in get_gemini_image_models() if m not in _exhausted_image_models]
+    if not modelos:
+        print("   [img] Todos os modelos de imagem esgotaram a cota nesta execucao.")
+        return None
 
-    for model in get_gemini_image_models():
+    for model in modelos:
         try:
-            print(f"   🖼️ Gerando imagem ({model})...")
+            print(f"   [img] Gerando imagem ({model})...")
             if model.startswith("imagen"):
                 response = client.models.generate_images(
                     model=model,
@@ -337,14 +420,56 @@ def generate_article_image(title: str, tag: str, link: str) -> str | None:
             if extracted:
                 data, mime_type = extracted
                 url = _save_image_bytes(data, mime_type, slug)
-                print(f"   ✅ Imagem salva: {url}")
+                print(f"   [img] Imagem salva: {url}")
                 return url
         except Exception as e:
-            print(f"   ⚠️ Falha na geração de imagem ({model}): {e}")
+            if _is_image_quota_error(e):
+                _exhausted_image_models.add(model)
+            print(f"   [img] Falha ({model}): {e}")
             continue
 
-    print("   ⚠️ Imagem não gerada — artigo seguirá sem capa.")
+    print("   [img] Imagem nao gerada — artigo seguira sem capa.")
     return None
+
+
+def backfill_missing_images(limit: int = 10) -> dict[str, Any]:
+    """Gera capas para artigos que ainda nao possuem imagem_url."""
+    client_db = get_db()
+    result = client_db.execute(
+        """
+        SELECT id, titulo, tag, link, resumo
+        FROM news
+        WHERE imagem_url IS NULL OR imagem_url = ''
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        [limit],
+    )
+    rows = result.rows
+
+    updated: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+
+    for row in rows:
+        article_id, titulo, tag, link, resumo = row[0], row[1], row[2], row[3] or "", row[4] or ""
+        imagem_url = generate_article_image(titulo, tag, link, resumo, article_id=article_id)
+        if imagem_url:
+            client_db.execute(
+                "UPDATE news SET imagem_url = ? WHERE id = ?",
+                [imagem_url, article_id],
+            )
+            updated.append({"id": article_id, "imagem_url": imagem_url})
+        else:
+            failed.append({"id": article_id, "titulo": titulo[:80]})
+
+    client_db.close()
+    return {
+        "processed": len(rows),
+        "updated": len(updated),
+        "failed": len(failed),
+        "items": updated,
+        "errors": failed,
+    }
 
 
 def generate_content_with_fallback(prompt: str) -> str | None:
@@ -528,6 +653,7 @@ def fetch_and_process(max_per_feed=2):
                         ai_data.get("titulo_viral", entry.title),
                         tag,
                         entry_link,
+                        ai_data.get("resumo_simples", ""),
                     )
 
                     published = datetime.now().strftime("%d/%m/%Y %H:%M")

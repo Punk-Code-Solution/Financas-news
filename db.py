@@ -1,15 +1,68 @@
 import os
+import sqlite3
+from dataclasses import dataclass
+
 import libsql_client
 
 
+@dataclass
+class QueryResult:
+    rows: list
+
+
+class LocalDbClient:
+    """Wrapper SQLite local com a mesma interface do libsql_client sync."""
+
+    def __init__(self, path: str):
+        self._conn = sqlite3.connect(path, check_same_thread=False)
+
+    def execute(self, sql: str, args: list | None = None):
+        cursor = self._conn.cursor()
+        if args:
+            cursor.execute(sql, args)
+        else:
+            cursor.execute(sql)
+        if sql.strip().upper().startswith("SELECT"):
+            return QueryResult(cursor.fetchall())
+        self._conn.commit()
+        return QueryResult([])
+
+    def close(self):
+        self._conn.close()
+
+
+def _use_local_db() -> bool:
+    return os.getenv("USE_LOCAL_DB", "").lower() in ("1", "true", "yes")
+
+
+def _configure_ssl_certs():
+    try:
+        import certifi
+
+        bundle = certifi.where()
+        os.environ.setdefault("SSL_CERT_FILE", bundle)
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", bundle)
+    except ImportError:
+        pass
+
+
 def get_db():
+    if _use_local_db():
+        path = os.getenv("LOCAL_DATABASE_PATH", "news.db")
+        return LocalDbClient(path)
+
+    _configure_ssl_certs()
+
     url = os.environ.get("TURSO_DATABASE_URL", "")
     if url.startswith("wss://"):
         url = url.replace("wss://", "libsql://")
 
     token = os.environ.get("TURSO_AUTH_TOKEN")
     if not url or not token:
-        raise ValueError("Credenciais do Turso não encontradas.")
+        raise ValueError(
+            "Credenciais do Turso não encontradas. "
+            "Defina TURSO_DATABASE_URL e TURSO_AUTH_TOKEN, ou USE_LOCAL_DB=true para SQLite local."
+        )
 
     return libsql_client.create_client_sync(url=url, auth_token=token)
 

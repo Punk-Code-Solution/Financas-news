@@ -40,13 +40,13 @@
     </script>
 
     <style>
-        .ticker-wrapper { overflow: hidden; white-space: nowrap; background-color: #111827; color: #cbd5e1; font-size: 0.75rem; padding: 0.25rem 0; border-bottom: 1px solid #1e293b;}
-        .ticker-content { display: inline-block; animation: ticker 30s linear infinite; }
-        .ticker-content:hover { animation-play-state: paused; cursor: default; }
-        @keyframes ticker { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
-        .ticker-item { margin-right: 3rem; font-weight: 600; letter-spacing: 0.05em; }
+        .ticker-wrapper { overflow-x: auto; white-space: nowrap; background-color: #111827; color: #cbd5e1; border-bottom: 1px solid #1e293b; scrollbar-width: none; }
+        .ticker-wrapper::-webkit-scrollbar { display: none; }
+        .ticker-content { display: flex; align-items: center; justify-content: center; min-width: max-content; }
+        .ticker-item { padding: 0.55rem 1.5rem; border-right: 1px solid #263244; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.025em; }
         .ticker-up { color: #4ade80; } 
         .ticker-down { color: #f87171; } 
+        .featured-gradient { background: linear-gradient(180deg, transparent 25%, rgba(2, 6, 23, .92) 100%); }
         
         /* Oculta as setas padrão do input numérico */
         input[type=number]::-webkit-inner-spin-button, 
@@ -67,9 +67,9 @@
 </head>
 <body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 transition-colors duration-200 flex flex-col min-h-screen">
 
-    <div class="ticker-wrapper">
-        <div class="ticker-content" id="market-ticker">
-            <span class="text-slate-500">Carregando cotações do mercado...</span>
+    <div class="ticker-wrapper" aria-label="Cotações do mercado">
+        <div class="ticker-content mx-auto" id="market-ticker">
+            <span class="ticker-item text-slate-500">Carregando mercado...</span>
         </div>
     </div>
 
@@ -117,7 +117,7 @@
         </div>
     </nav>
 
-    <main class="container mx-auto px-4 py-8 flex-grow w-full max-w-7xl">
+    <main class="container mx-auto px-4 py-6 md:py-8 flex-grow w-full max-w-7xl">
         {% if q %}
         <div class="mb-6">
             <h1 class="text-2xl font-bold text-gray-900 dark:text-white transition-colors">Resultados para: <span class="text-blue-600 dark:text-[#4ade80]">"{{ q }}"</span></h1>
@@ -130,56 +130,141 @@
         </div>
         {% endif %}
 
-        <div class="flex flex-col lg:flex-row gap-8 w-full items-start">
-            <div class="w-full {% if monetization.sidebar_visible %}lg:w-2/3{% endif %} flex flex-col gap-6">
-                
-                {% for n in news %}
-                <article class="bg-white dark:bg-[#1e293b] rounded-xl overflow-hidden border border-gray-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-slate-700 transition duration-300 flex flex-col shadow-sm dark:shadow-none">
-                    {% if n[11] %}
-                    <a href="/noticia/{{ n[0] }}" class="block">
-                        <img src="{{ n[11] }}" alt="{{ n[1] }}" loading="lazy"
-                             class="w-full h-48 object-cover">
-                    </a>
+        {% if news and not q and page == 1 %}
+        <section class="mb-10">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <p class="text-xs font-bold uppercase tracking-[0.2em] text-blue-600 dark:text-[#4ade80]">Seleção editorial</p>
+                    <h1 class="text-2xl md:text-3xl font-black text-gray-900 dark:text-white mt-1">
+                        {% if categoria_ativa %}Destaques em {{ categoria_ativa }}{% else %}Destaques do mercado{% endif %}
+                    </h1>
+                </div>
+                <span class="hidden sm:block text-xs text-gray-500 dark:text-slate-500">Análises com dados e contexto</span>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                {% set destaque = news[0] %}
+                <article class="lg:col-span-7 relative min-h-[360px] md:min-h-[430px] rounded-2xl overflow-hidden bg-slate-900 group">
+                    {% if destaque[11] %}
+                    <img src="{{ destaque[11] }}" alt="{{ destaque[1] }}" class="absolute inset-0 w-full h-full object-cover transition duration-500 group-hover:scale-105">
+                    {% else %}
+                    <div class="absolute inset-0 bg-gradient-to-br from-blue-700 via-slate-800 to-slate-950"></div>
                     {% endif %}
-                    <div class="p-6 flex flex-col flex-grow">
-                    <div class="flex justify-between items-center mb-4">
-                        <span class="bg-blue-100 dark:bg-white text-blue-800 dark:text-blue-900 text-xs font-bold px-3 py-1 rounded-full">{{ n[5] }}</span>
-                        <span class="text-gray-500 dark:text-slate-400 text-xs font-medium">
-                            {% if n[7] %}Publicado em {{ n[7] }}{% endif %}
-                            {% if n[7] and n[8] %} · {% endif %}
-                            {% if n[8] %}{{ n[8] }}{% endif %}
-                        </span>
-                    </div>
-
-                    <a href="/noticia/{{ n[0] }}" class="group">
-                        <h2 class="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mb-3 group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition-colors">{{ n[1] }}</h2>
-                        <p class="text-gray-600 dark:text-slate-300 mb-6 text-sm md:text-base leading-relaxed line-clamp-3">{{ n[2] }}</p>
+                    <div class="featured-gradient absolute inset-0"></div>
+                    <a href="/noticia/{{ destaque[0] }}" class="absolute inset-0 flex flex-col justify-end p-6 md:p-8">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="bg-[#4ade80] text-slate-950 text-[11px] font-black px-2.5 py-1 rounded-full uppercase">{{ destaque[5] }}</span>
+                            {% if destaque[8] %}<span class="text-xs text-slate-300">{{ destaque[8] }}</span>{% endif %}
+                        </div>
+                        <h2 class="text-2xl md:text-4xl font-black text-white leading-tight group-hover:text-[#4ade80] transition">{{ destaque[1] }}</h2>
+                        <p class="mt-3 text-sm md:text-base text-slate-200 line-clamp-2 max-w-2xl">{{ destaque[2] }}</p>
                     </a>
-
-                    {% set sent = (n[6] | default('Neutro', true)) | lower %}
-                    {% set border_class = 'border-green-500 dark:border-[#4ade80]' if 'positivo' in sent else ('border-red-500 dark:border-[#f87171]' if 'negativo' in sent else 'border-gray-400 dark:border-slate-500') %}
-                    
-                    <div class="bg-gray-50 dark:bg-[#0f172a] rounded-r-lg p-4 border-l-4 {{ border_class }} mb-6 shadow-sm dark:shadow-inner transition-colors">
-                        <h3 class="text-gray-500 dark:text-slate-500 text-xs font-black uppercase tracking-wider mb-2">Impacto no seu bolso:</h3>
-                        <p class="text-gray-800 dark:text-slate-200 text-sm font-medium">{{ n[3] }}</p>
-                    </div>
-
-                    <div class="mt-auto flex justify-between items-end">
-                        <a href="/noticia/{{ n[0] }}" class="text-blue-600 dark:text-[#4ade80] text-sm hover:text-blue-800 dark:hover:text-green-300 transition font-semibold">
-                            Ler análise completa &rarr;
-                        </a>
-                    </div>
-                    </div>
                 </article>
-                {% endfor %}
 
-                {% if not news %}
-                <div class="bg-white dark:bg-[#1e293b] rounded-xl p-10 text-center border border-gray-200 dark:border-slate-800 shadow-sm transition-colors">
-                    <p class="text-gray-500 dark:text-slate-400 text-lg font-medium">Nenhuma notícia encontrada.</p>
+                <div class="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
+                    {% for n in news[1:4] %}
+                    <article class="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden hover:border-blue-300 dark:hover:border-slate-600 transition">
+                        <a href="/noticia/{{ n[0] }}" class="flex h-full group">
+                            {% if n[11] %}
+                            <img src="{{ n[11] }}" alt="{{ n[1] }}" loading="lazy" class="w-28 sm:w-32 lg:w-40 object-cover shrink-0">
+                            {% else %}
+                            <div class="w-28 sm:w-32 lg:w-40 shrink-0 bg-gradient-to-br from-blue-700 via-slate-800 to-slate-950" aria-hidden="true"></div>
+                            {% endif %}
+                            <div class="p-4 flex flex-col justify-center">
+                                <span class="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-[#4ade80]">{{ n[5] }}</span>
+                                <h3 class="mt-1 text-base md:text-lg font-bold leading-snug text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition line-clamp-3">{{ n[1] }}</h3>
+                                <span class="mt-2 text-xs text-gray-500 dark:text-slate-500">{% if n[8] %}{{ n[8] }}{% else %}Finanças News{% endif %}</span>
+                            </div>
+                        </a>
+                    </article>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+        {% endif %}
+
+        {% set feed_news = news[4:] if news and not q and page == 1 else news %}
+        <div class="flex flex-col lg:flex-row gap-8 w-full items-start">
+            <div class="w-full {% if monetization.sidebar_visible %}lg:w-2/3{% endif %}">
+                {% if feed_news %}
+                <div class="flex items-center justify-between border-b-2 border-gray-900 dark:border-white pb-2 mb-5">
+                    <h2 class="text-xl font-black text-gray-900 dark:text-white">
+                        {% if q %}Notícias encontradas{% else %}Últimas análises{% endif %}
+                    </h2>
+                    <span class="text-xs text-gray-500 dark:text-slate-500">Mais recentes primeiro</span>
                 </div>
                 {% endif %}
 
-                <div class="flex justify-center items-center mt-6 space-x-3">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-0">
+                {% for n in feed_news %}
+                <article class="py-5 border-b border-gray-200 dark:border-slate-800">
+                    <a href="/noticia/{{ n[0] }}" class="group flex gap-4">
+                        {% if n[11] %}
+                        <img src="{{ n[11] }}" alt="{{ n[1] }}" loading="lazy" class="w-28 h-24 md:w-32 md:h-28 rounded-lg object-cover shrink-0">
+                        {% else %}
+                        <div class="w-28 h-24 md:w-32 md:h-28 rounded-lg shrink-0 bg-gradient-to-br from-blue-700 via-slate-800 to-slate-950" aria-hidden="true"></div>
+                        {% endif %}
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider">
+                                <span class="text-blue-600 dark:text-[#4ade80]">{{ n[5] }}</span>
+                                {% set sent = (n[6] | default('Neutro', true)) | lower %}
+                                <span class="{% if 'positivo' in sent %}text-green-600{% elif 'negativo' in sent %}text-red-500{% else %}text-gray-400{% endif %}">● {{ n[6] | default('Neutro', true) }}</span>
+                            </div>
+                            <h3 class="mt-1 text-base md:text-lg font-bold leading-snug text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition line-clamp-3">{{ n[1] }}</h3>
+                            <p class="mt-2 text-xs text-gray-500 dark:text-slate-500 line-clamp-1">
+                                {% if n[8] %}{{ n[8] }}{% endif %}{% if n[8] and n[7] %} · {% endif %}{% if n[7] %}{{ n[7] }}{% endif %}
+                            </p>
+                        </div>
+                    </a>
+                </article>
+                {% endfor %}
+                </div>
+
+                {% if not news %}
+                <div class="bg-white dark:bg-[#1e293b] rounded-xl p-8 md:p-10 text-center border border-gray-200 dark:border-slate-800 shadow-sm transition-colors">
+                    <p class="text-gray-700 dark:text-slate-300 text-lg font-semibold">
+                        Nenhuma notícia encontrada{% if categoria_ativa %} em <span class="text-blue-600 dark:text-[#4ade80]">{{ categoria_ativa }}</span>{% elif q %} para <span class="text-blue-600 dark:text-[#4ade80]">"{{ q }}"</span>{% endif %}.
+                    </p>
+                    {% if suggested_news %}
+                    <p class="text-gray-500 dark:text-slate-400 text-sm mt-2">Confira outras análises recentes do portal:</p>
+                    {% endif %}
+                </div>
+
+                {% if suggested_news %}
+                <section class="mt-8">
+                    <div class="flex items-center justify-between border-b-2 border-gray-900 dark:border-white pb-2 mb-5">
+                        <h2 class="text-xl font-black text-gray-900 dark:text-white">Outras análises para você</h2>
+                        <a href="/" class="text-xs font-semibold text-blue-600 dark:text-[#4ade80] hover:underline">Ver todas</a>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-0">
+                        {% for n in suggested_news %}
+                        <article class="py-5 border-b border-gray-200 dark:border-slate-800">
+                            <a href="/noticia/{{ n[0] }}" class="group flex gap-4">
+                                {% if n[11] %}
+                                <img src="{{ n[11] }}" alt="{{ n[1] }}" loading="lazy" class="w-28 h-24 md:w-32 md:h-28 rounded-lg object-cover shrink-0">
+                                {% else %}
+                                <div class="w-28 h-24 md:w-32 md:h-28 rounded-lg shrink-0 bg-gradient-to-br from-blue-700 via-slate-800 to-slate-950" aria-hidden="true"></div>
+                                {% endif %}
+                                <div class="min-w-0">
+                                    <div class="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider">
+                                        <span class="text-blue-600 dark:text-[#4ade80]">{{ n[5] }}</span>
+                                        {% set sent = (n[6] | default('Neutro', true)) | lower %}
+                                        <span class="{% if 'positivo' in sent %}text-green-600{% elif 'negativo' in sent %}text-red-500{% else %}text-gray-400{% endif %}">● {{ n[6] | default('Neutro', true) }}</span>
+                                    </div>
+                                    <h3 class="mt-1 text-base md:text-lg font-bold leading-snug text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition line-clamp-3">{{ n[1] }}</h3>
+                                    <p class="mt-2 text-xs text-gray-500 dark:text-slate-500 line-clamp-1">
+                                        {% if n[8] %}{{ n[8] }}{% endif %}{% if n[8] and n[7] %} · {% endif %}{% if n[7] %}{{ n[7] }}{% endif %}
+                                    </p>
+                                </div>
+                            </a>
+                        </article>
+                        {% endfor %}
+                    </div>
+                </section>
+                {% endif %}
+                {% endif %}
+
+                <div class="flex justify-center items-center mt-8 space-x-3">
                     {% if page > 1 %}
                         <a href="/?page={{ page - 1 }}{% if categoria_ativa %}&categoria={{ categoria_ativa }}{% endif %}{% if q %}&q={{ q }}{% endif %}" 
                            class="bg-white dark:bg-[#1e293b] text-gray-800 dark:text-white px-4 py-2 rounded-md hover:bg-gray-100 dark:hover:bg-slate-700 transition border border-gray-300 dark:border-slate-700 text-sm font-semibold shadow-sm">&larr;</a>
@@ -297,9 +382,8 @@
                     <span class="ticker-item"><span class="text-slate-400">₿ BTC:</span> ${formatCurrency(btc.bid)} <span class="${getColorClass(btc.pctChange)}">(${formatPct(btc.pctChange)})</span></span>
                 `;
                 
-                const fullHtml = tickerHtml + tickerHtml + tickerHtml + tickerHtml;
-                tickerEl.innerHTML = fullHtml;
-                sessionStorage.setItem('tickerHTML', fullHtml);
+                tickerEl.innerHTML = tickerHtml;
+                sessionStorage.setItem('tickerHTML', tickerHtml);
                 sessionStorage.setItem('tickerTime', now);
             } catch (error) {
                 if (!cachedHTML) tickerEl.innerHTML = '<span class="ticker-item">Finanças News - Cotações em tempo real.</span>';
