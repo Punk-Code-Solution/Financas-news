@@ -161,6 +161,18 @@ BCB_SERIES = {
     "dolar_comercial": 1,
 }
 
+AWESOME_HISTORICAL = {
+    "Dólar (USD/BRL)": "USD-BRL",
+    "Bitcoin (BTC/BRL)": "BTC-BRL",
+    "Euro (EUR/BRL)": "EUR-BRL",
+}
+
+BCB_HISTORICAL_LABELS = {
+    "selic_meta": "Selic meta (% a.a.)",
+    "ipca_12m": "IPCA 12 meses (%)",
+    "dolar_comercial": "Dólar comercial (R$/US$)",
+}
+
 
 def clean_html(html_content):
     soup = BeautifulSoup(html_content, "html.parser")
@@ -229,6 +241,85 @@ def fetch_bcb_snapshot() -> dict[str, dict[str, Any]]:
         except Exception:
             continue
     return snapshot
+
+
+def fetch_bcb_historical(days: int = 90) -> dict[str, Any]:
+    """Séries históricas BCB para gráficos de linha."""
+    series: dict[str, Any] = {}
+    for key, series_id in BCB_SERIES.items():
+        label = BCB_HISTORICAL_LABELS[key]
+        try:
+            url = (
+                f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{series_id}"
+                f"/dados/ultimos/{days}?formato=json"
+            )
+            res = requests.get(url, headers=HEADERS, timeout=12)
+            if res.status_code != 200:
+                continue
+            dados = res.json()
+            if not dados:
+                continue
+            series[label] = {
+                "labels": [d.get("data", "") for d in dados],
+                "values": [float(str(d.get("valor", "0")).replace(",", ".")) for d in dados],
+                "periodo_dias": days,
+                "fonte": "BCB",
+            }
+        except Exception:
+            continue
+    return series
+
+
+def fetch_awesome_historical(days: int = 30) -> dict[str, Any]:
+    """Séries históricas AwesomeAPI para gráficos de linha."""
+    series: dict[str, Any] = {}
+    for label, pair in AWESOME_HISTORICAL.items():
+        try:
+            url = f"https://economia.awesomeapi.com.br/json/daily/{pair}/{days}"
+            res = requests.get(url, headers=HEADERS, timeout=12)
+            if res.status_code != 200:
+                continue
+            dados = res.json()
+            if not isinstance(dados, list) or not dados:
+                continue
+            dados = list(reversed(dados))
+            series[label] = {
+                "labels": [
+                    datetime.fromtimestamp(int(d.get("timestamp", 0))).strftime("%d/%m")
+                    for d in dados
+                    if d.get("timestamp")
+                ],
+                "values": [float(d.get("bid", 0)) for d in dados],
+                "periodo_dias": days,
+                "fonte": "AwesomeAPI",
+            }
+        except Exception:
+            continue
+    return series
+
+
+def fetch_market_historical(days_short: int = 30, days_long: int = 90) -> dict[str, Any]:
+    """Agrega histórico BCB + AwesomeAPI para enriquecimento de artigos."""
+    return {
+        "30d": {**fetch_awesome_historical(days_short), **fetch_bcb_historical(min(days_short, 30))},
+        "90d": {**fetch_awesome_historical(days_long), **fetch_bcb_historical(days_long)},
+        "coletado_em": datetime.now().strftime("%d/%m/%Y %H:%M"),
+    }
+
+
+def fetch_sparkline_data() -> dict[str, list[float]]:
+    """Mini séries (7 dias) para sparklines na home."""
+    sparklines: dict[str, list[float]] = {}
+    for label, pair in list(AWESOME_HISTORICAL.items())[:2]:
+        try:
+            url = f"https://economia.awesomeapi.com.br/json/daily/{pair}/7"
+            res = requests.get(url, headers=HEADERS, timeout=8)
+            if res.status_code == 200:
+                dados = list(reversed(res.json()))
+                sparklines[label] = [float(d.get("bid", 0)) for d in dados if d.get("bid")]
+        except Exception:
+            continue
+    return sparklines
 
 
 def format_data_context(market, bcb, db_context):
@@ -569,7 +660,50 @@ Retorne APENAS JSON válido (sem ```json):
     "impacto_bolso": "3 frases diretas: impacto no bolso, na poupança/investimentos e no custo de vida.",
     "tag": "UMA de: {tags_list}",
     "sentimento": "UM de: Positivo, Negativo, Neutro",
-    "dados_citados": ["lista dos dados numéricos que você efetivamente usou no texto"]
+    "dados_citados": ["lista dos dados numéricos que você efetivamente usou no texto"],
+    "pontos_chave": [
+        {{
+            "titulo": "Nome curto do ponto (ex: Selic 14,25%)",
+            "descricao": "Uma frase explicando por que esse dado importa para o leitor",
+            "categoria": "UMA de: {tags_list} — categoria para link interno"
+        }}
+    ],
+    "timeline": [
+        {{"data": "Mar/2024 ou data aproximada", "evento": "Marco histórico relevante para contextualizar a notícia"}}
+    ],
+    "cenarios": [
+        {{"prazo": "30 dias", "probabilidade": "alta|média|baixa", "descricao": "Cenário específico e mensurável"}},
+        {{"prazo": "90 dias", "probabilidade": "alta|média|baixa", "descricao": "Cenário específico"}},
+        {{"prazo": "180 dias", "probabilidade": "alta|média|baixa", "descricao": "Cenário específico"}}
+    ],
+    "perfil_investidor": {{
+        "conservador": "Orientação específica para perfil conservador (2-3 frases)",
+        "moderado": "Orientação para perfil moderado (2-3 frases)",
+        "arrojado": "Orientação para perfil arrojado (2-3 frases)"
+    }},
+    "glossario": [
+        {{"termo": "Termo técnico usado no texto", "definicao": "Definição acessível em 1-2 frases"}}
+    ],
+    "referencias_internas": [
+        {{"trecho": "trecho exato de 3-8 palavras do resumo para linkar", "titulo_busca": "palavras-chave para encontrar matéria relacionada no acervo"}}
+    ],
+    "faq": [
+        {{"pergunta": "Pergunta que o leitor iniciante faria", "resposta": "Resposta objetiva em 2-4 frases"}},
+        {{"pergunta": "Segunda pergunta relevante", "resposta": "Resposta objetiva"}},
+        {{"pergunta": "Terceira pergunta relevante", "resposta": "Resposta objetiva"}}
+    ],
+    "urgencia": "UM de: Alta, Média, Baixa — quão urgente é agir sobre esta notícia",
+    "publico_alvo": "UM de: Iniciante, Intermediário, Avançado, Geral",
+    "horizonte": "UM de: Curto prazo, Médio prazo, Longo prazo",
+    "confianca_dados": "UM de: Alta, Média, Baixa — confiança nos dados citados",
+    "tabela_comparativa": {{
+        "titulo": "Título da comparação (ex: Renda fixa vs variável neste cenário)",
+        "colunas": ["Opção A", "Opção B", "Opção C"],
+        "linhas": [
+            {{"rotulo": "Risco", "valores": ["Baixo", "Médio", "Alto"]}},
+            {{"rotulo": "Retorno esperado", "valores": ["~12% a.a.", "~15% a.a.", "~25% a.a."]}}
+        ]
+    }}
 }}
 """
 
@@ -582,6 +716,127 @@ Retorne APENAS JSON válido (sem ```json):
     except Exception as e:
         print(f"   ❌ Erro ao processar resposta da IA: {e}")
         return None
+
+
+def _build_dados_mercado_payload(market, bcb, ai_data, historico=None) -> str:
+    extra_keys = (
+        "timeline", "cenarios", "perfil_investidor", "glossario", "faq",
+        "urgencia", "publico_alvo", "horizonte", "confianca_dados",
+        "tabela_comparativa", "referencias_internas",
+    )
+    payload = {
+        "cotacoes": market,
+        "bcb": bcb,
+        "dados_citados": ai_data.get("dados_citados", []),
+        "pontos_chave": ai_data.get("pontos_chave", []),
+        "historico": historico or fetch_market_historical(),
+    }
+    for key in extra_keys:
+        if ai_data.get(key):
+            payload[key] = ai_data[key]
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def refresh_article_market_data(article_id: int, add_update_note: bool = True) -> dict[str, Any] | None:
+    """Atualiza cotações e indicadores de um artigo antigo."""
+    client = get_db()
+    result = client.execute(
+        "SELECT id, titulo, tag, dados_mercado, contexto_editorial, versao_analise FROM news WHERE id = ?",
+        [article_id],
+    )
+    if not result.rows:
+        client.close()
+        return None
+
+    row = result.rows[0]
+    noticia_id, titulo, tag, raw_dados, contexto_editorial, versao = row[0], row[1], row[2], row[3], row[4], row[5]
+    versao = int(versao or 1)
+
+    old_dados: dict[str, Any] = {}
+    if raw_dados:
+        try:
+            old_dados = json.loads(raw_dados)
+        except json.JSONDecodeError:
+            pass
+
+    market = fetch_market_snapshot()
+    bcb = fetch_bcb_snapshot()
+    historico = fetch_market_historical()
+    agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    atualizacao = None
+    if add_update_note and old_dados.get("cotacoes"):
+        old_cot = old_dados["cotacoes"]
+        changes = []
+        for label, info in market.items():
+            if label in ("coletado_em", "erro_cotacoes") or not isinstance(info, dict):
+                continue
+            old_info = old_cot.get(label, {})
+            if isinstance(old_info, dict) and old_info.get("cotacao") != info.get("cotacao"):
+                changes.append(f"{label}: {old_info.get('cotacao', 'n/d')} → {info.get('cotacao', 'n/d')}")
+        if changes:
+            atualizacao = (
+                f"Atualização em {agora}: desde a publicação original, "
+                f"as cotações mudaram — {'; '.join(changes[:4])}."
+            )
+
+    new_dados = dict(old_dados)
+    new_dados["cotacoes"] = market
+    new_dados["bcb"] = bcb
+    new_dados["historico"] = historico
+    if atualizacao:
+        new_dados["atualizacao"] = atualizacao
+
+    contexto_lines = []
+    for key, val in market.items():
+        if key in ("coletado_em", "erro_cotacoes") or not isinstance(val, dict):
+            continue
+        contexto_lines.append(f"{key}: {val.get('cotacao')} ({val.get('variacao_24h')} em 24h)")
+    for key, val in bcb.items():
+        if isinstance(val, dict):
+            contexto_lines.append(f"{key}: {val.get('valor')} (ref. {val.get('data')})")
+    novo_contexto = contexto_editorial or ""
+    if contexto_lines:
+        novo_contexto = " | ".join(contexto_lines[:6])
+
+    client.execute(
+        """
+        UPDATE news
+        SET dados_mercado = ?, contexto_editorial = ?, updated_at = ?, versao_analise = ?
+        WHERE id = ?
+        """,
+        [json.dumps(new_dados, ensure_ascii=False), novo_contexto, agora, versao + 1, noticia_id],
+    )
+    client.close()
+    return {
+        "id": noticia_id,
+        "titulo": titulo,
+        "versao_analise": versao + 1,
+        "atualizacao": atualizacao,
+        "coletado_em": agora,
+    }
+
+
+def refresh_stale_articles(limit: int = 10, min_days_old: int = 7) -> dict[str, Any]:
+    """Atualiza artigos mais antigos que min_days_old dias."""
+    client = get_db()
+    result = client.execute(
+        """
+        SELECT id FROM news
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        [limit * 3],
+    )
+    ids = [r[0] for r in result.rows]
+    client.close()
+
+    updated = []
+    for aid in ids[:limit]:
+        res = refresh_article_market_data(aid)
+        if res:
+            updated.append(res)
+    return {"processed": len(updated), "items": updated}
 
 
 def extract_entry_content(entry) -> str:
@@ -604,6 +859,7 @@ def fetch_and_process(max_per_feed=2):
 
     market = fetch_market_snapshot()
     bcb = fetch_bcb_snapshot()
+    historico = fetch_market_historical()
     print(f"   📊 Dados de mercado coletados: {len(market)} cotações, {len(bcb)} indicadores BCB")
 
     for feed_config in RSS_FEEDS:
@@ -662,11 +918,9 @@ def fetch_and_process(max_per_feed=2):
                         "fonte": fonte,
                         "published_at": published,
                         "imagem_url": imagem_url,
-                        "dados_mercado": json.dumps(
-                            {"cotacoes": market, "bcb": bcb, "dados_citados": ai_data.get("dados_citados", [])},
-                            ensure_ascii=False,
-                        ),
+                        "dados_mercado": _build_dados_mercado_payload(market, bcb, ai_data, historico),
                         "contexto_editorial": ai_data.get("contexto_mercado", ""),
+                        "versao_analise": 1,
                         **ai_data,
                     }
                     noticias_processadas.append(news_item)

@@ -1,0 +1,123 @@
+{% set acervo = enrichment.acervo_stats %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    const serverPanel = document.getElementById('market-panel-server');
+    const livePanel = document.getElementById('market-panel-live');
+    const liveGrid = document.getElementById('market-live-grid');
+    const liveTime = document.getElementById('market-live-time');
+
+    if (!serverPanel && livePanel && liveGrid) {
+        fetch('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL')
+            .then(r => r.json())
+            .then(data => {
+                const fmt = (v) => parseFloat(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                const items = [
+                    { label: 'Dólar (USD/BRL)', key: 'USDBRL' },
+                    { label: 'Euro (EUR/BRL)', key: 'EURBRL' },
+                    { label: 'Bitcoin (BTC/BRL)', key: 'BTCBRL' },
+                ];
+                liveGrid.innerHTML = items.map(({ label, key }) => {
+                    const item = data[key];
+                    if (!item) return '';
+                    const pct = parseFloat(item.pctChange);
+                    const up = pct >= 0;
+                    const bar = Math.min(Math.abs(pct) * 12, 100);
+                    return `<div class="bg-gray-50 dark:bg-[#0f172a] border border-gray-200 dark:border-slate-700 rounded-xl p-4">
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400">${label}</p>
+                        <p class="mt-1 text-xl font-black text-gray-900 dark:text-white">${fmt(item.bid)}</p>
+                        <div class="mt-2 flex items-center justify-between gap-2">
+                            <span class="text-xs font-bold ${up ? 'text-green-600 dark:text-[#4ade80]' : 'text-red-500 dark:text-[#f87171]'}">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}% (24h)</span>
+                            <div class="flex-1 h-1.5 bg-gray-200 dark:bg-slate-700 rounded-full overflow-hidden max-w-[80px]">
+                                <div class="h-full rounded-full ${up ? 'bg-green-500' : 'bg-red-500'}" style="width:${bar}%"></div>
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('');
+                livePanel.classList.remove('hidden');
+                if (liveTime) liveTime.textContent = 'Atualizado agora';
+            })
+            .catch(() => {});
+    }
+
+    const isDark = document.documentElement.classList.contains('dark');
+    const lineColor = isDark ? '#4ade80' : '#2563eb';
+    const gridColor = isDark ? 'rgba(148,163,184,0.15)' : 'rgba(100,116,139,0.15)';
+
+    const histCharts = {{ enrichment.historical_charts | tojson }};
+    histCharts.forEach(chart => {
+        const canvas = document.getElementById('hist-chart-' + chart.id);
+        if (!canvas || typeof Chart === 'undefined') return;
+        new Chart(canvas, {
+            type: 'line',
+            data: {
+                labels: chart.labels,
+                datasets: [{
+                    label: chart.label,
+                    data: chart.values,
+                    borderColor: lineColor,
+                    backgroundColor: isDark ? 'rgba(74,222,128,0.1)' : 'rgba(37,99,235,0.1)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 0,
+                    borderWidth: 2,
+                }],
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { maxTicksLimit: 6, color: isDark ? '#94a3b8' : '#64748b', font: { size: 9 } }, grid: { color: gridColor } },
+                    y: { ticks: { color: isDark ? '#94a3b8' : '#64748b', font: { size: 9 } }, grid: { color: gridColor } },
+                },
+            },
+        });
+    });
+
+    const canvas = document.getElementById('sentiment-chart');
+    if (canvas && typeof Chart !== 'undefined') {
+        const chartData = {{ acervo.chart | tojson }};
+        const total = chartData.reduce((sum, item) => sum + item.count, 0);
+        if (total > 0) {
+            new Chart(canvas, {
+                type: 'doughnut',
+                data: {
+                    labels: chartData.map(d => d.label),
+                    datasets: [{
+                        data: chartData.map(d => d.count),
+                        backgroundColor: chartData.map(d => d.color),
+                        borderWidth: 0,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: isDark ? '#94a3b8' : '#64748b',
+                                boxWidth: 10,
+                                font: { size: 10, weight: '600' },
+                            },
+                        },
+                    },
+                },
+            });
+        } else {
+            canvas.parentElement.style.display = 'none';
+        }
+    }
+
+    const perfilLeitor = localStorage.getItem('perfil_leitor');
+    if (perfilLeitor) {
+        document.querySelectorAll('.perfil-card').forEach(card => {
+            if (card.dataset.perfil === perfilLeitor) {
+                card.classList.add('ring-2', 'ring-blue-500', 'dark:ring-[#4ade80]', 'shadow-md');
+            } else {
+                card.classList.add('opacity-60');
+            }
+        });
+    }
+})();
+</script>

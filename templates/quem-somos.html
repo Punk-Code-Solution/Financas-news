@@ -110,7 +110,7 @@
                 </p>
             </section>
 
-            <section class="mb-8 bg-gray-50 dark:bg-[#0f172a] p-6 rounded-lg border-l-4 border-blue-500 dark:border-[#4ade80] shadow-sm dark:shadow-inner transition-colors">
+            <section class="mb-8 bg-gray-50 dark:bg-[#0f172a] p-6 rounded-lg border border-gray-200 dark:border-slate-700 shadow-sm dark:shadow-inner transition-colors">
                 <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-4 transition-colors">Desenvolvido pela Punk Code Solution</h2>
                 <p class="text-lg text-gray-700 dark:text-slate-300 mb-4 leading-relaxed transition-colors">
                     O portal Finanças News é um projeto oficial desenvolvido e mantido pela <strong class="text-gray-900 dark:text-white">Punk Code Solution</strong>, uma empresa com foco em engenharia de software e automações tecnológicas.
@@ -148,44 +148,8 @@
             }
         }
 
-        async function fetchMarketData() {
-            const tickerEl = document.getElementById('market-ticker');
-            const cachedHTML = sessionStorage.getItem('tickerHTML');
-            const cachedTime = sessionStorage.getItem('tickerTime');
-            const now = new Date().getTime();
-
-            if (cachedHTML && cachedTime && (now - cachedTime < 300000)) {
-                tickerEl.innerHTML = cachedHTML;
-                return;
-            }
-            try {
-                const resMoedas = await fetch('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL');
-                const dataMoedas = await resMoedas.json();
-                
-                const formatCurrency = (value) => parseFloat(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                const formatPct = (pct) => parseFloat(pct) > 0 ? `+${pct}%` : `${pct}%`;
-                const getColorClass = (pct) => parseFloat(pct) >= 0 ? 'ticker-up' : 'ticker-down';
-                
-                const usd = dataMoedas.USDBRL; const eur = dataMoedas.EURBRL; const btc = dataMoedas.BTCBRL;
-
-                const tickerHtml = `
-                    <span class="ticker-item"><span class="text-slate-400">🇺🇸 USD:</span> ${formatCurrency(usd.bid)} <span class="${getColorClass(usd.pctChange)}">(${formatPct(usd.pctChange)})</span></span>
-                    <span class="ticker-item"><span class="text-slate-400">🇪🇺 EUR:</span> ${formatCurrency(eur.bid)} <span class="${getColorClass(eur.pctChange)}">(${formatPct(eur.pctChange)})</span></span>
-                    <span class="ticker-item"><span class="text-slate-400">₿ BTC:</span> ${formatCurrency(btc.bid)} <span class="${getColorClass(btc.pctChange)}">(${formatPct(btc.pctChange)})</span></span>
-                `;
-                
-                const fullHtml = tickerHtml + tickerHtml + tickerHtml + tickerHtml;
-                tickerEl.innerHTML = fullHtml;
-                sessionStorage.setItem('tickerHTML', fullHtml);
-                sessionStorage.setItem('tickerTime', now);
-            } catch (error) {
-                if (!cachedHTML) tickerEl.innerHTML = '<span class="ticker-item">Finanças News - Cotações em tempo real.</span>';
-            }
-        }
-
         document.addEventListener('DOMContentLoaded', () => {
             setInitialThemeIcons();
-            fetchMarketData();
 
             const themeBtn = document.getElementById('theme-toggle');
             if (themeBtn) {
@@ -206,7 +170,7 @@
                 });
             }
         });
-        setInterval(fetchMarketData, 300000);
     </script>
+    <script src="/static/js/market-ticker.js"></script>
 </body>
 </html>

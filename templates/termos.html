@@ -104,27 +104,8 @@
             }
         }
 
-        async function fetchMarketData() {
-            const tickerEl = document.getElementById('market-ticker');
-            const cachedHTML = sessionStorage.getItem('tickerHTML');
-            if (cachedHTML) { tickerEl.innerHTML = cachedHTML; return; }
-            try {
-                const resMoedas = await fetch('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL');
-                const dataMoedas = await resMoedas.json();
-                const formatCurrency = (value) => parseFloat(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                const formatPct = (pct) => parseFloat(pct) > 0 ? `+${pct}%` : `${pct}%`;
-                const getColorClass = (pct) => parseFloat(pct) >= 0 ? 'ticker-up' : 'ticker-down';
-                const usd = dataMoedas.USDBRL; const eur = dataMoedas.EURBRL; const btc = dataMoedas.BTCBRL;
-                const tickerHtml = `<span class="ticker-item"><span class="text-slate-400">🇺🇸 USD:</span> ${formatCurrency(usd.bid)} <span class="${getColorClass(usd.pctChange)}">(${formatPct(usd.pctChange)})</span></span><span class="ticker-item"><span class="text-slate-400">🇪🇺 EUR:</span> ${formatCurrency(eur.bid)} <span class="${getColorClass(eur.pctChange)}">(${formatPct(eur.pctChange)})</span></span><span class="ticker-item"><span class="text-slate-400">₿ BTC:</span> ${formatCurrency(btc.bid)} <span class="${getColorClass(btc.pctChange)}">(${formatPct(btc.pctChange)})</span></span>`;
-                const fullHtml = tickerHtml + tickerHtml + tickerHtml + tickerHtml;
-                tickerEl.innerHTML = fullHtml;
-                sessionStorage.setItem('tickerHTML', fullHtml);
-            } catch (error) { tickerEl.innerHTML = '<span class="ticker-item">Finanças News - Cotações em tempo real.</span>'; }
-        }
-
         document.addEventListener('DOMContentLoaded', () => {
             setInitialThemeIcons();
-            fetchMarketData();
 
             // Adiciona o funcionamento ao botão de tema
             const themeBtn = document.getElementById('theme-toggle');
@@ -147,5 +128,6 @@
             }
         });
     </script>
+    <script src="/static/js/market-ticker.js"></script>
 </body>
 </html>

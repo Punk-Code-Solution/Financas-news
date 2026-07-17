@@ -1,0 +1,30 @@
+{% set stats = enrichment.market_stats %}
+{% if stats.pontos_chave %}
+<aside class="analise-pontos lg:sticky lg:top-28" id="pontos-chave-analise" aria-label="Pontos-chave da análise">
+    <div class="rounded-2xl border border-blue-200/70 dark:border-blue-800/40 bg-gradient-to-b from-blue-50 to-white dark:from-blue-950/40 dark:to-[#0f172a] p-5 shadow-sm">
+        <p class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-[#4ade80] mb-1">Método editorial</p>
+        <h3 class="text-sm font-black text-gray-900 dark:text-white mb-4 leading-snug">Pontos-chave da análise</h3>
+        <ol class="space-y-3">
+            {% for ponto in stats.pontos_chave %}
+            <li>
+                <a href="{{ ponto.href or '/' }}"
+                   class="group block rounded-xl border border-transparent bg-white/70 dark:bg-[#1e293b]/60 p-3 hover:border-blue-400 dark:hover:border-[#4ade80] transition">
+                    <div class="flex items-start gap-3">
+                        <span class="shrink-0 w-6 h-6 rounded-full bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-900 text-[11px] font-black flex items-center justify-center">{{ loop.index }}</span>
+                        <div class="min-w-0">
+                            <p class="text-sm font-black text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition leading-snug">{{ ponto.titulo }}</p>
+                            {% if ponto.descricao %}
+                            <p class="mt-1 text-xs text-gray-600 dark:text-slate-400 leading-relaxed">{{ ponto.descricao }}</p>
+                            {% endif %}
+                            <span class="mt-2 inline-flex text-[10px] font-black uppercase tracking-wide text-blue-600 dark:text-[#4ade80]">
+                                Ver mais em {{ ponto.cta_categoria or ponto.categoria or noticia[5] }} →
+                            </span>
+                        </div>
+                    </div>
+                </a>
+            </li>
+            {% endfor %}
+        </ol>
+    </div>
+</aside>
+{% endif %}

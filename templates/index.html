@@ -63,6 +63,9 @@
 
         .dark select option { background-color: #1e293b !important; color: #ffffff !important; }
         select option { background-color: #ffffff; color: #000000; }
+
+        .sparkline { width: 64px; height: 24px; display: inline-block; vertical-align: middle; }
+        .sparkline polyline { fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
     </style>
 </head>
 <body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 transition-colors duration-200 flex flex-col min-h-screen">
@@ -209,6 +212,9 @@
                                 <span class="text-blue-600 dark:text-[#4ade80]">{{ n[5] }}</span>
                                 {% set sent = (n[6] | default('Neutro', true)) | lower %}
                                 <span class="{% if 'positivo' in sent %}text-green-600{% elif 'negativo' in sent %}text-red-500{% else %}text-gray-400{% endif %}">● {{ n[6] | default('Neutro', true) }}</span>
+                                {% if sparklines %}
+                                <svg class="sparkline ml-auto" viewBox="0 0 64 24" aria-hidden="true" data-sparkline="dolar"></svg>
+                                {% endif %}
                             </div>
                             <h3 class="mt-1 text-base md:text-lg font-bold leading-snug text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition line-clamp-3">{{ n[1] }}</h3>
                             <p class="mt-2 text-xs text-gray-500 dark:text-slate-500 line-clamp-1">
@@ -356,43 +362,28 @@
             }
         }
 
-        async function fetchMarketData() {
-            const tickerEl = document.getElementById('market-ticker');
-            const cachedHTML = sessionStorage.getItem('tickerHTML');
-            const cachedTime = sessionStorage.getItem('tickerTime');
-            const now = new Date().getTime();
-
-            if (cachedHTML && cachedTime && (now - cachedTime < 300000)) {
-                tickerEl.innerHTML = cachedHTML;
-                return;
-            }
-            try {
-                const resMoedas = await fetch('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL');
-                const dataMoedas = await resMoedas.json();
-                
-                const formatCurrency = (value) => parseFloat(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                const formatPct = (pct) => parseFloat(pct) > 0 ? `+${pct}%` : `${pct}%`;
-                const getColorClass = (pct) => parseFloat(pct) >= 0 ? 'ticker-up' : 'ticker-down';
-                
-                const usd = dataMoedas.USDBRL; const eur = dataMoedas.EURBRL; const btc = dataMoedas.BTCBRL;
-
-                const tickerHtml = `
-                    <span class="ticker-item"><span class="text-slate-400">🇺🇸 USD:</span> ${formatCurrency(usd.bid)} <span class="${getColorClass(usd.pctChange)}">(${formatPct(usd.pctChange)})</span></span>
-                    <span class="ticker-item"><span class="text-slate-400">🇪🇺 EUR:</span> ${formatCurrency(eur.bid)} <span class="${getColorClass(eur.pctChange)}">(${formatPct(eur.pctChange)})</span></span>
-                    <span class="ticker-item"><span class="text-slate-400">₿ BTC:</span> ${formatCurrency(btc.bid)} <span class="${getColorClass(btc.pctChange)}">(${formatPct(btc.pctChange)})</span></span>
-                `;
-                
-                tickerEl.innerHTML = tickerHtml;
-                sessionStorage.setItem('tickerHTML', tickerHtml);
-                sessionStorage.setItem('tickerTime', now);
-            } catch (error) {
-                if (!cachedHTML) tickerEl.innerHTML = '<span class="ticker-item">Finanças News - Cotações em tempo real.</span>';
-            }
-        }
-
         document.addEventListener('DOMContentLoaded', () => {
             setInitialThemeIcons();
-            fetchMarketData();
+
+            // Mini sparklines nos cards (ponto 1)
+            const sparkData = {{ sparklines | tojson }};
+            const sparkKey = sparkData['Dólar (USD/BRL)'] ? 'Dólar (USD/BRL)' : Object.keys(sparkData)[0];
+            const values = sparkKey ? sparkData[sparkKey] : [];
+            if (values && values.length > 1) {
+                const min = Math.min(...values);
+                const max = Math.max(...values);
+                const range = max - min || 1;
+                const points = values.map((v, i) => {
+                    const x = (i / (values.length - 1)) * 64;
+                    const y = 22 - ((v - min) / range) * 20;
+                    return `${x},${y}`;
+                }).join(' ');
+                const up = values[values.length - 1] >= values[0];
+                const color = up ? '#4ade80' : '#f87171';
+                document.querySelectorAll('[data-sparkline]').forEach(svg => {
+                    svg.innerHTML = `<polyline points="${points}" stroke="${color}"/>`;
+                });
+            }
 
             document.body.addEventListener('click', async (e) => {
                 const themeBtn = e.target.closest('#theme-toggle');
@@ -441,7 +432,7 @@
                 }
             });
         });
-        setInterval(fetchMarketData, 300000);
     </script>
+    <script src="/static/js/market-ticker.js"></script>
 </body>
 </html>

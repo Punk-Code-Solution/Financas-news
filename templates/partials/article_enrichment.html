@@ -1,0 +1,233 @@
+{% set stats = enrichment.market_stats %}
+{% set acervo = enrichment.acervo_stats %}
+
+{# --- Metadados de relevância (ponto 5) --- #}
+{% if enrichment.relevance %}
+<section class="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-2">
+    {% set rel = enrichment.relevance %}
+    <div class="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-700 rounded-lg p-3 text-center">
+        <p class="text-[10px] font-black uppercase text-gray-500 dark:text-slate-400">Urgência</p>
+        <p class="mt-1 text-sm font-black {% if rel.urgencia == 'Alta' %}text-red-500{% elif rel.urgencia == 'Baixa' %}text-green-600 dark:text-[#4ade80]{% else %}text-amber-500{% endif %}">{{ rel.urgencia }}</p>
+    </div>
+    <div class="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-700 rounded-lg p-3 text-center">
+        <p class="text-[10px] font-black uppercase text-gray-500 dark:text-slate-400">Público</p>
+        <p class="mt-1 text-sm font-black text-gray-900 dark:text-white">{{ rel.publico_alvo }}</p>
+    </div>
+    <div class="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-700 rounded-lg p-3 text-center">
+        <p class="text-[10px] font-black uppercase text-gray-500 dark:text-slate-400">Horizonte</p>
+        <p class="mt-1 text-sm font-black text-gray-900 dark:text-white">{{ rel.horizonte }}</p>
+    </div>
+    <div class="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-700 rounded-lg p-3 text-center">
+        <p class="text-[10px] font-black uppercase text-gray-500 dark:text-slate-400">Confiança</p>
+        <p class="mt-1 text-sm font-black text-blue-600 dark:text-[#4ade80]">{{ rel.confianca_dados }}</p>
+    </div>
+</section>
+{% endif %}
+
+{# --- Metodologia e confiança (ponto 9) --- #}
+{% if enrichment.trust %}
+{% set trust = enrichment.trust %}
+<section class="mb-6 bg-slate-50 dark:bg-[#0f172a] border border-gray-200 dark:border-slate-700 rounded-xl p-5">
+    <p class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-2">Metodologia editorial</p>
+    <div class="flex flex-wrap gap-4 text-sm text-gray-700 dark:text-slate-300">
+        {% if trust.fontes_count %}<span><strong>{{ trust.fontes_count }}</strong> fontes de dados citadas</span>{% endif %}
+        {% if trust.bcb_data %}<span>BCB ref. <strong>{{ trust.bcb_data }}</strong></span>{% endif %}
+        {% if trust.acervo_count %}<span><strong>{{ trust.acervo_count }}</strong> análises no acervo desta categoria</span>{% endif %}
+        {% if trust.coletado_em %}<span>Coleta em <strong>{{ trust.coletado_em }}</strong></span>{% endif %}
+    </div>
+    {% if trust.disclaimer %}
+    <p class="mt-3 text-xs text-amber-700 dark:text-amber-400/90 border-t border-gray-200 dark:border-slate-700 pt-3">{{ trust.disclaimer }}</p>
+    {% endif %}
+</section>
+{% endif %}
+
+{% if enrichment.atualizacao %}
+<section class="mb-6 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 rounded-xl p-4">
+    <p class="text-xs font-black uppercase text-amber-700 dark:text-amber-300 mb-1">Atualização de mercado</p>
+    <p class="text-sm text-amber-900 dark:text-amber-100">{{ enrichment.atualizacao }}</p>
+    {% if noticia[14] %}<p class="mt-1 text-xs text-amber-600 dark:text-amber-400">Versão da análise: v{{ noticia[14] }}</p>{% endif %}
+</section>
+{% endif %}
+
+{# --- Comparação antes/depois (ponto 1) --- #}
+{% if enrichment.before_after and enrichment.before_after['items'] %}
+<section class="mb-8">
+    <h2 class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-3">Snapshot na publicação</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {% for item in enrichment.before_after['items'] %}
+        <div class="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-700 rounded-xl p-4">
+            <p class="text-[10px] font-bold uppercase text-gray-500 dark:text-slate-400">{{ item.label }}</p>
+            <p class="mt-1 text-lg font-black text-gray-900 dark:text-white">{{ item.valor_publicacao }}</p>
+            <p class="mt-1 text-xs {% if item.positivo %}text-green-600 dark:text-[#4ade80]{% else %}text-red-500{% endif %}">Var. 24h: {{ item.variacao_24h }}</p>
+        </div>
+        {% endfor %}
+    </div>
+    {% if enrichment.before_after.coletado_em %}
+    <p class="mt-2 text-xs text-gray-500 dark:text-slate-500">Valores coletados em {{ enrichment.before_after.coletado_em }}</p>
+    {% endif %}
+</section>
+{% endif %}
+
+{# --- Timeline (ponto 2) --- #}
+{% if enrichment.timeline %}
+<section class="mb-8">
+    <h2 class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-3">Linha do tempo</h2>
+    <ol class="relative border-l-2 border-blue-200 dark:border-slate-600 ml-3 space-y-4">
+        {% for ev in enrichment.timeline %}
+        <li class="ml-6">
+            <span class="absolute -left-[7px] w-3 h-3 bg-blue-500 dark:bg-[#4ade80] rounded-full"></span>
+            <p class="text-xs font-bold text-blue-600 dark:text-[#4ade80]">{{ ev.data }}</p>
+            <p class="text-sm text-gray-700 dark:text-slate-300 mt-0.5">{{ ev.evento }}</p>
+        </li>
+        {% endfor %}
+    </ol>
+</section>
+{% endif %}
+
+{# --- Cenários (ponto 2) --- #}
+{% if enrichment.cenarios %}
+<section class="mb-8">
+    <h2 class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-3">Cenários projetados</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {% for c in enrichment.cenarios %}
+        <div class="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-700 rounded-xl p-4">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-black text-gray-900 dark:text-white">{{ c.prazo }}</span>
+                <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full
+                    {% if c.probabilidade == 'alta' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-[#4ade80]
+                    {% elif c.probabilidade == 'baixa' %}bg-red-100 dark:bg-red-900/30 text-red-600
+                    {% else %}bg-amber-100 dark:bg-amber-900/30 text-amber-700{% endif %}">{{ c.probabilidade }}</span>
+            </div>
+            <p class="text-sm text-gray-600 dark:text-slate-300 leading-relaxed">{{ c.descricao }}</p>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+{# --- Perfil investidor (ponto 2 + 8) --- #}
+{% if enrichment.perfil_investidor %}
+<section class="mb-8" id="perfil-investidor-section">
+    <h2 class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-3">Orientação por perfil de investidor</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {% for perfil_key, perfil_label in [('conservador', 'Conservador'), ('moderado', 'Moderado'), ('arrojado', 'Arrojado')] %}
+        {% if enrichment.perfil_investidor[perfil_key] %}
+        <div class="perfil-card bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-700 rounded-xl p-4 transition"
+             data-perfil="{{ perfil_key }}">
+            <p class="text-xs font-black uppercase text-blue-600 dark:text-[#4ade80] mb-2">{{ perfil_label }}</p>
+            <p class="text-sm text-gray-700 dark:text-slate-300 leading-relaxed">{{ enrichment.perfil_investidor[perfil_key] }}</p>
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+{# --- Tabela comparativa (ponto 7) --- #}
+{% if enrichment.tabela_comparativa and enrichment.tabela_comparativa.linhas %}
+{% set tabela = enrichment.tabela_comparativa %}
+<section class="mb-8 overflow-x-auto">
+    <h2 class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-3">{{ tabela.titulo or 'Comparativo' }}</h2>
+    <table class="w-full text-sm border-collapse bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+        <thead>
+            <tr class="bg-gray-100 dark:bg-[#0f172a]">
+                <th class="p-3 text-left font-black text-gray-600 dark:text-slate-400"></th>
+                {% for col in tabela.colunas %}
+                <th class="p-3 text-left font-black text-gray-900 dark:text-white">{{ col }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for linha in tabela.linhas %}
+            <tr class="border-t border-gray-200 dark:border-slate-700">
+                <td class="p-3 font-bold text-gray-700 dark:text-slate-300">{{ linha.rotulo }}</td>
+                {% for val in linha.valores %}
+                <td class="p-3 text-gray-600 dark:text-slate-400">{{ val }}</td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+
+{# --- Glossário (ponto 2) --- #}
+{% if enrichment.glossario %}
+<section class="mb-8">
+    <h2 class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-3">Glossário</h2>
+    <dl class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {% for g in enrichment.glossario %}
+        <div class="bg-gray-50 dark:bg-[#0f172a] border border-gray-200 dark:border-slate-700 rounded-lg p-3">
+            <dt class="text-sm font-black text-gray-900 dark:text-white">{{ g.termo }}</dt>
+            <dd class="mt-1 text-xs text-gray-600 dark:text-slate-400">{{ g.definicao }}</dd>
+        </div>
+        {% endfor %}
+    </dl>
+</section>
+{% endif %}
+
+{% if acervo.total > 1 %}
+<section class="mb-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div class="md:col-span-2 bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-700 rounded-xl p-5">
+        <p class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-1">Acervo editorial</p>
+        <h3 class="text-base font-black text-gray-900 dark:text-white mb-2">
+            {{ acervo.total }} análises sobre <a href="/?categoria={{ noticia[5] | urlencode }}" class="text-blue-600 dark:text-[#4ade80] hover:underline">{{ noticia[5] }}</a> no portal
+        </h3>
+        <p class="text-sm text-gray-600 dark:text-slate-300 leading-relaxed">
+            Destas, <strong class="text-green-600 dark:text-[#4ade80]">{{ acervo.positivo }}</strong> com viés positivo,
+            <strong class="text-red-500 dark:text-[#f87171]">{{ acervo.negativo }}</strong> negativo e
+            <strong class="text-gray-500 dark:text-slate-400">{{ acervo.neutro }}</strong> neutras — use o histórico para contextualizar tendências.
+        </p>
+    </div>
+    <div class="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-700 rounded-xl p-5 flex flex-col items-center justify-center">
+        <p class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-3 self-start">Sentimento no acervo</p>
+        <canvas id="sentiment-chart" width="160" height="160" aria-label="Gráfico de sentimento da categoria"></canvas>
+    </div>
+</section>
+{% endif %}
+
+{% if enrichment.related_articles %}
+<section class="mb-8">
+    <h2 class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-3">Leia também no acervo</h2>
+    <div class="space-y-2">
+        {% for rel in enrichment.related_articles %}
+        <a href="/noticia/{{ rel.id }}" class="group flex items-start gap-3 bg-gray-50 dark:bg-[#0f172a] border border-gray-200 dark:border-slate-700 rounded-lg p-4 hover:border-blue-400 dark:hover:border-slate-500 transition">
+            <span class="shrink-0 inline-flex h-9 w-9 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-blue-600 dark:border-slate-600 dark:bg-slate-800 dark:text-[#4ade80] group-hover:border-blue-400 dark:group-hover:border-[#4ade80]/60 transition" aria-hidden="true">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4h7l5 5v11a1 1 0 01-1 1H7a1 1 0 01-1-1V5a1 1 0 011-1z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 4v5h5M9 13h6M9 17h4"></path>
+                </svg>
+            </span>
+            <div class="min-w-0">
+                <p class="text-sm font-bold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition line-clamp-2">{{ rel.titulo }}</p>
+                <div class="mt-1 flex flex-wrap items-center gap-2">
+                    <span class="text-[10px] font-black uppercase px-2 py-1 rounded-full
+                        {% if 'positivo' in (rel.sentimento | lower) %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-[#4ade80]
+                        {% elif 'negativo' in (rel.sentimento | lower) %}bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-[#f87171]
+                        {% else %}bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-slate-300{% endif %}">{{ rel.sentimento }}</span>
+                    {% if rel.data %}<span class="text-xs text-gray-500 dark:text-slate-500">{{ rel.data }}</span>{% endif %}
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+{# --- Entidades relacionadas (ponto 3) --- #}
+{% if enrichment.related_entities %}
+<section class="mb-8 border-t border-gray-200 dark:border-slate-700 pt-6">
+    <h2 class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-3">Temas relacionados</h2>
+    <div class="flex flex-wrap gap-2">
+        {% for ent in enrichment.related_entities %}
+        {% if ent.url %}
+        <a href="{{ ent.url }}" class="text-xs font-semibold px-3 py-1.5 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:bg-blue-100 dark:hover:bg-slate-700 transition">{{ ent.nome }}</a>
+        {% else %}
+        <span class="text-xs font-semibold px-3 py-1.5 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-400">{{ ent.nome }}</span>
+        {% endif %}
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+{% include "partials/_enrichment_scripts.html" %}

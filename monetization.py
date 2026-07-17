@@ -69,6 +69,35 @@ def _env(key: str) -> str:
     return os.getenv(key, "").strip()
 
 
+TAG_AFFILIATE_MAP: dict[str, str] = {
+    "Cripto": "binance",
+    "Ações": "xp",
+    "Economia": "xp",
+    "Dólar": "xp",
+    "Juros": "btg",
+    "Inflação": "btg",
+    "Imóveis": "btg",
+    "Fintech": "mercado_bitcoin",
+    "Commodities": "xp",
+    "Política Econômica": "btg",
+}
+
+
+def get_contextual_affiliate(tag: str) -> dict[str, object] | None:
+    """Retorna afiliado relevante para a tag, somente se URL estiver configurada."""
+    affiliate_id = TAG_AFFILIATE_MAP.get(tag, "xp")
+    env_key = ENV_AFFILIATE_KEYS.get(affiliate_id)
+    if not env_key:
+        return None
+    url = _env(env_key)
+    if not url:
+        return None
+    for item in DEFAULT_AFFILIATES:
+        if item["id"] == affiliate_id:
+            return {**item, "url": url}
+    return None
+
+
 def get_monetization_config() -> dict[str, object]:
     adsense_client = _env("GOOGLE_ADSENSE_CLIENT")
     adsense_slot = _env("ADSENSE_AD_SLOT")

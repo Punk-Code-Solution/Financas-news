@@ -10,7 +10,8 @@ from dotenv import load_dotenv
 
 import core
 from db import get_db, ensure_schema
-from monetization import get_monetization_config
+from monetization import get_monetization_config, get_contextual_affiliate
+from article_enrichment import build_article_enrichment, resolve_referencias_internas
 
 load_dotenv()
 
@@ -42,7 +43,8 @@ except Exception as e:
 NEWS_SELECT = """
     SELECT id, titulo, resumo, impacto, link, tag, sentimento,
            COALESCE(NULLIF(published_at, ''), created_at) AS data_publicacao,
-           fonte, dados_mercado, contexto_editorial, imagem_url
+           fonte, dados_mercado, contexto_editorial, imagem_url,
+           conteudo_extra, updated_at, versao_analise
     FROM news
 """
 
@@ -98,7 +100,12 @@ async def index(request: Request, categoria: str | None = None, page: int = 1, q
         
     client.close()
     
-    # FORMATO CORRIGIDO PARA EVITAR ERRO 500 (TypeError)
+    sparklines = {}
+    try:
+        sparklines = core.fetch_sparkline_data()
+    except Exception:
+        pass
+
     return templates.TemplateResponse(
         request=request,
         name="index.html", 
@@ -113,6 +120,7 @@ async def index(request: Request, categoria: str | None = None, page: int = 1, q
             "total_pages": total_pages,
             "monetization": get_monetization_config(),
             "suggested_news": suggested_news,
+            "sparklines": sparklines,
         }
     )
 
@@ -120,9 +128,9 @@ async def index(request: Request, categoria: str | None = None, page: int = 1, q
 async def ver_noticia(request: Request, noticia_id: int):
     client = get_db()
     result = client.execute(NEWS_SELECT + " WHERE id = ?", [noticia_id])
-    client.close()
-    
+
     if not result.rows:
+        client.close()
         raise HTTPException(status_code=404, detail="Notícia não encontrada")
 
     noticia = result.rows[0]
@@ -135,6 +143,17 @@ async def ver_noticia(request: Request, noticia_id: int):
         except json.JSONDecodeError:
             pass
 
+    enrichment = build_article_enrichment(
+        client,
+        noticia_id,
+        noticia[5] if len(noticia) > 5 else "Economia",
+        dados_mercado,
+        resumo=noticia[2] if len(noticia) > 2 else "",
+    )
+    tag = noticia[5] if len(noticia) > 5 else "Economia"
+    contextual_affiliate = get_contextual_affiliate(tag)
+    client.close()
+
     return templates.TemplateResponse(
         request=request,
         name="noticia.html",
@@ -142,7 +161,9 @@ async def ver_noticia(request: Request, noticia_id: int):
             "request": request,
             "noticia": noticia,
             "dados_mercado": dados_mercado,
+            "enrichment": enrichment,
             "monetization": get_monetization_config(),
+            "contextual_affiliate": contextual_affiliate,
             "categorias": CATEGORIAS,
         },
     )
@@ -275,9 +296,20 @@ def rodar_robo(token: str | None = None):
         
         if not check.rows:
             agora = n.get("published_at")
+            dados_raw = n.get("dados_mercado")
+            if dados_raw:
+                try:
+                    dados_obj = json.loads(dados_raw) if isinstance(dados_raw, str) else dados_raw
+                    refs = dados_obj.get("referencias_internas") or []
+                    if refs:
+                        dados_obj["referencias_internas"] = resolve_referencias_internas(client, refs)
+                        dados_raw = json.dumps(dados_obj, ensure_ascii=False)
+                except json.JSONDecodeError:
+                    pass
+
             client.execute('''
-                INSERT INTO news (titulo, resumo, impacto, link, tag, sentimento, published_at, fonte, dados_mercado, contexto_editorial, created_at, imagem_url)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO news (titulo, resumo, impacto, link, tag, sentimento, published_at, fonte, dados_mercado, contexto_editorial, created_at, imagem_url, versao_analise)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', [
                 n["titulo_viral"],
                 n["resumo_simples"],
@@ -287,10 +319,11 @@ def rodar_robo(token: str | None = None):
                 n.get("sentimento", "Neutro"),
                 agora,
                 n.get("fonte"),
-                n.get("dados_mercado"),
+                dados_raw if dados_raw else n.get("dados_mercado"),
                 n.get("contexto_editorial", ""),
                 agora,
                 n.get("imagem_url"),
+                n.get("versao_analise", 1),
             ])
             salvas += 1
             
@@ -300,6 +333,17 @@ def rodar_robo(token: str | None = None):
         "processadas_pela_ia": len(noticias_geradas), 
         "novas_salvas_no_banco": salvas
     }
+
+
+@app.get("/api/atualizar-artigos")
+def atualizar_artigos(token: str | None = None, limit: int = 10):
+    if token != "punkcode2026":
+        raise HTTPException(status_code=401, detail="Não autorizado")
+
+    limit = max(1, min(limit, 50))
+    print(f"Atualizando dados de mercado de ate {limit} artigos...")
+    resultado = core.refresh_stale_articles(limit=limit)
+    return {"status": "Sucesso", **resultado}
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))

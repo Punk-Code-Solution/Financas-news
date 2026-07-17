@@ -19,6 +19,27 @@
     <meta property="og:image" content="{% if noticia[11] %}https://financas-news.net.br{{ noticia[11] }}{% else %}https://financas-news.net.br/static/favicon.png{% endif %}" />
     <meta name="twitter:card" content="{% if noticia[11] %}summary_large_image{% else %}summary{% endif %}" />
 
+    {% if enrichment.faq %}
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {% for item in enrichment.faq %}
+            {
+                "@type": "Question",
+                "name": {{ item.pergunta | tojson }},
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": {{ item.resposta | tojson }}
+                }
+            }{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ]
+    }
+    </script>
+    {% endif %}
+
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -41,6 +62,30 @@
         @keyframes ticker { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
         .ticker-item { margin-right: 3rem; font-weight: 600; letter-spacing: 0.05em; }
         .ticker-up { color: #4ade80; } .ticker-down { color: #f87171; }
+        .faq-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
+        .faq-item.open .faq-content { max-height: 500px; }
+        .faq-item.open .faq-chevron { transform: rotate(180deg); }
+        .analise-completa {
+            position: relative;
+            background:
+                linear-gradient(180deg, rgba(37, 99, 235, 0.06), transparent 180px),
+                linear-gradient(135deg, #f8fafc 0%, #ffffff 45%, #f1f5f9 100%);
+        }
+        .dark .analise-completa {
+            background:
+                linear-gradient(180deg, rgba(74, 222, 128, 0.07), transparent 200px),
+                linear-gradient(160deg, #0f172a 0%, #1e293b 55%, #0f172a 100%);
+        }
+        .analise-completa .analise-p {
+            font-size: 1.175rem;
+            line-height: 1.85;
+            color: #1e293b;
+            font-weight: 450;
+        }
+        .dark .analise-completa .analise-p { color: #e2e8f0; }
+        @media (min-width: 768px) {
+            .analise-completa .analise-p { font-size: 1.3rem; line-height: 1.9; }
+        }
     </style>
 </head>
 <body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 transition-colors duration-200 flex flex-col min-h-screen">
@@ -67,6 +112,19 @@
     </nav>
 
     <main class="container mx-auto px-4 pt-8 pb-12 max-w-7xl flex-none w-full flex-grow">
+        {# Banner personalização (ponto 8) #}
+        <div id="perfil-banner" class="hidden mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+                <p class="text-sm font-bold text-blue-900 dark:text-blue-100">Personalize sua leitura</p>
+                <p class="text-xs text-blue-700 dark:text-blue-300 mt-0.5">Escolha seu perfil para destacar orientações relevantes.</p>
+            </div>
+            <div class="flex gap-2 flex-wrap">
+                <button type="button" data-perfil="conservador" class="perfil-btn text-xs font-bold px-3 py-1.5 rounded-full border border-blue-300 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition">Iniciante</button>
+                <button type="button" data-perfil="moderado" class="perfil-btn text-xs font-bold px-3 py-1.5 rounded-full border border-blue-300 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition">Intermediário</button>
+                <button type="button" data-perfil="arrojado" class="perfil-btn text-xs font-bold px-3 py-1.5 rounded-full border border-blue-300 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition">Avançado</button>
+            </div>
+        </div>
+
         <div class="flex flex-col lg:flex-row gap-8 items-start">
         <div class="w-full {% if monetization.sidebar_visible %}lg:w-2/3{% endif %}">
         <article class="bg-white dark:bg-[#1e293b] rounded-xl shadow-sm overflow-hidden border border-gray-200 dark:border-slate-800 transition-colors">
@@ -108,35 +166,106 @@
 
             {% if noticia[10] %}
             <div class="mb-8 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-xl p-6">
-                <h3 class="text-xs font-black text-blue-700 dark:text-blue-300 uppercase tracking-wider mb-2">📊 Panorama de Mercado no Momento da Análise</h3>
+                <h3 class="text-xs font-black text-blue-700 dark:text-blue-300 uppercase tracking-wider mb-2">Panorama de Mercado no Momento da Análise</h3>
                 <p class="text-base text-blue-900 dark:text-blue-100 leading-relaxed">{{ noticia[10] }}</p>
             </div>
             {% endif %}
 
+            {% set resumo_parts = enrichment.linked_resumo_parts or [] %}
+            {% set split_at = 1 if resumo_parts|length <= 2 else (resumo_parts|length // 2) %}
+            <section id="analise-completa" class="analise-completa mb-12 rounded-2xl border border-blue-100 dark:border-slate-700/80 p-6 md:p-10 lg:p-12 shadow-sm transition-colors" aria-labelledby="analise-completa-titulo">
+                <header class="mb-8 md:mb-10 max-w-3xl">
+                    <p class="text-[11px] font-black uppercase tracking-[0.2em] text-blue-600 dark:text-[#4ade80] mb-3">Centro editorial</p>
+                    <h2 id="analise-completa-titulo" class="text-3xl md:text-4xl lg:text-5xl font-black text-gray-900 dark:text-white leading-[1.1] tracking-tight">Análise Completa</h2>
+                    <p class="mt-3 text-sm md:text-base text-gray-500 dark:text-slate-400 leading-relaxed">Leitura principal do portal — com cotações, histórico e pontos-chave no mesmo fluxo do raciocínio editorial.</p>
+                </header>
+
+                <div class="grid grid-cols-1 {% if enrichment.market_stats.pontos_chave %}lg:grid-cols-12{% endif %} gap-8 lg:gap-10 items-start">
+                    <div class="{% if enrichment.market_stats.pontos_chave %}lg:col-span-8{% endif %} min-w-0">
+                        {% if resumo_parts %}
+                            {% for part in resumo_parts[:split_at] %}
+                            {{ part | safe }}
+                            {% endfor %}
+
+                            <div class="my-8 md:my-10 rounded-2xl border border-dashed border-blue-200/80 dark:border-slate-600 bg-blue-50/40 dark:bg-[#0b1220]/50 p-4 md:p-6">
+                                <p class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-[#4ade80] mb-5">Onde a análise se apoia nos dados</p>
+                                {% include "partials/_analysis_market.html" %}
+                                {% include "partials/_analysis_charts.html" %}
+                            </div>
+
+                            {% for part in resumo_parts[split_at:] %}
+                            {{ part | safe }}
+                            {% endfor %}
+                        {% elif enrichment.linked_resumo %}
+                            <div class="analise-p">{{ enrichment.linked_resumo | safe }}</div>
+                            <div class="my-8 md:my-10 rounded-2xl border border-dashed border-blue-200/80 dark:border-slate-600 bg-blue-50/40 dark:bg-[#0b1220]/50 p-4 md:p-6">
+                                <p class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-[#4ade80] mb-5">Onde a análise se apoia nos dados</p>
+                                {% include "partials/_analysis_market.html" %}
+                                {% include "partials/_analysis_charts.html" %}
+                            </div>
+                        {% else %}
+                            <p class="analise-p mb-5 md:mb-6 whitespace-pre-line">{{ noticia[2] }}</p>
+                            <div class="my-8 md:my-10 rounded-2xl border border-dashed border-blue-200/80 dark:border-slate-600 bg-blue-50/40 dark:bg-[#0b1220]/50 p-4 md:p-6">
+                                <p class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-[#4ade80] mb-5">Onde a análise se apoia nos dados</p>
+                                {% include "partials/_analysis_market.html" %}
+                                {% include "partials/_analysis_charts.html" %}
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    {% if enrichment.market_stats.pontos_chave %}
+                    <div class="lg:col-span-4">
+                        {% include "partials/_pontos_chave.html" %}
+                    </div>
+                    {% endif %}
+                </div>
+            </section>
+
+            {% include "partials/article_enrichment.html" %}
+
             <div class="prose prose-lg max-w-none text-gray-700 dark:text-slate-300">
-                <div class="bg-gray-50 dark:bg-[#0f172a] p-6 md:p-8 rounded-xl border-l-4 border-blue-500 dark:border-blue-400 mb-10 shadow-sm dark:shadow-inner transition-colors">
-                    <h3 class="text-xs font-black text-gray-500 dark:text-slate-500 uppercase tracking-wider mb-3">Análise Completa</h3>
-                    <p class="text-xl font-medium text-gray-800 dark:text-slate-200 leading-relaxed whitespace-pre-line">{{ noticia[2] }}</p>
+                <div class="mb-8 bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-700 p-6 md:p-8 rounded-xl shadow-sm transition-colors">
+                    <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                        <h2 class="text-sm font-black text-gray-500 dark:text-slate-500 uppercase tracking-wider flex items-center">Impacto no seu Bolso</h2>
+                        <button type="button" id="btn-ouvir-resumo" class="text-xs font-bold px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-[#4ade80] hover:bg-blue-200 dark:hover:bg-blue-900/50 transition flex items-center gap-1">
+                            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.617.793L4.5 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.5l3.883-3.793a1 1 0 011.617.793zM14.657 5.343a1 1 0 011.414 0 6 6 0 010 8.486 1 1 0 01-1.414-1.414 4 4 0 000-5.656 1 1 0 010-1.416zm2.829 2.828a1 1 0 011.414 0 10 10 0 010 14.142 1 1 0 01-1.414-1.414 8 8 0 000-11.314 1 1 0 010-1.414z"></path></svg>
+                            Ouvir resumo
+                        </button>
+                    </div>
+                    <p class="text-lg text-gray-800 dark:text-slate-200 font-medium leading-relaxed" id="impacto-texto">{{ noticia[3] }}</p>
+
+                    {% if contextual_affiliate %}
+                    <div class="mt-5 pt-5 border-t border-gray-200 dark:border-slate-700">
+                        <p class="text-[10px] font-black uppercase text-gray-500 dark:text-slate-400 mb-2">Guia prático · Parceiro</p>
+                        <a href="{{ contextual_affiliate.url }}" target="_blank" rel="noopener sponsored" class="block bg-gray-50 dark:bg-[#0f172a] border border-gray-200 dark:border-slate-700 rounded-lg p-4 hover:border-blue-400 dark:hover:border-[#4ade80] transition">
+                            <p class="text-sm font-black text-gray-900 dark:text-white">{{ contextual_affiliate.titulo }}</p>
+                            <p class="mt-1 text-xs text-gray-600 dark:text-slate-400">{{ contextual_affiliate.descricao }}</p>
+                            <span class="mt-2 inline-block text-xs font-bold text-blue-600 dark:text-[#4ade80]">{{ contextual_affiliate.cta }} →</span>
+                        </a>
+                    </div>
+                    {% endif %}
                 </div>
-                
-                {% set border_class = 'border-green-500 dark:border-[#4ade80]' if 'positivo' in sent else ('border-red-500 dark:border-[#f87171]' if 'negativo' in sent else 'border-gray-400 dark:border-slate-500') %}
-                <div class="mb-8 bg-white dark:bg-[#1e293b] border-l-4 {{ border_class }} p-6 md:p-8 rounded-lg shadow-sm transition-colors">
-                    <h2 class="text-sm font-black text-gray-500 dark:text-slate-500 uppercase tracking-wider mb-3 flex items-center">💡 Impacto no seu Bolso</h2>
-                    <p class="text-lg text-gray-800 dark:text-slate-200 font-medium leading-relaxed">{{ noticia[3] }}</p>
-                </div>
+
+                {% if enrichment.faq %}
+                <section class="mb-8">
+                    <h2 class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-3">Perguntas frequentes</h2>
+                    <div class="space-y-2" id="faq-accordion">
+                        {% for item in enrichment.faq %}
+                        <div class="faq-item bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                            <button type="button" class="faq-toggle w-full flex items-center justify-between p-4 text-left">
+                                <span class="text-sm font-bold text-gray-900 dark:text-white pr-4">{{ item.pergunta }}</span>
+                                <svg class="faq-chevron w-4 h-4 shrink-0 text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                            </button>
+                            <div class="faq-content px-4 pb-4">
+                                <p class="text-sm text-gray-600 dark:text-slate-300 leading-relaxed">{{ item.resposta }}</p>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </section>
+                {% endif %}
 
                 {% include "partials/sponsored_slot.html" %}
-
-                {% if dados_mercado and dados_mercado.get('dados_citados') %}
-                <div class="mb-8 bg-gray-50 dark:bg-[#0f172a] rounded-xl p-6 border border-gray-200 dark:border-slate-700">
-                    <h3 class="text-xs font-black text-gray-500 dark:text-slate-500 uppercase tracking-wider mb-3">Dados utilizados nesta análise</h3>
-                    <ul class="list-disc list-inside text-sm text-gray-700 dark:text-slate-300 space-y-1">
-                        {% for dado in dados_mercado.dados_citados %}
-                        <li>{{ dado }}</li>
-                        {% endfor %}
-                    </ul>
-                </div>
-                {% endif %}
 
                 {% include "partials/premium_teaser.html" %}
             </div>
@@ -199,44 +328,67 @@
             }
         }
 
-        async function fetchMarketData() {
-            const tickerEl = document.getElementById('market-ticker');
-            const cachedHTML = sessionStorage.getItem('tickerHTML');
-            const cachedTime = sessionStorage.getItem('tickerTime');
-            const now = new Date().getTime();
-
-            if (cachedHTML && cachedTime && (now - cachedTime < 300000)) {
-                tickerEl.innerHTML = cachedHTML;
-                return;
-            }
-            try {
-                const resMoedas = await fetch('https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL');
-                const dataMoedas = await resMoedas.json();
-                
-                const formatCurrency = (value) => parseFloat(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-                const formatPct = (pct) => parseFloat(pct) > 0 ? `+${pct}%` : `${pct}%`;
-                const getColorClass = (pct) => parseFloat(pct) >= 0 ? 'ticker-up' : 'ticker-down';
-                
-                const usd = dataMoedas.USDBRL; const eur = dataMoedas.EURBRL; const btc = dataMoedas.BTCBRL;
-
-                const tickerHtml = `
-                    <span class="ticker-item"><span class="text-slate-400">🇺🇸 USD:</span> ${formatCurrency(usd.bid)} <span class="${getColorClass(usd.pctChange)}">(${formatPct(usd.pctChange)})</span></span>
-                    <span class="ticker-item"><span class="text-slate-400">🇪🇺 EUR:</span> ${formatCurrency(eur.bid)} <span class="${getColorClass(eur.pctChange)}">(${formatPct(eur.pctChange)})</span></span>
-                    <span class="ticker-item"><span class="text-slate-400">₿ BTC:</span> ${formatCurrency(btc.bid)} <span class="${getColorClass(btc.pctChange)}">(${formatPct(btc.pctChange)})</span></span>
-                `;
-                
-                const fullHtml = tickerHtml + tickerHtml + tickerHtml + tickerHtml;
-                tickerEl.innerHTML = fullHtml;
-                sessionStorage.setItem('tickerHTML', fullHtml);
-                sessionStorage.setItem('tickerTime', now);
-            } catch (error) {
-                if (!cachedHTML) tickerEl.innerHTML = '<span class="ticker-item">Finanças News - Cotações em tempo real.</span>';
-            }
-        }
-
         document.addEventListener('DOMContentLoaded', () => {
             setInitialThemeIcons();
-            fetchMarketData();
+
+            // FAQ accordion (ponto 4)
+            document.querySelectorAll('.faq-toggle').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const item = btn.closest('.faq-item');
+                    const wasOpen = item.classList.contains('open');
+                    document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
+                    if (!wasOpen) item.classList.add('open');
+                });
+            });
+
+            // Personalização perfil leitor (ponto 8)
+            const perfilBanner = document.getElementById('perfil-banner');
+            const perfilSalvo = localStorage.getItem('perfil_leitor');
+            if (!perfilSalvo && perfilBanner) {
+                perfilBanner.classList.remove('hidden');
+            }
+            document.querySelectorAll('.perfil-btn').forEach(btn => {
+                if (btn.dataset.perfil === perfilSalvo) {
+                    btn.classList.add('bg-blue-600', 'text-white', 'dark:bg-[#4ade80]', 'dark:text-slate-900');
+                }
+                btn.addEventListener('click', () => {
+                    localStorage.setItem('perfil_leitor', btn.dataset.perfil);
+                    if (perfilBanner) perfilBanner.classList.add('hidden');
+                    document.querySelectorAll('.perfil-card').forEach(card => {
+                        card.classList.remove('ring-2', 'ring-blue-500', 'dark:ring-[#4ade80]', 'shadow-md', 'opacity-60');
+                        if (card.dataset.perfil === btn.dataset.perfil) {
+                            card.classList.add('ring-2', 'ring-blue-500', 'dark:ring-[#4ade80]', 'shadow-md');
+                        } else {
+                            card.classList.add('opacity-60');
+                        }
+                    });
+                });
+            });
+
+            // Web Speech API — ouvir resumo (ponto 7)
+            const btnOuvir = document.getElementById('btn-ouvir-resumo');
+            const impactoTexto = document.getElementById('impacto-texto');
+            if (btnOuvir && impactoTexto && 'speechSynthesis' in window) {
+                let falando = false;
+                btnOuvir.addEventListener('click', () => {
+                    if (falando) {
+                        window.speechSynthesis.cancel();
+                        falando = false;
+                        btnOuvir.textContent = 'Ouvir resumo';
+                        return;
+                    }
+                    const utter = new SpeechSynthesisUtterance(impactoTexto.textContent);
+                    utter.lang = 'pt-BR';
+                    utter.rate = 0.95;
+                    utter.onend = () => { falando = false; btnOuvir.innerHTML = btnOuvir.dataset.label || 'Ouvir resumo'; };
+                    btnOuvir.dataset.label = btnOuvir.innerHTML;
+                    btnOuvir.textContent = 'Parar';
+                    falando = true;
+                    window.speechSynthesis.speak(utter);
+                });
+            } else if (btnOuvir) {
+                btnOuvir.style.display = 'none';
+            }
 
             const themeBtn = document.getElementById('theme-toggle');
             if (themeBtn) {
@@ -256,7 +408,7 @@
                 });
             }
         });
-        setInterval(fetchMarketData, 300000);
     </script>
+    <script src="/static/js/market-ticker.js"></script>
 </body>
 </html>

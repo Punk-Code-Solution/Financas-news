@@ -86,6 +86,9 @@ def ensure_schema(client):
         ("contexto_editorial", "TEXT"),
         ("created_at", "TEXT"),
         ("imagem_url", "TEXT"),
+        ("conteudo_extra", "TEXT"),
+        ("updated_at", "TEXT"),
+        ("versao_analise", "INTEGER"),
     ]:
         try:
             client.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
