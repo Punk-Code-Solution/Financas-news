@@ -238,12 +238,29 @@ def _format_brl(value):
         return "n/d"
 
 
-def fetch_market_snapshot() -> dict[str, Any]:
-    """Cotações em tempo real via AwesomeAPI (cache 5 min)."""
-    cached = _cache_get("market_snapshot")
-    if cached is not None:
-        return cached
+_REFRESHING_KEYS: set[str] = set()
+_REFRESHING_LOCK = threading.Lock()
 
+
+def _refresh_in_background(cache_key: str, refresh_fn) -> None:
+    with _REFRESHING_LOCK:
+        if cache_key in _REFRESHING_KEYS:
+            return
+        _REFRESHING_KEYS.add(cache_key)
+
+    def _run():
+        try:
+            refresh_fn()
+        except Exception:
+            pass
+        finally:
+            with _REFRESHING_LOCK:
+                _REFRESHING_KEYS.discard(cache_key)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def _load_market_snapshot() -> dict[str, Any]:
     snapshot: dict[str, Any] = {"coletado_em": datetime.now().strftime("%d/%m/%Y %H:%M")}
     data = _http_get_json(
         "https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL",
@@ -271,12 +288,24 @@ def fetch_market_snapshot() -> dict[str, Any]:
     return _cache_set("market_snapshot", snapshot, _CACHE_TTL_SNAPSHOT)
 
 
-def fetch_bcb_snapshot() -> dict[str, dict[str, Any]]:
-    """Indicadores macro do Banco Central (cache 5 min, requests em paralelo)."""
-    cached = _cache_get("bcb_snapshot")
+def fetch_market_snapshot(blocking: bool = True) -> dict[str, Any]:
+    """Cotações em tempo real via AwesomeAPI (cache 5 min).
+
+    Com blocking=False (páginas web): devolve cache/stale na hora e atualiza em background.
+    """
+    cached = _cache_get("market_snapshot")
     if cached is not None:
         return cached
 
+    stale = _cache_get_stale("market_snapshot")
+    if not blocking:
+        _refresh_in_background("market_snapshot", _load_market_snapshot)
+        return stale or {"coletado_em": datetime.now().strftime("%d/%m/%Y %H:%M")}
+
+    return _load_market_snapshot()
+
+
+def _load_bcb_snapshot() -> dict[str, dict[str, Any]]:
     labels = {
         "selic_meta": "Selic meta (% a.a.)",
         "ipca_12m": "IPCA acumulado 12 meses (%)",
@@ -311,6 +340,20 @@ def fetch_bcb_snapshot() -> dict[str, dict[str, Any]]:
             return stale
 
     return _cache_set("bcb_snapshot", snapshot, _CACHE_TTL_SNAPSHOT)
+
+
+def fetch_bcb_snapshot(blocking: bool = True) -> dict[str, dict[str, Any]]:
+    """Indicadores macro do Banco Central (cache 5 min, requests em paralelo)."""
+    cached = _cache_get("bcb_snapshot")
+    if cached is not None:
+        return cached
+
+    stale = _cache_get_stale("bcb_snapshot")
+    if not blocking:
+        _refresh_in_background("bcb_snapshot", _load_bcb_snapshot)
+        return stale or {}
+
+    return _load_bcb_snapshot()
 
 
 def fetch_bcb_historical(days: int = 90) -> dict[str, Any]:
@@ -468,6 +511,22 @@ def fetch_sparkline_data(blocking: bool = False) -> dict[str, list[float]]:
 
     threading.Thread(target=_refresh, daemon=True).start()
     return stale
+
+
+def warmup_market_caches() -> None:
+    """Pré-aquece caches de mercado no startup para o 1º pageview não esperar rede."""
+    try:
+        fetch_market_snapshot(blocking=True)
+    except Exception:
+        pass
+    try:
+        fetch_bcb_snapshot(blocking=True)
+    except Exception:
+        pass
+    try:
+        fetch_sparkline_data(blocking=True)
+    except Exception:
+        pass
 
 
 def format_data_context(market, bcb, db_context):
@@ -1053,6 +1112,12 @@ def fetch_and_process(max_per_feed=2):
                         ai_data["tag"] = tag
 
                     entry_link = str(getattr(entry, "link", "") or "")
+                    try:
+                        from article_enrichment import clean_source_url
+
+                        entry_link = clean_source_url(entry_link) or entry_link
+                    except Exception:
+                        pass
                     imagem_url = generate_article_image(
                         ai_data.get("titulo_viral", entry.title),
                         tag,

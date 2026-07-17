@@ -1,5 +1,7 @@
 import os
 import json
+import threading
+import time
 from datetime import datetime
 from fastapi import FastAPI, Request, Response, HTTPException, Form
 from fastapi.templating import Jinja2Templates
@@ -11,7 +13,13 @@ from dotenv import load_dotenv
 import core
 from db import get_db, ensure_schema
 from monetization import get_monetization_config, get_contextual_affiliate
-from article_enrichment import build_article_enrichment, resolve_referencias_internas
+from article_enrichment import (
+    build_article_enrichment,
+    clean_source_url,
+    infer_source_name,
+    resolve_referencias_internas,
+    source_homepage,
+)
 
 load_dotenv()
 
@@ -28,6 +36,11 @@ if os.path.isdir(ARTICLE_IMAGES_DIR):
 templates = Jinja2Templates(directory="templates")
 
 CATEGORIAS = core.VALID_TAGS
+
+# Cache curto da listagem da home (evita round-trips repetidos no Turso).
+_HOME_CACHE: dict[str, tuple[float, dict]] = {}
+_HOME_CACHE_LOCK = threading.Lock()
+_HOME_CACHE_TTL = float(os.getenv("HOME_CACHE_TTL", "20"))
 
 DEFAULT_CATEGORY_IMAGES = {
     "Cripto": {"slug": "cripto", "label": "Cripto", "from": "#0b1220", "to": "#14532d", "accent": "#4ade80", "icon": "₿"},
@@ -54,9 +67,21 @@ templates.env.globals["category_image"] = category_image_url
 try:
     startup_client = get_db()
     ensure_schema(startup_client)
-    startup_client.close()
 except Exception as e:
     print(f"Aviso: Falha na inicialização do Turso: {e}")
+
+
+@app.on_event("startup")
+def _warmup_on_startup():
+    def _run():
+        try:
+            core.warmup_market_caches()
+            # Aquece a listagem padrão da home.
+            _load_home_listing(None, 1, None)
+        except Exception as exc:
+            print(f"Aviso: warmup inicial falhou: {exc}")
+
+    threading.Thread(target=_run, daemon=True).start()
 
 # ==========================================
 # ROTAS DE PÁGINAS (FRONTEND) - ATUALIZADAS PARA FASTAPI MODERNO
@@ -70,45 +95,75 @@ NEWS_SELECT = """
     FROM news
 """
 
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request, categoria: str | None = None, page: int = 1, q: str | None = None):
+# Listagem da home: mantém os mesmos índices das templates, sem puxar blobs pesados.
+NEWS_LIST_SELECT = """
+    SELECT id, titulo, resumo, impacto, link, tag, sentimento,
+           COALESCE(NULLIF(published_at, ''), created_at) AS data_publicacao,
+           fonte, NULL AS dados_mercado, NULL AS contexto_editorial, imagem_url,
+           NULL AS conteudo_extra, updated_at, versao_analise
+    FROM news
+"""
+
+
+def _invalidate_home_cache() -> None:
+    with _HOME_CACHE_LOCK:
+        _HOME_CACHE.clear()
+
+
+def _home_cache_key(categoria: str | None, page: int, q: str | None) -> str:
+    return f"{categoria or ''}|{page}|{(q or '').strip().lower()}"
+
+
+def _load_home_listing(categoria: str | None, page: int, q: str | None) -> dict:
+    cache_key = _home_cache_key(categoria, page, q)
+    now = time.time()
+    with _HOME_CACHE_LOCK:
+        cached = _HOME_CACHE.get(cache_key)
+        if cached and now < cached[0]:
+            return cached[1]
+
     client = get_db()
     limit = 20
     offset = (page - 1) * limit
-    
+
     if q:
         busca = f"%{q}%"
         result = client.execute(
-            NEWS_SELECT + " WHERE titulo LIKE ? OR resumo LIKE ? ORDER BY id DESC LIMIT ? OFFSET ?",
+            NEWS_LIST_SELECT + " WHERE titulo LIKE ? OR resumo LIKE ? ORDER BY id DESC LIMIT ? OFFSET ?",
             [busca, busca, limit, offset],
         )
-        count_res = client.execute('SELECT COUNT(*) FROM news WHERE titulo LIKE ? OR resumo LIKE ?', [busca, busca])
+        count_res = client.execute(
+            "SELECT COUNT(*) FROM news WHERE titulo LIKE ? OR resumo LIKE ?",
+            [busca, busca],
+        )
     elif categoria:
         result = client.execute(
-            NEWS_SELECT + " WHERE tag = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+            NEWS_LIST_SELECT + " WHERE tag = ? ORDER BY id DESC LIMIT ? OFFSET ?",
             [categoria, limit, offset],
         )
-        count_res = client.execute('SELECT COUNT(*) FROM news WHERE tag = ?', [categoria])
+        count_res = client.execute("SELECT COUNT(*) FROM news WHERE tag = ?", [categoria])
     else:
-        result = client.execute(NEWS_SELECT + " ORDER BY id DESC LIMIT ? OFFSET ?", [limit, offset])
-        count_res = client.execute('SELECT COUNT(*) FROM news')
-    
-    news = result.rows
+        result = client.execute(
+            NEWS_LIST_SELECT + " ORDER BY id DESC LIMIT ? OFFSET ?",
+            [limit, offset],
+        )
+        count_res = client.execute("SELECT COUNT(*) FROM news")
 
+    news = result.rows
     suggested_news = []
     if not news and (categoria or q):
         if categoria:
             suggested_result = client.execute(
-                NEWS_SELECT + " WHERE tag != ? ORDER BY id DESC LIMIT ?",
+                NEWS_LIST_SELECT + " WHERE tag != ? ORDER BY id DESC LIMIT ?",
                 [categoria, 8],
             )
         else:
             suggested_result = client.execute(
-                NEWS_SELECT + " ORDER BY id DESC LIMIT ?",
+                NEWS_LIST_SELECT + " ORDER BY id DESC LIMIT ?",
                 [8],
             )
         suggested_news = suggested_result.rows
-    
+
     row_count = count_res.rows[0][0]
     if isinstance(row_count, (int, float)):
         total_news = int(row_count)
@@ -119,37 +174,50 @@ async def index(request: Request, categoria: str | None = None, page: int = 1, q
     total_pages = (total_news + limit - 1) // limit
     if total_pages == 0:
         total_pages = 1
-        
-    client.close()
-    
-    # Sparklines: não bloqueiam a home (cache + refresh em background).
+
+    payload = {
+        "news": news,
+        "suggested_news": suggested_news,
+        "total_pages": total_pages,
+        "limit": limit,
+    }
+    with _HOME_CACHE_LOCK:
+        _HOME_CACHE[cache_key] = (now + _HOME_CACHE_TTL, payload)
+    return payload
+
+
+@app.get("/", response_class=HTMLResponse)
+def index(request: Request, categoria: str | None = None, page: int = 1, q: str | None = None):
+    listing = _load_home_listing(categoria, max(1, page), q)
     sparklines = core.fetch_sparkline_data(blocking=False)
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request=request,
-        name="index.html", 
+        name="index.html",
         context={
-            "request": request, 
-            "news": news, 
+            "request": request,
+            "news": listing["news"],
             "categoria_ativa": categoria,
             "categorias": CATEGORIAS,
-            "page": page,
-            "limit": limit,
+            "page": max(1, page),
+            "limit": listing["limit"],
             "q": q,
-            "total_pages": total_pages,
+            "total_pages": listing["total_pages"],
             "monetization": get_monetization_config(),
-            "suggested_news": suggested_news,
+            "suggested_news": listing["suggested_news"],
             "sparklines": sparklines,
-        }
+        },
     )
+    response.headers["Cache-Control"] = "public, max-age=15, stale-while-revalidate=30"
+    return response
+
 
 @app.get("/noticia/{noticia_id}", response_class=HTMLResponse)
-async def ver_noticia(request: Request, noticia_id: int):
+def ver_noticia(request: Request, noticia_id: int):
     client = get_db()
     result = client.execute(NEWS_SELECT + " WHERE id = ?", [noticia_id])
 
     if not result.rows:
-        client.close()
         raise HTTPException(status_code=404, detail="Notícia não encontrada")
 
     noticia = result.rows[0]
@@ -164,6 +232,13 @@ async def ver_noticia(request: Request, noticia_id: int):
 
     tag = str(noticia[5]) if len(noticia) > 5 and noticia[5] else "Economia"
     resumo = str(noticia[2]) if len(noticia) > 2 and noticia[2] else ""
+    fonte_url = clean_source_url(noticia[4] if len(noticia) > 4 else None)
+    fonte_nome = infer_source_name(
+        noticia[8] if len(noticia) > 8 else None,
+        noticia[4] if len(noticia) > 4 else None,
+    )
+    if not fonte_url:
+        fonte_url = source_homepage(fonte_nome, noticia[4] if len(noticia) > 4 else None)
 
     enrichment = build_article_enrichment(
         client,
@@ -173,9 +248,8 @@ async def ver_noticia(request: Request, noticia_id: int):
         resumo=resumo,
     )
     contextual_affiliate = get_contextual_affiliate(tag)
-    client.close()
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request=request,
         name="noticia.html",
         context={
@@ -186,8 +260,12 @@ async def ver_noticia(request: Request, noticia_id: int):
             "monetization": get_monetization_config(),
             "contextual_affiliate": contextual_affiliate,
             "categorias": CATEGORIAS,
+            "fonte_url": fonte_url,
+            "fonte_nome": fonte_nome,
         },
     )
+    response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=60"
+    return response
 
 @app.post("/api/newsletter")
 async def newsletter_signup(email: str = Form(...)):
@@ -334,6 +412,7 @@ def gerar_imagens(token: str | None = None, limit: int = 10):
     limit = max(1, min(limit, 20))
     print(f"Gerando imagens para ate {limit} artigos sem capa...")
     resultado = core.backfill_missing_images(limit=limit)
+    _invalidate_home_cache()
     return {"status": "Sucesso", **resultado}
 
 
@@ -387,7 +466,7 @@ def rodar_robo(token: str | None = None):
             ])
             salvas += 1
             
-    client.close()
+    _invalidate_home_cache()
     return {
         "status": "Sucesso", 
         "processadas_pela_ia": len(noticias_geradas), 
@@ -403,6 +482,7 @@ def atualizar_artigos(token: str | None = None, limit: int = 10):
     limit = max(1, min(limit, 50))
     print(f"Atualizando dados de mercado de ate {limit} artigos...")
     resultado = core.refresh_stale_articles(limit=limit)
+    _invalidate_home_cache()
     return {"status": "Sucesso", **resultado}
 
 if __name__ == "__main__":

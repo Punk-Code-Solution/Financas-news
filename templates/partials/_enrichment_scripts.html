@@ -109,15 +109,6 @@
         }
     }
 
-    const perfilLeitor = localStorage.getItem('perfil_leitor');
-    if (perfilLeitor) {
-        document.querySelectorAll('.perfil-card').forEach(card => {
-            if (card.dataset.perfil === perfilLeitor) {
-                card.classList.add('ring-2', 'ring-blue-500', 'dark:ring-[#4ade80]', 'shadow-md');
-            } else {
-                card.classList.add('opacity-60');
-            }
-        });
-    }
+    // Perfil: aplicado em noticia.html (aplicarPerfil) — evita lógica duplicada aqui.
 })();
 </script>

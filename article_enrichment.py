@@ -2,7 +2,7 @@ import html
 import re
 import threading
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
 INTERNAL_KEYWORDS: dict[str, str] = {
     "Selic": "/?categoria=Juros",
@@ -25,6 +25,58 @@ INTERNAL_KEYWORDS: dict[str, str] = {
     "Renda fixa": "/?categoria=Juros",
     "Tesouro": "/?categoria=Juros",
 }
+
+SOURCE_HOST_NAMES: dict[str, str] = {
+    "br.cointelegraph.com": "Cointelegraph",
+    "cointelegraph.com": "Cointelegraph",
+    "g1.globo.com": "G1 Economia",
+    "www.infomoney.com.br": "InfoMoney",
+    "infomoney.com.br": "InfoMoney",
+    "www.investing.com": "Investing.com",
+    "br.investing.com": "Investing.com",
+    "exame.com": "Exame",
+    "www.exame.com": "Exame",
+    "www.moneytimes.com.br": "Money Times",
+    "neofeed.com.br": "NeoFeed",
+    "valor.globo.com": "Valor Econômico",
+    "www.valor.com.br": "Valor Econômico",
+}
+
+# Subdomínios mortos/redirecionados → host canônico que ainda abre.
+SOURCE_HOST_REWRITES: dict[str, str] = {
+    "br.cointelegraph.com": "cointelegraph.com",
+    "www.cointelegraph.com": "cointelegraph.com",
+}
+
+SOURCE_HOMEPAGES: dict[str, str] = {
+    "Cointelegraph": "https://cointelegraph.com/",
+    "G1 Economia": "https://g1.globo.com/economia/",
+    "InfoMoney": "https://www.infomoney.com.br/",
+    "Investing.com": "https://br.investing.com/",
+    "Exame": "https://exame.com/",
+    "Money Times": "https://www.moneytimes.com.br/",
+    "NeoFeed": "https://neofeed.com.br/",
+    "Valor Econômico": "https://valor.globo.com/",
+    "Livecoins": "https://livecoins.com.br/",
+}
+
+DATA_SOURCE_LINKS = [
+    {
+        "nome": "AwesomeAPI",
+        "url": "https://docs.awesomeapi.com.br/api-de-moedas",
+        "externo": True,
+    },
+    {
+        "nome": "BCB",
+        "url": "https://dadosabertos.bcb.gov.br/",
+        "externo": True,
+    },
+    {
+        "nome": "IA editorial",
+        "url": "/quem-somos",
+        "externo": False,
+    },
+]
 
 CATEGORY_DISCLAIMERS: dict[str, str] = {
     "Cripto": (
@@ -84,6 +136,107 @@ def _parse_pct(text: str) -> float | None:
         return float(cleaned)
     except ValueError:
         return None
+
+
+def clean_source_url(url: object) -> str | None:
+    """Remove UTM/tracking e normaliza hosts mortos (ex.: br.cointelegraph.com → 410)."""
+    if not url or not isinstance(url, str):
+        return None
+    raw = url.strip()
+    if not raw.startswith(("http://", "https://")):
+        return None
+    try:
+        parsed = urlparse(raw)
+        host = parsed.netloc.lower()
+        host = SOURCE_HOST_REWRITES.get(host, host)
+        query = [
+            (k, v)
+            for k, v in parse_qsl(parsed.query, keep_blank_values=True)
+            if not k.lower().startswith("utm_")
+            and k.lower() not in ("fbclid", "gclid", "mc_cid", "mc_eid")
+        ]
+        cleaned = parsed._replace(
+            netloc=host,
+            query=urlencode(query, doseq=True),
+            fragment="",
+        )
+        return urlunparse(cleaned)
+    except Exception:
+        return raw
+
+
+def source_homepage(fonte_nome: str | None, url: object = None) -> str | None:
+    if fonte_nome and fonte_nome in SOURCE_HOMEPAGES:
+        return SOURCE_HOMEPAGES[fonte_nome]
+    cleaned = clean_source_url(url)
+    if not cleaned:
+        return None
+    host = urlparse(cleaned).netloc.lower()
+    return f"https://{host}/"
+
+
+def infer_source_name(fonte: object, url: object) -> str:
+    if fonte and str(fonte).strip():
+        return str(fonte).strip()
+    cleaned = clean_source_url(url) or ""
+    host = urlparse(cleaned).netloc.lower().removeprefix("www.")
+    if host in SOURCE_HOST_NAMES:
+        return SOURCE_HOST_NAMES[host]
+    for known, name in SOURCE_HOST_NAMES.items():
+        if host.endswith(known.removeprefix("www.")):
+            return name
+    return host or "Fonte original"
+
+
+def build_cross_links(
+    dados_mercado: dict[str, Any],
+    related_articles: list[dict[str, Any]],
+    tag: str,
+) -> list[dict[str, Any]]:
+    """Links cruzados: referências internas, temas e matérias relacionadas."""
+    links: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def _add(label: str, href: str, kind: str = "interno"):
+        key = href.lower()
+        if not label or not href or key in seen:
+            return
+        seen.add(key)
+        links.append({"label": label, "url": href, "tipo": kind})
+
+    for ref in dados_mercado.get("referencias_internas") or []:
+        nid = ref.get("noticia_id")
+        if not nid:
+            continue
+        label = (ref.get("titulo") or ref.get("trecho") or f"Notícia #{nid}").strip()
+        _add(label[:80], f"/noticia/{nid}", "acervo")
+
+    for art in related_articles or []:
+        nid = art.get("id")
+        if not nid:
+            continue
+        _add(art.get("titulo") or f"Notícia #{nid}", f"/noticia/{nid}", "relacionada")
+
+    if tag:
+        _add(f"Mais em {tag}", f"/?categoria={quote(str(tag))}", "categoria")
+
+    for kw, url in INTERNAL_KEYWORDS.items():
+        texto = json_safe_lower_blob(dados_mercado)
+        if kw.lower() in texto:
+            _add(kw, url, "tema")
+
+    return links[:10]
+
+
+def json_safe_lower_blob(dados_mercado: dict[str, Any]) -> str:
+    chunks: list[str] = []
+    for key in ("pontos_chave", "faq", "glossario", "timeline"):
+        val = dados_mercado.get(key)
+        if val:
+            chunks.append(str(val).lower())
+    for ref in dados_mercado.get("referencias_internas") or []:
+        chunks.append(str(ref.get("trecho", "")).lower())
+    return " ".join(chunks)
 
 
 def resolve_referencias_internas(client, referencias: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -167,6 +320,19 @@ def link_text_parts(text: str, referencias: list[dict[str, Any]] | None = None) 
 def link_text_html(text: str, referencias: list[dict[str, Any]] | None = None) -> str:
     """Aplica links internos por palavra-chave e referências a artigos."""
     return "".join(link_text_parts(text, referencias))
+
+
+def link_inline_html(text: str, referencias: list[dict[str, Any]] | None = None) -> str:
+    """Mesmos links do resumo, sem wrappers de parágrafo (FAQ, legendas etc.)."""
+    if not text:
+        return ""
+    parts = link_text_parts(text, referencias)
+    # Remove o <p class="analise-p ...">...</p> externo.
+    cleaned: list[str] = []
+    for part in parts:
+        inner = re.sub(r'^<p[^>]*>|</p>$', '', part.strip())
+        cleaned.append(inner)
+    return "<br><br>".join(cleaned) if cleaned else html.escape(text)
 
 
 def build_before_after(dados_mercado: dict[str, Any]) -> dict[str, Any] | None:
@@ -284,10 +450,14 @@ def build_related_entities(dados_mercado: dict[str, Any], tag: str) -> list[dict
     seen: set[str] = set()
 
     for ref in dados_mercado.get("referencias_internas") or []:
-        trecho = ref.get("trecho", "")
-        if trecho and trecho.lower() not in seen:
-            seen.add(trecho.lower())
-            entities.append({"nome": trecho, "tipo": "referência"})
+        trecho = (ref.get("trecho") or ref.get("titulo") or "").strip()
+        if not trecho or trecho.lower() in seen:
+            continue
+        seen.add(trecho.lower())
+        entry: dict[str, str] = {"nome": trecho, "tipo": "referência"}
+        if ref.get("noticia_id"):
+            entry["url"] = f"/noticia/{ref['noticia_id']}"
+        entities.append(entry)
 
     for kw, url in INTERNAL_KEYWORDS.items():
         if kw.lower() in seen:
@@ -298,16 +468,19 @@ def build_related_entities(dados_mercado: dict[str, Any], tag: str) -> list[dict
         elif tag in ("Dólar",) and kw in ("Dólar", "USD"):
             entities.append({"nome": kw, "tipo": "tema", "url": url})
             seen.add(kw.lower())
+        elif tag in ("Economia", "Inflação", "Juros") and kw in ("Selic", "IPCA", "Inflação", "Juros"):
+            entities.append({"nome": kw, "tipo": "tema", "url": url})
+            seen.add(kw.lower())
 
     for ponto in dados_mercado.get("pontos_chave") or []:
         titulo = ponto.get("titulo", "")
         if titulo and titulo.lower() not in seen:
             seen.add(titulo.lower())
-            cat = ponto.get("categoria", tag)
+            href = ponto.get("url") or f"/?categoria={quote(str(ponto.get('categoria', tag)))}"
             entities.append({
                 "nome": titulo,
                 "tipo": "ponto-chave",
-                "url": f"/?categoria={cat}",
+                "url": href,
             })
 
     return entities[:8]
@@ -574,6 +747,129 @@ def get_acervo_stats(client, tag: str) -> dict[str, Any]:
     }
 
 
+def build_perfil_investidor(tag: str, dados_mercado: dict[str, Any] | None = None) -> dict[str, str]:
+    """Garante orientação por perfil — usa IA se houver; senão fallback editorial por categoria."""
+    existing = (dados_mercado or {}).get("perfil_investidor") or {}
+    if isinstance(existing, dict):
+        filled = {
+            k: str(v).strip()
+            for k, v in existing.items()
+            if k in ("conservador", "moderado", "arrojado") and str(v).strip()
+        }
+        if len(filled) == 3:
+            return filled
+
+    defaults: dict[str, dict[str, str]] = {
+        "Cripto": {
+            "conservador": (
+                "Trate cripto como satélite da carteira (no máximo 1–5%). Priorize exchanges "
+                "reguladas, evite alavancagem e foque em entender custódia e volatilidade antes de aportar."
+            ),
+            "moderado": (
+                "Você pode diversificar com BTC/ETH em aportes periódicos (DCA), mantendo reserva de "
+                "emergência em reais. Defina um teto de risco e revise a exposição a cada trimestre."
+            ),
+            "arrojado": (
+                "Há espaço para posições táticos e altcoins, mas com stop mental e tamanho de lote "
+                "disciplinado. Volatilidade alta pode amplificar ganhos e perdas — não use capital essencial."
+            ),
+        },
+        "Economia": {
+            "conservador": (
+                "Acompanhe Selic e IPCA para calibrar renda fixa pós/pré. Prefira liquidez e proteção "
+                "do poder de compra; evite decisões impulsivas com base em uma única manchete."
+            ),
+            "moderado": (
+                "Equilibre renda fixa e variável conforme o ciclo de juros. Use o cenário macro para "
+                "ajustar duration e exposição a ações, sem concentrar em um único tema."
+            ),
+            "arrojado": (
+                "Oportunidades táticas em duração, câmbio e setores cíclicos fazem sentido se houver "
+                "colchão de liquidez. Monitore revisões do Focus e sinais do Banco Central."
+            ),
+        },
+        "Dólar": {
+            "conservador": (
+                "Exposição cambial pequena via fundos cambiais ou conta internacional pode proteger "
+                "parte do patrimônio. Evite alavancagem em forex."
+            ),
+            "moderado": (
+                "Diversifique com uma parcela em dólar alinhada a gastos futuros (viagens, estudos). "
+                "Rebalanceie quando o câmbio se deslocar muito da média recente."
+            ),
+            "arrojado": (
+                "Posições táticas em câmbio e ativos dolarizados são viáveis com limites claros de perda. "
+                "Acompanhe juros EUA e fluxo de risco global."
+            ),
+        },
+        "Ações": {
+            "conservador": (
+                "Prefira ETFs amplos e empresas sólidas com histórico de dividendos. Evite concentração "
+                "em um único papel e mantenha horizonte longo."
+            ),
+            "moderado": (
+                "Monte um núcleo em índices/blue chips e uma parcela satellite em setores com tese clara. "
+                "Use correções para aportes programados."
+            ),
+            "arrojado": (
+                "Há espaço para small caps e temas cíclicos, com gestão ativa de risco. Defina stops e "
+                "não aumente posição em papéis já muito esticados."
+            ),
+        },
+        "Juros": {
+            "conservador": (
+                "Priorize Tesouro Selic e crédito de alta qualidade para preservar capital enquanto "
+                "acompanha o ciclo de corte/alta da Selic."
+            ),
+            "moderado": (
+                "Combine pós-fixados com prefixados/IPCA+ de prazos intermediários conforme a curva. "
+                "Evite travar tudo em um único vencimento."
+            ),
+            "arrojado": (
+                "Duration mais longa e crédito privado podem turbinar retorno se a tese de juros estiver "
+                "clara — monitore prêmios e liquidez diária."
+            ),
+        },
+        "Inflação": {
+            "conservador": (
+                "IPCA+ curto e produtos atrelados à inflação ajudam a proteger o poder de compra. "
+                "Mantenha reserva emergencial líquida."
+            ),
+            "moderado": (
+                "Misture IPCA+, pós-fixados e uma fatia de renda variável real (ações/FIIs selecionados) "
+                "para equilibrar proteção e crescimento."
+            ),
+            "arrojado": (
+                "Surpresas de inflação criam assimetrias em duration e setores defensivos/cíclicos. "
+                "Ajuste rápido a alocação quando o Focus revisar projeções."
+            ),
+        },
+    }
+
+    base = defaults.get(tag) or {
+        "conservador": (
+            f"Em {tag}, preserve capital: priorize liquidez, diversificação e tickets pequenos até "
+            "dominar os riscos específicos do tema."
+        ),
+        "moderado": (
+            f"Para {tag}, combine um núcleo conservador com exposição gradual ao tema, revisando "
+            "a tese quando novos dados de mercado forem publicados."
+        ),
+        "arrojado": (
+            f"Em {tag}, posições mais agressivas exigem disciplina de risco, monitoramento frequente "
+            "e capital que você possa perder sem comprometer objetivos essenciais."
+        ),
+    }
+
+    result = dict(base)
+    result.update(filled if isinstance(existing, dict) else {})
+    return {
+        "conservador": result.get("conservador") or base["conservador"],
+        "moderado": result.get("moderado") or base["moderado"],
+        "arrojado": result.get("arrojado") or base["arrojado"],
+    }
+
+
 def build_article_enrichment(
     client,
     noticia_id: int,
@@ -589,14 +885,14 @@ def build_article_enrichment(
         from concurrent.futures import ThreadPoolExecutor
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            f_m = pool.submit(core.fetch_market_snapshot)
-            f_b = pool.submit(core.fetch_bcb_snapshot)
+            f_m = pool.submit(core.fetch_market_snapshot, False)
+            f_b = pool.submit(core.fetch_bcb_snapshot, False)
             market_data["cotacoes"] = f_m.result()
             market_data["bcb"] = f_b.result()
     elif not market_data.get("cotacoes"):
-        market_data["cotacoes"] = core.fetch_market_snapshot()
+        market_data["cotacoes"] = core.fetch_market_snapshot(blocking=False)
     elif not market_data.get("bcb"):
-        market_data["bcb"] = core.fetch_bcb_snapshot()
+        market_data["bcb"] = core.fetch_bcb_snapshot(blocking=False)
 
     if not market_data.get("historico"):
         cached_hist = core._cache_get("market_hist_30_90") or core._cache_get_stale("market_hist_30_90")
@@ -614,10 +910,11 @@ def build_article_enrichment(
             threading.Thread(target=_warm_hist, daemon=True).start()
 
     refs = market_data.get("referencias_internas") or []
-    if refs and not any(r.get("noticia_id") for r in refs):
+    if refs:
         market_data["referencias_internas"] = resolve_referencias_internas(client, refs)
 
     acervo = get_acervo_stats(client, tag)
+    related_articles = get_related_articles(client, tag, noticia_id)
     linked_parts = link_text_parts(resumo, market_data.get("referencias_internas"))
 
     market_stats = build_market_stats(market_data, tag)
@@ -628,9 +925,21 @@ def build_article_enrichment(
         noticia_id,
     )
 
+    faq_items = []
+    for item in market_data.get("faq") or []:
+        pergunta = (item.get("pergunta") or "").strip()
+        resposta = (item.get("resposta") or "").strip()
+        if not pergunta or not resposta:
+            continue
+        faq_items.append({
+            "pergunta": pergunta,
+            "resposta": resposta,
+            "resposta_html": link_inline_html(resposta, market_data.get("referencias_internas")),
+        })
+
     return {
         "market_stats": market_stats,
-        "related_articles": get_related_articles(client, tag, noticia_id),
+        "related_articles": related_articles,
         "acervo_stats": acervo,
         "historical_charts": build_historical_charts(market_data.get("historico", {}), tag),
         "before_after": build_before_after(market_data),
@@ -638,12 +947,14 @@ def build_article_enrichment(
         "trust": build_trust_box(market_data, acervo["total"], tag),
         "timeline": market_data.get("timeline") or [],
         "cenarios": market_data.get("cenarios") or [],
-        "perfil_investidor": market_data.get("perfil_investidor") or {},
+        "perfil_investidor": build_perfil_investidor(tag, market_data),
         "glossario": market_data.get("glossario") or [],
-        "faq": market_data.get("faq") or [],
+        "faq": faq_items,
         "tabela_comparativa": market_data.get("tabela_comparativa"),
         "atualizacao": market_data.get("atualizacao"),
         "related_entities": build_related_entities(market_data, tag),
+        "cross_links": build_cross_links(market_data, related_articles, tag),
+        "data_source_links": DATA_SOURCE_LINKS,
         "linked_resumo": "".join(linked_parts),
         "linked_resumo_parts": linked_parts,
     }

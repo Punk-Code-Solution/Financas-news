@@ -108,12 +108,15 @@
 {# --- Perfil investidor (ponto 2 + 8) --- #}
 {% if enrichment.perfil_investidor %}
 <section class="mb-8" id="perfil-investidor-section">
-    <h2 class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-3">Orientação por perfil de investidor</h2>
+    <div class="flex flex-wrap items-end justify-between gap-2 mb-3">
+        <h2 class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400">Orientação por perfil de investidor</h2>
+        <p id="perfil-ativo-label" class="text-[11px] font-semibold text-blue-600 dark:text-[#4ade80] hidden"></p>
+    </div>
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {% for perfil_key, perfil_label in [('conservador', 'Conservador'), ('moderado', 'Moderado'), ('arrojado', 'Arrojado')] %}
+        {% for perfil_key, perfil_label in [('conservador', 'Iniciante'), ('moderado', 'Intermediário'), ('arrojado', 'Avançado')] %}
         {% if enrichment.perfil_investidor[perfil_key] %}
         <div class="perfil-card bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-700 rounded-xl p-4 transition"
-             data-perfil="{{ perfil_key }}">
+             data-perfil="{{ perfil_key }}" id="perfil-card-{{ perfil_key }}">
             <p class="text-xs font-black uppercase text-blue-600 dark:text-[#4ade80] mb-2">{{ perfil_label }}</p>
             <p class="text-sm text-gray-700 dark:text-slate-300 leading-relaxed">{{ enrichment.perfil_investidor[perfil_key] }}</p>
         </div>
@@ -239,9 +242,6 @@
             <div class="flex-1 flex items-center justify-center min-h-[160px]">
                 <canvas id="sentiment-chart" width="160" height="160" aria-label="Gráfico de sentimento da categoria"></canvas>
             </div>
-            <p class="mt-3 text-[11px] text-gray-500 dark:text-slate-500 leading-relaxed">
-                O gráfico resume o viés das análises já publicadas em {{ noticia[5] }} — útil para perceber se esta matéria reforça ou contrapõe a tendência do portal.
-            </p>
         </div>
         {% endif %}
     </div>

@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import threading
 from dataclasses import dataclass
 
 import libsql_client
@@ -15,6 +16,9 @@ class LocalDbClient:
 
     def __init__(self, path: str):
         self._conn = sqlite3.connect(path, check_same_thread=False)
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA synchronous=NORMAL")
+        self._conn.execute("PRAGMA temp_store=MEMORY")
 
     def execute(self, sql: str, args: list | None = None):
         cursor = self._conn.cursor()
@@ -28,7 +32,16 @@ class LocalDbClient:
         return QueryResult([])
 
     def close(self):
+        # Conexão reutilizada via pool — close() é no-op seguro.
+        pass
+
+    def close_hard(self):
         self._conn.close()
+
+
+_thread_local = threading.local()
+_schema_ready = False
+_schema_lock = threading.Lock()
 
 
 def _use_local_db() -> bool:
@@ -46,7 +59,28 @@ def _configure_ssl_certs():
         pass
 
 
-def get_db():
+class PooledClient:
+    """Proxy que reutiliza o client remoto sem fechar a cada request."""
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    def execute(self, sql: str, args: list | None = None):
+        if args is None:
+            return self._inner.execute(sql)
+        return self._inner.execute(sql, args)
+
+    def close(self):
+        pass
+
+    def close_hard(self):
+        try:
+            self._inner.close()
+        except Exception:
+            pass
+
+
+def _create_client():
     if _use_local_db():
         path = os.getenv("LOCAL_DATABASE_PATH", "news.db")
         return LocalDbClient(path)
@@ -64,51 +98,80 @@ def get_db():
             "Defina TURSO_DATABASE_URL e TURSO_AUTH_TOKEN, ou USE_LOCAL_DB=true para SQLite local."
         )
 
-    return libsql_client.create_client_sync(url=url, auth_token=token)
+    return PooledClient(libsql_client.create_client_sync(url=url, auth_token=token))
+
+
+def get_db():
+    """Reutiliza um client por thread — evita handshake Turso/SQLite a cada request."""
+    client = getattr(_thread_local, "client", None)
+    if client is None:
+        client = _create_client()
+        _thread_local.client = client
+    return client
 
 
 def ensure_schema(client):
-    client.execute("""
-        CREATE TABLE IF NOT EXISTS news (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            titulo TEXT,
-            resumo TEXT,
-            impacto TEXT,
-            link TEXT,
-            tag TEXT
-        )
-    """)
-    for col, col_type in [
-        ("sentimento", "TEXT"),
-        ("published_at", "TEXT"),
-        ("fonte", "TEXT"),
-        ("dados_mercado", "TEXT"),
-        ("contexto_editorial", "TEXT"),
-        ("created_at", "TEXT"),
-        ("imagem_url", "TEXT"),
-        ("conteudo_extra", "TEXT"),
-        ("updated_at", "TEXT"),
-        ("versao_analise", "INTEGER"),
-    ]:
-        try:
-            client.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
-        except Exception:
-            pass
+    global _schema_ready
+    if _schema_ready:
+        return
 
-    client.execute("""
-        UPDATE news
-        SET created_at = published_at
-        WHERE (created_at IS NULL OR created_at = '')
-          AND published_at IS NOT NULL AND published_at != ''
-    """)
+    with _schema_lock:
+        if _schema_ready:
+            return
 
-    client.execute("""
-        CREATE TABLE IF NOT EXISTS newsletter_subscribers (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            created_at TEXT NOT NULL
-        )
-    """)
+        client.execute("""
+            CREATE TABLE IF NOT EXISTS news (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                titulo TEXT,
+                resumo TEXT,
+                impacto TEXT,
+                link TEXT,
+                tag TEXT
+            )
+        """)
+        for col, col_type in [
+            ("sentimento", "TEXT"),
+            ("published_at", "TEXT"),
+            ("fonte", "TEXT"),
+            ("dados_mercado", "TEXT"),
+            ("contexto_editorial", "TEXT"),
+            ("created_at", "TEXT"),
+            ("imagem_url", "TEXT"),
+            ("conteudo_extra", "TEXT"),
+            ("updated_at", "TEXT"),
+            ("versao_analise", "INTEGER"),
+        ]:
+            try:
+                client.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
+            except Exception:
+                pass
+
+        client.execute("""
+            UPDATE news
+            SET created_at = published_at
+            WHERE (created_at IS NULL OR created_at = '')
+              AND published_at IS NOT NULL AND published_at != ''
+        """)
+
+        client.execute("""
+            CREATE TABLE IF NOT EXISTS newsletter_subscribers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+
+        # Índices para listagens / filtros da home e relacionados.
+        for sql in (
+            "CREATE INDEX IF NOT EXISTS idx_news_id_desc ON news(id DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_news_tag_id ON news(tag, id DESC)",
+        ):
+            try:
+                client.execute(sql)
+            except Exception:
+                pass
+
+        _schema_ready = True
 
 
 def get_editorial_context(tag_hint=None, limit=6):
@@ -127,7 +190,6 @@ def get_editorial_context(tag_hint=None, limit=6):
             )
 
         rows = result.rows
-        client.close()
 
         if not rows:
             return "Nenhuma notícia anterior no acervo do portal."
@@ -160,7 +222,6 @@ def client_sentiment_summary(tag_hint=None):
                 "SELECT sentimento, COUNT(*) FROM news GROUP BY sentimento",
             )
         rows = result.rows
-        client.close()
 
         if not rows:
             return "sem histórico suficiente"
