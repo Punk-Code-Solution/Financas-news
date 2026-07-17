@@ -29,6 +29,28 @@ templates = Jinja2Templates(directory="templates")
 
 CATEGORIAS = core.VALID_TAGS
 
+DEFAULT_CATEGORY_IMAGES = {
+    "Cripto": {"slug": "cripto", "label": "Cripto", "from": "#0b1220", "to": "#14532d", "accent": "#4ade80", "icon": "₿"},
+    "Economia": {"slug": "economia", "label": "Economia", "from": "#0f172a", "to": "#0e7490", "accent": "#67e8f9", "icon": "∑"},
+    "Dólar": {"slug": "dolar", "label": "Dólar", "from": "#052e16", "to": "#166534", "accent": "#86efac", "icon": "$"},
+    "Ações": {"slug": "acoes", "label": "Ações", "from": "#172554", "to": "#1d4ed8", "accent": "#93c5fd", "icon": "↗"},
+    "Juros": {"slug": "juros", "label": "Juros", "from": "#1c1917", "to": "#9a3412", "accent": "#fdba74", "icon": "%"},
+    "Inflação": {"slug": "inflacao", "label": "Inflação", "from": "#450a0a", "to": "#b91c1c", "accent": "#fca5a5", "icon": "▲"},
+    "Imóveis": {"slug": "imoveis", "label": "Imóveis", "from": "#0c4a6e", "to": "#0369a1", "accent": "#7dd3fc", "icon": "⌂"},
+    "Fintech": {"slug": "fintech", "label": "Fintech", "from": "#2e1065", "to": "#7c3aed", "accent": "#d8b4fe", "icon": "⚡"},
+    "Commodities": {"slug": "commodities", "label": "Commodities", "from": "#422006", "to": "#a16207", "accent": "#fde68a", "icon": "◆"},
+    "Política Econômica": {"slug": "politica-economica", "label": "Política", "from": "#1e1b4b", "to": "#4338ca", "accent": "#a5b4fc", "icon": "⚖"},
+}
+DEFAULT_IMAGE_BY_SLUG = {item["slug"]: item for item in DEFAULT_CATEGORY_IMAGES.values()}
+
+
+def category_image_url(tag: object) -> str:
+    item = DEFAULT_CATEGORY_IMAGES.get(str(tag), DEFAULT_CATEGORY_IMAGES["Economia"])
+    return f"/media/default/{item['slug']}.svg?v=3"
+
+
+templates.env.globals["category_image"] = category_image_url
+
 try:
     startup_client = get_db()
     ensure_schema(startup_client)
@@ -140,14 +162,16 @@ async def ver_noticia(request: Request, noticia_id: int):
         except json.JSONDecodeError:
             pass
 
+    tag = str(noticia[5]) if len(noticia) > 5 and noticia[5] else "Economia"
+    resumo = str(noticia[2]) if len(noticia) > 2 and noticia[2] else ""
+
     enrichment = build_article_enrichment(
         client,
         noticia_id,
-        noticia[5] if len(noticia) > 5 else "Economia",
+        tag,
         dados_mercado,
-        resumo=noticia[2] if len(noticia) > 2 else "",
+        resumo=resumo,
     )
-    tag = noticia[5] if len(noticia) > 5 else "Economia"
     contextual_affiliate = get_contextual_affiliate(tag)
     client.close()
 
@@ -223,6 +247,45 @@ async def termos(request: Request):
 def get_ads_txt():
     content = "google.com, pub-3623062544438213, DIRECT, f08c47fec0942fa0"
     return Response(content=content, media_type="text/plain")
+
+
+@app.get("/media/default/{slug}.svg", response_class=Response)
+def get_default_category_image(slug: str):
+    """Capa padrão centrada — funciona em hero e thumbnails com object-cover."""
+    item = DEFAULT_IMAGE_BY_SLUG.get(slug, DEFAULT_CATEGORY_IMAGES["Economia"])
+    label = str(item["label"])
+    icon = str(item["icon"])
+    color_from = str(item["from"])
+    color_to = str(item["to"])
+    accent = str(item["accent"])
+    # Composição centrada (600,338): ao cortar em cards pequenos o foco permanece legível.
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="{label}">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="{color_from}"/>
+      <stop offset="100%" stop-color="{color_to}"/>
+    </linearGradient>
+    <radialGradient id="spot" cx="50%" cy="46%" r="42%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity=".18"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="675" fill="url(#bg)"/>
+  <rect width="1200" height="675" fill="url(#spot)"/>
+  <g fill="none" stroke="{accent}" stroke-opacity=".26" stroke-width="4" stroke-linecap="round">
+    <path d="M60 400 L230 300 L380 340 L560 200 L730 260 L920 130 L1150 190"/>
+    <path d="M60 440 L250 390 L420 420 L600 300 L790 340 L1150 230" stroke-opacity=".14"/>
+  </g>
+  <circle cx="600" cy="337" r="128" fill="#020617" fill-opacity=".45" stroke="{accent}" stroke-width="3" stroke-opacity=".7"/>
+  <text x="600" y="337" text-anchor="middle" dominant-baseline="central"
+        font-family="Segoe UI Symbol, Arial, sans-serif" font-size="86" font-weight="700" fill="{accent}">{icon}</text>
+</svg>"""
+    return Response(
+        content=svg,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
 
 @app.get("/robots.txt", response_class=Response)
 def get_robots_txt():
