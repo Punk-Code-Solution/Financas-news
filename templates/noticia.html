@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ noticia[1] }} - Finanças News</title>
-    <link rel="icon" href="/static/favicon.png" type="image/png">
+    <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://cdn.tailwindcss.com">
@@ -21,7 +21,7 @@
     <meta property="og:description" content="{{ noticia[2] }}" />
     <meta property="og:url" content="{{ request.url }}" />
     <meta property="og:site_name" content="Finanças News" />
-    <meta property="og:image" content="{% if noticia[11] %}https://financas-news.net.br{{ noticia[11] }}{% else %}https://financas-news.net.br/static/favicon.png{% endif %}" />
+    <meta property="og:image" content="{% if noticia[11] %}https://financas-news.net.br{{ noticia[11] }}{% else %}https://financas-news.net.br/static/favicon.svg?v=2{% endif %}" />
     <meta name="twitter:card" content="{% if noticia[11] %}summary_large_image{% else %}summary{% endif %}" />
 
     {% if enrichment.faq %}
