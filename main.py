@@ -100,11 +100,8 @@ async def index(request: Request, categoria: str | None = None, page: int = 1, q
         
     client.close()
     
-    sparklines = {}
-    try:
-        sparklines = core.fetch_sparkline_data()
-    except Exception:
-        pass
+    # Sparklines: não bloqueiam a home (cache + refresh em background).
+    sparklines = core.fetch_sparkline_data(blocking=False)
 
     return templates.TemplateResponse(
         request=request,

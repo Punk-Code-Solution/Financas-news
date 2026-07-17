@@ -1,5 +1,6 @@
 import html
 import re
+import threading
 from typing import Any
 from urllib.parse import quote
 
@@ -378,6 +379,69 @@ def build_market_stats(dados_mercado: dict[str, Any], tag: str = "Economia") -> 
                 },
             ]
 
+    # Artigos antigos podem ter salvo apenas números ("14.25", "4.64",
+    # "5.0975"). Relaciona-os aos indicadores coletados para não exibir
+    # valores sem contexto ao leitor.
+    indicator_context = {
+        "selic": {
+            "nome": "Taxa Selic",
+            "sufixo": "% ao ano",
+            "descricao": "Taxa básica de juros; influencia crédito, financiamentos e a rentabilidade da renda fixa.",
+            "categoria": "Juros",
+        },
+        "ipca": {
+            "nome": "IPCA em 12 meses",
+            "sufixo": "%",
+            "descricao": "Índice oficial de inflação; indica a variação média dos preços para o consumidor.",
+            "categoria": "Inflação",
+        },
+        "dólar": {
+            "nome": "Dólar comercial",
+            "prefixo": "R$ ",
+            "descricao": "Cotação do dólar; afeta importados, viagens, combustíveis e empresas expostas ao câmbio.",
+            "categoria": "Dólar",
+        },
+    }
+
+    known_values: list[tuple[float, str, dict[str, str]]] = []
+    for label, info in bcb.items():
+        if not isinstance(info, dict):
+            continue
+        value = _parse_br_number(str(info.get("valor", "")))
+        if value is None:
+            continue
+        label_lower = label.lower()
+        context_key = next((key for key in indicator_context if key in label_lower), None)
+        if context_key:
+            known_values.append((value, str(info.get("valor", value)), indicator_context[context_key]))
+
+    for ponto in pontos:
+        if not isinstance(ponto, dict):
+            continue
+        titulo = str(ponto.get("titulo", "")).strip()
+        numeric = _parse_br_number(titulo)
+        # Só interpreta como número isolado quando não há palavras explicativas.
+        if numeric is None or re.search(r"[A-Za-zÀ-ÿ]", titulo):
+            continue
+        match = next(
+            (
+                (raw_value, context)
+                for value, raw_value, context in known_values
+                if abs(value - numeric) < 0.0001
+            ),
+            None,
+        )
+        if not match:
+            continue
+        raw_value, context = match
+        formatted = raw_value.replace(".", ",")
+        ponto["titulo"] = (
+            f"{context.get('nome')}: "
+            f"{context.get('prefixo', '')}{formatted}{context.get('sufixo', '')}"
+        )
+        ponto["descricao"] = context["descricao"]
+        ponto["categoria"] = context["categoria"]
+
     return {
         "coletado_em": cot_data.get("coletado_em"),
         "cotacoes": cotacoes,
@@ -517,17 +581,37 @@ def build_article_enrichment(
     dados_mercado: dict[str, Any],
     resumo: str = "",
 ) -> dict[str, Any]:
-    market_data = dict(dados_mercado)
-    if not market_data.get("cotacoes") and not market_data.get("bcb"):
-        import core
+    import core
 
+    market_data = dict(dados_mercado)
+    # Preferir dados salvos no artigo; rede só via cache/timeout curto.
+    if not market_data.get("cotacoes") and not market_data.get("bcb"):
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            f_m = pool.submit(core.fetch_market_snapshot)
+            f_b = pool.submit(core.fetch_bcb_snapshot)
+            market_data["cotacoes"] = f_m.result()
+            market_data["bcb"] = f_b.result()
+    elif not market_data.get("cotacoes"):
         market_data["cotacoes"] = core.fetch_market_snapshot()
+    elif not market_data.get("bcb"):
         market_data["bcb"] = core.fetch_bcb_snapshot()
 
     if not market_data.get("historico"):
-        import core
+        cached_hist = core._cache_get("market_hist_30_90") or core._cache_get_stale("market_hist_30_90")
+        if cached_hist:
+            market_data["historico"] = cached_hist
+        else:
+            market_data["historico"] = {}
 
-        market_data["historico"] = core.fetch_market_historical()
+            def _warm_hist():
+                try:
+                    core.fetch_market_historical()
+                except Exception:
+                    pass
+
+            threading.Thread(target=_warm_hist, daemon=True).start()
 
     refs = market_data.get("referencias_internas") or []
     if refs and not any(r.get("noticia_id") for r in refs):

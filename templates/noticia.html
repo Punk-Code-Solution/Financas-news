@@ -83,6 +83,8 @@
             font-weight: 450;
         }
         .dark .analise-completa .analise-p { color: #e2e8f0; }
+        .analise-flow { overflow: hidden; }
+        .analise-dados-box { clear: both; }
         @media (min-width: 768px) {
             .analise-completa .analise-p { font-size: 1.3rem; line-height: 1.9; }
         }
@@ -180,41 +182,39 @@
                     <p class="mt-3 text-sm md:text-base text-gray-500 dark:text-slate-400 leading-relaxed">Leitura principal do portal — com cotações, histórico e pontos-chave no mesmo fluxo do raciocínio editorial.</p>
                 </header>
 
-                <div class="grid grid-cols-1 {% if enrichment.market_stats.pontos_chave %}lg:grid-cols-12{% endif %} gap-8 lg:gap-10 items-start">
-                    <div class="{% if enrichment.market_stats.pontos_chave %}lg:col-span-8{% endif %} min-w-0">
+                <div class="min-w-0">
+                    <div class="analise-flow">
+                        {% if enrichment.market_stats.pontos_chave %}
+                        <div class="hidden lg:block float-right w-[34%] max-w-sm ml-8 mb-6">
+                            {% include "partials/_pontos_chave.html" %}
+                        </div>
+                        {% endif %}
+
                         {% if resumo_parts %}
                             {% for part in resumo_parts[:split_at] %}
                             {{ part | safe }}
                             {% endfor %}
-
-                            <div class="my-8 md:my-10 rounded-2xl border border-dashed border-blue-200/80 dark:border-slate-600 bg-blue-50/40 dark:bg-[#0b1220]/50 p-4 md:p-6">
-                                <p class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-[#4ade80] mb-5">Onde a análise se apoia nos dados</p>
-                                {% include "partials/_analysis_market.html" %}
-                                {% include "partials/_analysis_charts.html" %}
-                            </div>
-
-                            {% for part in resumo_parts[split_at:] %}
-                            {{ part | safe }}
-                            {% endfor %}
                         {% elif enrichment.linked_resumo %}
                             <div class="analise-p">{{ enrichment.linked_resumo | safe }}</div>
-                            <div class="my-8 md:my-10 rounded-2xl border border-dashed border-blue-200/80 dark:border-slate-600 bg-blue-50/40 dark:bg-[#0b1220]/50 p-4 md:p-6">
-                                <p class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-[#4ade80] mb-5">Onde a análise se apoia nos dados</p>
-                                {% include "partials/_analysis_market.html" %}
-                                {% include "partials/_analysis_charts.html" %}
-                            </div>
                         {% else %}
                             <p class="analise-p mb-5 md:mb-6 whitespace-pre-line">{{ noticia[2] }}</p>
-                            <div class="my-8 md:my-10 rounded-2xl border border-dashed border-blue-200/80 dark:border-slate-600 bg-blue-50/40 dark:bg-[#0b1220]/50 p-4 md:p-6">
-                                <p class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-[#4ade80] mb-5">Onde a análise se apoia nos dados</p>
-                                {% include "partials/_analysis_market.html" %}
-                                {% include "partials/_analysis_charts.html" %}
-                            </div>
                         {% endif %}
                     </div>
 
+                    <div class="analise-dados-box my-8 md:my-10 rounded-2xl border border-dashed border-blue-200/80 dark:border-slate-600 bg-blue-50/40 dark:bg-[#0b1220]/50 p-4 md:p-6">
+                        <p class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-[#4ade80] mb-5">Onde a análise se apoia nos dados</p>
+                        {% include "partials/_analysis_market.html" %}
+                        {% include "partials/_analysis_charts.html" %}
+                    </div>
+
+                    {% if resumo_parts and resumo_parts|length > split_at %}
+                        {% for part in resumo_parts[split_at:] %}
+                        {{ part | safe }}
+                        {% endfor %}
+                    {% endif %}
+
                     {% if enrichment.market_stats.pontos_chave %}
-                    <div class="lg:col-span-4">
+                    <div class="lg:hidden mt-6">
                         {% include "partials/_pontos_chave.html" %}
                     </div>
                     {% endif %}

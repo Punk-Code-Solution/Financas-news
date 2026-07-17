@@ -10,7 +10,9 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 from dotenv import load_dotenv
 import requests
@@ -18,6 +20,48 @@ import requests
 from db import get_db, get_editorial_context
 
 load_dotenv()
+
+# Cache em memória para não bloquear cada pageview com APIs externas.
+_MARKET_CACHE: dict[str, tuple[float, Any]] = {}
+_MARKET_CACHE_LOCK = threading.Lock()
+_HTTP_TIMEOUT = float(os.getenv("MARKET_HTTP_TIMEOUT", "3"))
+_CACHE_TTL_SNAPSHOT = int(os.getenv("MARKET_CACHE_TTL", "300"))  # 5 min
+_CACHE_TTL_HISTORICAL = int(os.getenv("MARKET_HIST_CACHE_TTL", "900"))  # 15 min
+
+
+def _cache_get(key: str):
+    with _MARKET_CACHE_LOCK:
+        item = _MARKET_CACHE.get(key)
+        if not item:
+            return None
+        expires_at, value = item
+        if time.time() >= expires_at:
+            return None
+        return value
+
+
+def _cache_set(key: str, value: Any, ttl: int) -> Any:
+    with _MARKET_CACHE_LOCK:
+        _MARKET_CACHE[key] = (time.time() + ttl, value)
+    return value
+
+
+def _cache_get_stale(key: str):
+    """Retorna valor mesmo expirado (fallback rápido)."""
+    with _MARKET_CACHE_LOCK:
+        item = _MARKET_CACHE.get(key)
+        return item[1] if item else None
+
+
+def _http_get_json(url: str, timeout: float | None = None) -> Any | None:
+    try:
+        res = requests.get(url, headers=HEADERS, timeout=timeout or _HTTP_TIMEOUT)
+        if res.status_code == 200:
+            return res.json()
+    except Exception:
+        return None
+    return None
+
 
 VALID_TAGS = [
     "Cripto",
@@ -195,131 +239,235 @@ def _format_brl(value):
 
 
 def fetch_market_snapshot() -> dict[str, Any]:
-    """Cotações em tempo real via AwesomeAPI."""
+    """Cotações em tempo real via AwesomeAPI (cache 5 min)."""
+    cached = _cache_get("market_snapshot")
+    if cached is not None:
+        return cached
+
     snapshot: dict[str, Any] = {"coletado_em": datetime.now().strftime("%d/%m/%Y %H:%M")}
-    try:
-        res = requests.get(
-            "https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL",
-            headers=HEADERS,
-            timeout=10,
-        )
-        if res.status_code == 200:
-            data = res.json()
-            for key, label in [("USDBRL", "Dólar (USD/BRL)"), ("EURBRL", "Euro (EUR/BRL)"), ("BTCBRL", "Bitcoin (BTC/BRL)")]:
-                if key in data:
-                    item = data[key]
-                    snapshot[label] = {
-                        "cotacao": _format_brl(item.get("bid")),
-                        "variacao_24h": _format_pct(item.get("pctChange")),
-                        "maxima": _format_brl(item.get("high")),
-                        "minima": _format_brl(item.get("low")),
-                    }
-    except Exception as e:
-        snapshot["erro_cotacoes"] = str(e)
-    return snapshot
+    data = _http_get_json(
+        "https://economia.awesomeapi.com.br/last/USD-BRL,EUR-BRL,BTC-BRL",
+        timeout=_HTTP_TIMEOUT,
+    )
+    if isinstance(data, dict):
+        for key, label in [
+            ("USDBRL", "Dólar (USD/BRL)"),
+            ("EURBRL", "Euro (EUR/BRL)"),
+            ("BTCBRL", "Bitcoin (BTC/BRL)"),
+        ]:
+            if key in data:
+                item = data[key]
+                snapshot[label] = {
+                    "cotacao": _format_brl(item.get("bid")),
+                    "variacao_24h": _format_pct(item.get("pctChange")),
+                    "maxima": _format_brl(item.get("high")),
+                    "minima": _format_brl(item.get("low")),
+                }
+    elif not any(k for k in snapshot if k != "coletado_em"):
+        stale = _cache_get_stale("market_snapshot")
+        if stale:
+            return stale
+
+    return _cache_set("market_snapshot", snapshot, _CACHE_TTL_SNAPSHOT)
 
 
 def fetch_bcb_snapshot() -> dict[str, dict[str, Any]]:
-    """Indicadores macro do Banco Central do Brasil."""
-    snapshot: dict[str, dict[str, Any]] = {}
+    """Indicadores macro do Banco Central (cache 5 min, requests em paralelo)."""
+    cached = _cache_get("bcb_snapshot")
+    if cached is not None:
+        return cached
+
     labels = {
         "selic_meta": "Selic meta (% a.a.)",
         "ipca_12m": "IPCA acumulado 12 meses (%)",
         "dolar_comercial": "Dólar comercial (R$/US$)",
     }
-    for key, series_id in BCB_SERIES.items():
-        try:
-            url = f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{series_id}/dados/ultimos/1?formato=json"
-            res = requests.get(url, headers=HEADERS, timeout=10)
-            if res.status_code == 200:
-                dados = res.json()
-                if dados:
-                    snapshot[labels[key]] = {
-                        "valor": dados[0].get("valor"),
-                        "data": dados[0].get("data"),
-                    }
-        except Exception:
-            continue
-    return snapshot
+    snapshot: dict[str, dict[str, Any]] = {}
+
+    def _one(key: str, series_id: int):
+        url = f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{series_id}/dados/ultimos/1?formato=json"
+        dados = _http_get_json(url, timeout=_HTTP_TIMEOUT)
+        if isinstance(dados, list) and dados:
+            return labels[key], {
+                "valor": dados[0].get("valor"),
+                "data": dados[0].get("data"),
+            }
+        return None
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures = [pool.submit(_one, key, sid) for key, sid in BCB_SERIES.items()]
+        for fut in as_completed(futures):
+            try:
+                result = fut.result()
+            except Exception:
+                continue
+            if result:
+                label, payload = result
+                snapshot[label] = payload
+
+    if not snapshot:
+        stale = _cache_get_stale("bcb_snapshot")
+        if stale:
+            return stale
+
+    return _cache_set("bcb_snapshot", snapshot, _CACHE_TTL_SNAPSHOT)
 
 
 def fetch_bcb_historical(days: int = 90) -> dict[str, Any]:
-    """Séries históricas BCB para gráficos de linha."""
+    """Séries históricas BCB para gráficos de linha (paralelo + cache)."""
+    cache_key = f"bcb_hist_{days}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     series: dict[str, Any] = {}
-    for key, series_id in BCB_SERIES.items():
+
+    def _one(key: str, series_id: int):
         label = BCB_HISTORICAL_LABELS[key]
-        try:
-            url = (
-                f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{series_id}"
-                f"/dados/ultimos/{days}?formato=json"
-            )
-            res = requests.get(url, headers=HEADERS, timeout=12)
-            if res.status_code != 200:
+        url = (
+            f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{series_id}"
+            f"/dados/ultimos/{days}?formato=json"
+        )
+        dados = _http_get_json(url, timeout=_HTTP_TIMEOUT)
+        if not isinstance(dados, list) or not dados:
+            return None
+        return label, {
+            "labels": [d.get("data", "") for d in dados],
+            "values": [float(str(d.get("valor", "0")).replace(",", ".")) for d in dados],
+            "periodo_dias": days,
+            "fonte": "BCB",
+        }
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures = [pool.submit(_one, key, sid) for key, sid in BCB_SERIES.items()]
+        for fut in as_completed(futures):
+            try:
+                result = fut.result()
+            except Exception:
                 continue
-            dados = res.json()
-            if not dados:
-                continue
-            series[label] = {
-                "labels": [d.get("data", "") for d in dados],
-                "values": [float(str(d.get("valor", "0")).replace(",", ".")) for d in dados],
-                "periodo_dias": days,
-                "fonte": "BCB",
-            }
-        except Exception:
-            continue
-    return series
+            if result:
+                label, payload = result
+                series[label] = payload
+
+    if not series:
+        stale = _cache_get_stale(cache_key)
+        if stale:
+            return stale
+
+    return _cache_set(cache_key, series, _CACHE_TTL_HISTORICAL)
 
 
 def fetch_awesome_historical(days: int = 30) -> dict[str, Any]:
-    """Séries históricas AwesomeAPI para gráficos de linha."""
+    """Séries históricas AwesomeAPI (paralelo + cache)."""
+    cache_key = f"awesome_hist_{days}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     series: dict[str, Any] = {}
-    for label, pair in AWESOME_HISTORICAL.items():
-        try:
-            url = f"https://economia.awesomeapi.com.br/json/daily/{pair}/{days}"
-            res = requests.get(url, headers=HEADERS, timeout=12)
-            if res.status_code != 200:
+
+    def _one(label: str, pair: str):
+        url = f"https://economia.awesomeapi.com.br/json/daily/{pair}/{days}"
+        dados = _http_get_json(url, timeout=_HTTP_TIMEOUT)
+        if not isinstance(dados, list) or not dados:
+            return None
+        dados = list(reversed(dados))
+        return label, {
+            "labels": [
+                datetime.fromtimestamp(int(d.get("timestamp", 0))).strftime("%d/%m")
+                for d in dados
+                if d.get("timestamp")
+            ],
+            "values": [float(d.get("bid", 0)) for d in dados],
+            "periodo_dias": days,
+            "fonte": "AwesomeAPI",
+        }
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures = [pool.submit(_one, label, pair) for label, pair in AWESOME_HISTORICAL.items()]
+        for fut in as_completed(futures):
+            try:
+                result = fut.result()
+            except Exception:
                 continue
-            dados = res.json()
-            if not isinstance(dados, list) or not dados:
-                continue
-            dados = list(reversed(dados))
-            series[label] = {
-                "labels": [
-                    datetime.fromtimestamp(int(d.get("timestamp", 0))).strftime("%d/%m")
-                    for d in dados
-                    if d.get("timestamp")
-                ],
-                "values": [float(d.get("bid", 0)) for d in dados],
-                "periodo_dias": days,
-                "fonte": "AwesomeAPI",
-            }
-        except Exception:
-            continue
-    return series
+            if result:
+                label, payload = result
+                series[label] = payload
+
+    if not series:
+        stale = _cache_get_stale(cache_key)
+        if stale:
+            return stale
+
+    return _cache_set(cache_key, series, _CACHE_TTL_HISTORICAL)
 
 
 def fetch_market_historical(days_short: int = 30, days_long: int = 90) -> dict[str, Any]:
-    """Agrega histórico BCB + AwesomeAPI para enriquecimento de artigos."""
-    return {
-        "30d": {**fetch_awesome_historical(days_short), **fetch_bcb_historical(min(days_short, 30))},
-        "90d": {**fetch_awesome_historical(days_long), **fetch_bcb_historical(days_long)},
+    """Agrega histórico BCB + AwesomeAPI (cache 15 min)."""
+    cache_key = f"market_hist_{days_short}_{days_long}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    short: dict[str, Any] = {}
+    long_: dict[str, Any] = {}
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        f_a30 = pool.submit(fetch_awesome_historical, days_short)
+        f_b30 = pool.submit(fetch_bcb_historical, min(days_short, 30))
+        f_a90 = pool.submit(fetch_awesome_historical, days_long)
+        f_b90 = pool.submit(fetch_bcb_historical, days_long)
+        try:
+            short = {**f_a30.result(), **f_b30.result()}
+        except Exception:
+            short = {}
+        try:
+            long_ = {**f_a90.result(), **f_b90.result()}
+        except Exception:
+            long_ = {}
+
+    payload = {
+        "30d": short,
+        "90d": long_,
         "coletado_em": datetime.now().strftime("%d/%m/%Y %H:%M"),
     }
+    if not short and not long_:
+        stale = _cache_get_stale(cache_key)
+        if stale:
+            return stale
+    return _cache_set(cache_key, payload, _CACHE_TTL_HISTORICAL)
 
 
-def fetch_sparkline_data() -> dict[str, list[float]]:
-    """Mini séries (7 dias) para sparklines na home."""
-    sparklines: dict[str, list[float]] = {}
-    for label, pair in list(AWESOME_HISTORICAL.items())[:2]:
-        try:
-            url = f"https://economia.awesomeapi.com.br/json/daily/{pair}/7"
-            res = requests.get(url, headers=HEADERS, timeout=8)
-            if res.status_code == 200:
-                dados = list(reversed(res.json()))
+def fetch_sparkline_data(blocking: bool = False) -> dict[str, list[float]]:
+    """Mini séries (7 dias) para sparklines na home.
+
+    Por padrão não bloqueia o request: devolve cache (ou {}) e atualiza em background.
+    """
+    cache_key = "sparklines_7d"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    stale = _cache_get_stale(cache_key) or {}
+
+    def _refresh():
+        sparklines: dict[str, list[float]] = {}
+        for label, pair in list(AWESOME_HISTORICAL.items())[:2]:
+            dados = _http_get_json(
+                f"https://economia.awesomeapi.com.br/json/daily/{pair}/7",
+                timeout=_HTTP_TIMEOUT,
+            )
+            if isinstance(dados, list):
+                dados = list(reversed(dados))
                 sparklines[label] = [float(d.get("bid", 0)) for d in dados if d.get("bid")]
-        except Exception:
-            continue
-    return sparklines
+        if sparklines:
+            _cache_set(cache_key, sparklines, _CACHE_TTL_SNAPSHOT)
+
+    if blocking:
+        _refresh()
+        return _cache_get(cache_key) or stale
+
+    threading.Thread(target=_refresh, daemon=True).start()
+    return stale
 
 
 def format_data_context(market, bcb, db_context):
