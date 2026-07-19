@@ -34,17 +34,20 @@ class LocalDbClient:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.execute("PRAGMA temp_store=MEMORY")
+        # Conexão única compartilhada entre threads — serializa o acesso.
+        self._lock = threading.Lock()
 
     def execute(self, sql: str, args: list[Any] | None = None) -> QueryResult:
-        cursor = self._conn.cursor()
-        if args:
-            cursor.execute(sql, args)
-        else:
-            cursor.execute(sql)
-        if sql.strip().upper().startswith("SELECT"):
-            return QueryResult(cursor.fetchall())
-        self._conn.commit()
-        return QueryResult([])
+        with self._lock:
+            cursor = self._conn.cursor()
+            if args:
+                cursor.execute(sql, args)
+            else:
+                cursor.execute(sql)
+            if sql.strip().upper().startswith("SELECT"):
+                return QueryResult(cursor.fetchall())
+            self._conn.commit()
+            return QueryResult([])
 
     def close(self) -> None:
         # Conexão reutilizada via pool — close() é no-op seguro.
@@ -54,7 +57,8 @@ class LocalDbClient:
         self._conn.close()
 
 
-_thread_local = threading.local()
+_client: Any = None
+_client_lock = threading.Lock()
 _schema_ready = False
 _schema_lock = threading.Lock()
 
@@ -117,12 +121,19 @@ def _create_client() -> LocalDbClient | PooledClient:
 
 
 def get_db() -> LocalDbClient | PooledClient:
-    """Reutiliza um client por thread — evita handshake Turso/SQLite a cada request."""
-    client = getattr(_thread_local, "client", None)
-    if client is None:
-        client = _create_client()
-        _thread_local.client = client
-    return client
+    """Reutiliza um único client global.
+
+    Um client por thread vazava sessões aiohttp: as threads do pool do FastAPI
+    (e a de warmup) morrem e o client era coletado sem close() — gerando os
+    avisos "Unclosed client session". O client sync do libsql roda seu próprio
+    event loop em background e aceita chamadas de várias threads.
+    """
+    global _client
+    if _client is None:
+        with _client_lock:
+            if _client is None:
+                _client = _create_client()
+    return _client
 
 
 def ensure_schema(client: DbClient) -> None:
