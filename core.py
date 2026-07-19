@@ -99,7 +99,10 @@ DEFAULT_GEMINI_MODELOS = [
 ]
 
 _exhausted_models: set[str] = set()
+# Cota de imagem: limpo a cada varredura (a cota diária reseta; o processo fica dias no ar).
 _exhausted_image_models: set[str] = set()
+# Modelos de imagem removidos permanentemente (404/descontinuados) até reiniciar.
+_unavailable_image_models: set[str] = set()
 
 
 def _configure_ssl_certs() -> None:
@@ -1044,9 +1047,16 @@ def generate_article_image(
         return f"/media/articles/{existing.name}"
 
     prompt = _build_image_prompt(title, tag, resumo)
-    modelos = [m for m in get_gemini_image_models() if m not in _exhausted_image_models]
+    modelos = [
+        m
+        for m in get_gemini_image_models()
+        if m not in _exhausted_image_models and m not in _unavailable_image_models
+    ]
     if not modelos:
-        print("   [img] Todos os modelos de imagem esgotaram a cota nesta execucao.")
+        print(
+            "   [img] Nenhum modelo de imagem disponivel "
+            f"(cota: {sorted(_exhausted_image_models)} | indisponiveis: {sorted(_unavailable_image_models)})."
+        )
         return None
 
     for model in modelos:
@@ -1080,10 +1090,12 @@ def generate_article_image(
                 return url
             print(f"   [img] Resposta sem imagem ({model}).")
         except Exception as e:
-            if _is_image_quota_error(e) or _is_image_model_unavailable(e):
+            if _is_image_model_unavailable(e):
+                _unavailable_image_models.add(model)
+                print(f"   [img] Modelo indisponivel, removendo da fila: {model}")
+            elif _is_image_quota_error(e):
                 _exhausted_image_models.add(model)
-                if _is_image_model_unavailable(e):
-                    print(f"   [img] Modelo indisponivel, removendo da fila: {model}")
+                print(f"   [img] Cota esgotada em {model} — proximo modelo.")
             print(f"   [img] Falha ({model}): {e}")
             continue
 
@@ -1093,6 +1105,7 @@ def generate_article_image(
 
 def backfill_missing_images(limit: int = 10) -> dict[str, Any]:
     """Gera capas para artigos que ainda nao possuem imagem_url."""
+    _exhausted_image_models.clear()
     client_db = get_db()
     result = client_db.execute(
         """
@@ -1441,6 +1454,7 @@ def extract_entry_content(entry) -> str:
 def fetch_and_process(max_per_feed=2):
     noticias_processadas = []
     _exhausted_models.clear()
+    _exhausted_image_models.clear()
     print(f"\n--- Iniciando Varredura: {datetime.now()} ---")
     print(f"   🧠 Modelos Gemini: {', '.join(get_gemini_modelos())}")
 
