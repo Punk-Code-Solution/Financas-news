@@ -10,6 +10,12 @@ services:
         value: 3.13.7
       - key: GOOGLE_API_KEY
         sync: false
+      - key: GEMINI_MODELOS
+        value: gemini-3.1-flash-lite-preview
+      - key: GEMINI_IMAGE_MODELOS
+        value: imagen-4.0-fast-generate-001,imagen-4.0-generate-001
+      - key: IMAGE_PROVIDER
+        value: gemini
       - key: GOOGLE_ADSENSE_CLIENT
         sync: false
       - key: ADSENSE_AD_SLOT

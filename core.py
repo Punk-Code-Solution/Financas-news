@@ -94,8 +94,6 @@ VALID_TAGS = [
 
 DEFAULT_GEMINI_MODELOS = [
     "gemini-3.1-flash-lite-preview",
-    "gemini-2.5-flash-lite",
-    "gemini-2.5-flash",
 ]
 
 _exhausted_models: set[str] = set()
@@ -939,12 +937,10 @@ def get_gemini_image_models() -> list[str]:
     raw = os.getenv("GEMINI_IMAGE_MODELOS", "")
     if raw.strip():
         return [m.strip() for m in raw.split(",") if m.strip()]
-    # Modelos atuais de geração de imagem (Nano Banana / Gemini Image).
-    # Imagen 4 e gemini-2.0-flash-preview-image-generation foram descontinuados.
+    # Imagen 4 tem cota no free tier (25 RPD). Nano Banana (Gemini Image) costuma vir 0/0.
     return [
-        "gemini-3.1-flash-image",
-        "gemini-3.1-flash-lite-image",
-        "gemini-2.5-flash-image",
+        "imagen-4.0-fast-generate-001",
+        "imagen-4.0-generate-001",
     ]
 
 
@@ -1030,23 +1026,96 @@ def _is_image_model_unavailable(exc: Exception) -> bool:
     )
 
 
-def generate_article_image(
-    title: str,
-    tag: str,
-    link: str,
-    resumo: str = "",
-    article_id: int | None = None,
-) -> str | None:
-    """Gera capa editorial; retorna URL pública ou None em caso de falha."""
-    if not client:
-        return None
+def get_image_provider() -> str:
+    raw = os.getenv("IMAGE_PROVIDER", "auto").strip().lower()
+    if raw in {"cursor", "gemini", "auto"}:
+        return raw
+    return "auto"
 
-    slug = _article_image_slug(link, article_id)
+
+def _resolve_existing_article_image(slug: str) -> str | None:
     images_dir = get_article_images_dir()
     for existing in images_dir.glob(f"{slug}.*"):
         return f"/media/articles/{existing.name}"
+    return None
 
-    prompt = _build_image_prompt(title, tag, resumo)
+
+def _generate_article_image_cursor(prompt: str, slug: str) -> str | None:
+    api_key = os.getenv("CURSOR_API_KEY", "").strip()
+    if not api_key:
+        print("   [img/cursor] CURSOR_API_KEY nao configurada.")
+        return None
+
+    try:
+        from cursor_sdk import Agent, AgentOptions, CursorAgentError, LocalAgentOptions
+    except ImportError:
+        print("   [img/cursor] Pacote cursor-sdk nao instalado. Rode: pip install -r requirements.txt")
+        return None
+
+    images_dir = get_article_images_dir()
+    output_png = (images_dir / slug).with_suffix(".png")
+    output_jpg = (images_dir / slug).with_suffix(".jpg")
+    project_root = Path(__file__).resolve().parent
+    started_at = time.time()
+    model = os.getenv("CURSOR_IMAGE_MODEL", "composer-2.5").strip() or "composer-2.5"
+
+    agent_prompt = (
+        "Gere exatamente UMA imagem editorial usando a ferramenta de geracao de imagens do Cursor.\n\n"
+        f"Descricao: {prompt}\n\n"
+        "Requisitos obrigatorios:\n"
+        "- Proporcao 16:9\n"
+        "- Sem texto, letras, logos ou marcas d'agua\n"
+        f"- Salve o arquivo exatamente em: {output_png.resolve()}\n"
+        "- Se nao conseguir PNG, salve em JPG no mesmo diretorio com o mesmo nome base\n\n"
+        "Ao concluir, responda apenas: SAVED"
+    )
+
+    print(f"   [img/cursor] Gerando imagem via Cursor ({model})...")
+    try:
+        result = Agent.prompt(
+            agent_prompt,
+            AgentOptions(
+                api_key=api_key,
+                model=model,
+                local=LocalAgentOptions(cwd=str(project_root)),
+            ),
+        )
+        if result.status == "error":
+            run_id = getattr(result, "id", "?")
+            print(f"   [img/cursor] Agente retornou erro (run={run_id}).")
+            return None
+    except CursorAgentError as exc:
+        print(f"   [img/cursor] Falha ao iniciar agente: {exc}")
+        return None
+    except Exception as exc:
+        print(f"   [img/cursor] Falha: {exc}")
+        return None
+
+    for candidate in (output_png, output_jpg):
+        if candidate.exists() and candidate.stat().st_size > 1024:
+            return f"/media/articles/{candidate.name}"
+
+    for path in sorted(images_dir.glob("*"), key=lambda item: item.stat().st_mtime, reverse=True):
+        if path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+            continue
+        if path.stat().st_mtime < started_at - 5 or path.stat().st_size <= 1024:
+            continue
+        if path.stem != slug:
+            target = images_dir / f"{slug}{path.suffix.lower()}"
+            if not target.exists():
+                path.replace(target)
+                path = target
+        return f"/media/articles/{path.name}"
+
+    print("   [img/cursor] Agente concluiu, mas nenhum arquivo de imagem foi encontrado.")
+    return None
+
+
+def _generate_article_image_gemini(prompt: str, slug: str) -> str | None:
+    if not client:
+        print("   [img/gemini] Cliente Gemini indisponivel (GOOGLE_API_KEY/GEMINI_API_KEY).")
+        return None
+
     modelos = [
         m
         for m in get_gemini_image_models()
@@ -1054,14 +1123,14 @@ def generate_article_image(
     ]
     if not modelos:
         print(
-            "   [img] Nenhum modelo de imagem disponivel "
+            "   [img/gemini] Nenhum modelo disponivel "
             f"(cota: {sorted(_exhausted_image_models)} | indisponiveis: {sorted(_unavailable_image_models)})."
         )
         return None
 
     for model in modelos:
         try:
-            print(f"   [img] Gerando imagem ({model})...")
+            print(f"   [img/gemini] Gerando imagem ({model})...")
             if model.startswith("imagen"):
                 response = client.models.generate_images(
                     model=model,
@@ -1086,18 +1155,53 @@ def generate_article_image(
             if extracted:
                 data, mime_type = extracted
                 url = _save_image_bytes(data, mime_type, slug)
-                print(f"   [img] Imagem salva: {url}")
+                print(f"   [img/gemini] Imagem salva: {url}")
                 return url
-            print(f"   [img] Resposta sem imagem ({model}).")
+            print(f"   [img/gemini] Resposta sem imagem ({model}).")
         except Exception as e:
             if _is_image_model_unavailable(e):
                 _unavailable_image_models.add(model)
-                print(f"   [img] Modelo indisponivel, removendo da fila: {model}")
+                print(f"   [img/gemini] Modelo indisponivel, removendo da fila: {model}")
             elif _is_image_quota_error(e):
                 _exhausted_image_models.add(model)
-                print(f"   [img] Cota esgotada em {model} — proximo modelo.")
-            print(f"   [img] Falha ({model}): {e}")
+                print(f"   [img/gemini] Cota esgotada em {model} — proximo modelo.")
+            print(f"   [img/gemini] Falha ({model}): {e}")
             continue
+
+    return None
+
+
+def generate_article_image(
+    title: str,
+    tag: str,
+    link: str,
+    resumo: str = "",
+    article_id: int | None = None,
+) -> str | None:
+    """Gera capa editorial; retorna URL pública ou None em caso de falha."""
+    slug = _article_image_slug(link, article_id)
+    existing = _resolve_existing_article_image(slug)
+    if existing:
+        return existing
+
+    prompt = _build_image_prompt(title, tag, resumo)
+    provider = get_image_provider()
+    use_cursor = provider in {"cursor", "auto"} and bool(os.getenv("CURSOR_API_KEY", "").strip())
+    use_gemini = provider in {"gemini", "auto"} and client is not None
+
+    if use_cursor:
+        url = _generate_article_image_cursor(prompt, slug)
+        if url:
+            print(f"   [img] Imagem salva: {url}")
+            return url
+        if provider == "cursor":
+            print("   [img] Imagem nao gerada — artigo seguira sem capa.")
+            return None
+
+    if use_gemini:
+        url = _generate_article_image_gemini(prompt, slug)
+        if url:
+            return url
 
     print("   [img] Imagem nao gerada — artigo seguira sem capa.")
     return None
