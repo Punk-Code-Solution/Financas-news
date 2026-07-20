@@ -170,7 +170,13 @@ O sistema **troca de modelo** quando a cota diária esgota e **só faz retry** e
 
 ### Modelos de imagem
 
-Tentativa em ordem: `gemini-2.5-flash-image` → `gemini-2.0-flash-preview-image-generation` → `imagen-4.0-fast-generate-001`.
+Tentativa em ordem (Nano Banana / Gemini Image):
+
+1. `gemini-2.5-flash-image`
+2. `gemini-3.1-flash-image-preview`
+3. `gemini-3.1-flash-lite-image-preview`
+
+> **Nota:** Imagen 4 (`imagen-4.0-*`) foi descontinuado na API Gemini. Não usar mais em `GEMINI_IMAGE_MODELOS`.
 
 Imagens salvas em disco (`ARTICLE_IMAGES_DIR`) com URL pública `/media/articles/`.
 
@@ -285,7 +291,8 @@ TURSO_AUTH_TOKEN=         # Token de autenticação Turso
 
 ```env
 GEMINI_MODELOS=gemini-3.1-flash-lite-preview,gemini-2.5-flash-lite,gemini-2.5-flash
-GEMINI_IMAGE_MODELOS=gemini-2.5-flash-image,imagen-4.0-fast-generate-001
+GEMINI_IMAGE_MODELOS=gemini-2.5-flash-image,gemini-3.1-flash-image-preview,gemini-3.1-flash-lite-image-preview
+IMAGE_PROVIDER=gemini
 ARTICLE_IMAGES_DIR=/var/data/article_images
 ```
 

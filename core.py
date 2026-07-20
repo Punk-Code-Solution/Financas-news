@@ -180,14 +180,14 @@ RSS_FEEDS = [
         "tag_hint": "Fintech",
     },
     {
-        "url": "https://valor.globo.com/financas/rss.xml",
+        "url": "https://pox.globo.com/rss/valor",
         "fonte": "Valor Econômico",
         "tag_hint": "Economia",
     },
     {
-        "url": "https://www.infomoney.com.br/temas/mercado-imobiliario/feed/",
-        "fonte": "InfoMoney Imóveis",
-        "tag_hint": "Imóveis",
+        "url": "https://www.infomoney.com.br/mercados/feed/",
+        "fonte": "InfoMoney Mercados",
+        "tag_hint": "Ações",
     },
     {
         "url": "https://br.investing.com/rss/news_301.rss",
@@ -200,13 +200,13 @@ RSS_FEEDS = [
         "tag_hint": "Política Econômica",
     },
     {
-        "url": "https://www.infomoney.com.br/temas/inflacao/feed/",
-        "fonte": "InfoMoney Inflação",
+        "url": "https://www.infomoney.com.br/economia/feed/",
+        "fonte": "InfoMoney Economia",
         "tag_hint": "Inflação",
     },
     {
-        "url": "https://www.infomoney.com.br/temas/juros/feed/",
-        "fonte": "InfoMoney Juros",
+        "url": "https://www.infomoney.com.br/onde-investir/feed/",
+        "fonte": "InfoMoney Onde Investir",
         "tag_hint": "Juros",
     },
     {
@@ -937,10 +937,11 @@ def get_gemini_image_models() -> list[str]:
     raw = os.getenv("GEMINI_IMAGE_MODELOS", "")
     if raw.strip():
         return [m.strip() for m in raw.split(",") if m.strip()]
-    # Imagen 4 tem cota no free tier (25 RPD). Nano Banana (Gemini Image) costuma vir 0/0.
+    # Imagen 4 foi descontinuado na API — migrar para Nano Banana (Gemini Image).
     return [
-        "imagen-4.0-fast-generate-001",
-        "imagen-4.0-generate-001",
+        "gemini-2.5-flash-image",
+        "gemini-3.1-flash-image-preview",
+        "gemini-3.1-flash-lite-image-preview",
     ]
 
 
@@ -1210,6 +1211,7 @@ def generate_article_image(
 def backfill_missing_images(limit: int = 10) -> dict[str, Any]:
     """Gera capas para artigos que ainda nao possuem imagem_url."""
     _exhausted_image_models.clear()
+    _unavailable_image_models.clear()
     client_db = get_db()
     result = client_db.execute(
         """
@@ -1559,8 +1561,11 @@ def fetch_and_process(max_per_feed=2):
     noticias_processadas = []
     _exhausted_models.clear()
     _exhausted_image_models.clear()
+    # Falhas transitórias (rede/404 pontual) nao devem banir o modelo ate o fim do processo.
+    _unavailable_image_models.clear()
     print(f"\n--- Iniciando Varredura: {datetime.now()} ---")
     print(f"   🧠 Modelos Gemini: {', '.join(get_gemini_modelos())}")
+    print(f"   🖼️ Modelos de imagem: {', '.join(get_gemini_image_models())}")
 
     market = fetch_market_snapshot()
     bcb = fetch_bcb_snapshot()
