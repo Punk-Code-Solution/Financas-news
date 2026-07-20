@@ -1,0 +1,11 @@
+---
+description: Padrões globais Punk Code — referência ao arquivo global do usuário
+alwaysApply: true
+---
+
+# Padrões globais — Punk Code Solution
+
+> **Regra global:** aplicar integralmente o conteúdo de  
+> `C:\Users\thiag\.cursor\rules\padroes-globais-punk-code.mdc`
+
+Resumo do que cobre: comunicação em português, idioma (código em inglês / UI em PT-BR), escopo mínimo, conflito com regras de negócio, migrations, UI padronizada, segurança, git/entrega e checklist antes de concluir tarefa.

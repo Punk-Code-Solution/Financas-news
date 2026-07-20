@@ -1,0 +1,12 @@
+---
+description: TypeScript base — referência ao arquivo global do usuário
+globs: "**/*.{ts,tsx}"
+alwaysApply: false
+---
+
+# TypeScript — padrão base
+
+> **Regra global:** aplicar integralmente o conteúdo de  
+> `C:\Users\thiag\.cursor\rules\typescript-base-global.mdc`
+
+Aplica-se a arquivos `.ts`/`.tsx` neste repositório (se existirem). Resumo: strict mode, `import type`, evitar `any`, rodar build após alterações relevantes.

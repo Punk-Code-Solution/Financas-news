@@ -1,0 +1,20 @@
+---
+description: Índice das regras globais Punk Code aplicáveis a este projeto
+alwaysApply: true
+---
+
+# Regras globais — Finanças Auto
+
+Este repositório segue as regras globais do usuário em `C:\Users\thiag\.cursor\rules\`.
+
+## Arquivos globais
+
+| Arquivo | Escopo | Descrição |
+|---|---|---|
+| `padroes-globais-punk-code.mdc` | Sempre | Padrões de desenvolvimento, segurança, entrega, banco, UI e idioma |
+| `jira-projetos-organizacionais.mdc` | Sempre | Fluxo Jira e mapeamento de projetos organizacionais |
+| `typescript-base-global.mdc` | `**/*.{ts,tsx}` | TypeScript strict, tipos seguros e build |
+
+## Instrução
+
+**Consulte e aplique integralmente** o conteúdo de cada arquivo global listado acima antes de implementar alterações. Os arquivos locais em `.cursor/rules/` deste repo reforçam e referenciam essas regras.

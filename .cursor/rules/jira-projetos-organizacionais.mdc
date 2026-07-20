@@ -1,0 +1,11 @@
+---
+description: Parâmetro organizacional Jira — referência ao arquivo global do usuário
+alwaysApply: true
+---
+
+# Projetos organizacionais (Jira)
+
+> **Regra global:** aplicar integralmente o conteúdo de  
+> `C:\Users\thiag\.cursor\rules\jira-projetos-organizacionais.mdc`
+
+Resumo: consultar/atualizar issues existentes no Jira antes de criar novas; transicionar via MCP (`transitionJiraIssue`); fluxo **Aberta → Desenvolvimento → Teste → Concluido**; usar o projeto Jira correto para o repositório em contexto (Finanças Auto).
