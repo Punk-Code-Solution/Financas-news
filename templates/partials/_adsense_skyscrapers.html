@@ -22,28 +22,38 @@
 </aside>
 <script>
 (function () {
-    function alignAdSkins() {
+    function placeAdSkins() {
         var skins = document.querySelectorAll('.ad-skin');
         if (!skins.length) return;
-        var anchor =
-            document.querySelector('main article') ||
-            document.querySelector('main section') ||
-            document.querySelector('main .layout-with-sidebar') ||
-            document.querySelector('main');
-        if (!anchor) return;
-        /* fixed: alinha ao topo do conteúdo; ao rolar, trava abaixo do nav */
-        var viewTop = Math.max(72, Math.round(anchor.getBoundingClientRect().top));
+        var nav = document.querySelector('nav.sticky') || document.querySelector('nav');
+        var ticker = document.querySelector('.ticker-wrapper');
+        var top = 96;
+        if (nav) {
+            var navBottom = nav.getBoundingClientRect().bottom;
+            /* nav sticky: bottom já é o offset fixo na viewport */
+            top = Math.ceil(navBottom) + 12;
+        } else if (ticker) {
+            top = Math.ceil(ticker.getBoundingClientRect().height) + 72;
+        }
+        var maxH = Math.max(240, window.innerHeight - top - 16);
         skins.forEach(function (el) {
-            el.style.top = viewTop + 'px';
+            el.style.top = top + 'px';
+            el.style.maxHeight = maxH + 'px';
+            var box = el.querySelector('.ad-skin__box');
+            if (box) {
+                box.style.maxHeight = Math.max(200, maxH - 24) + 'px';
+                box.style.height = Math.min(600, Math.max(200, maxH - 24)) + 'px';
+            }
         });
+        document.documentElement.style.setProperty('--ad-skin-top', top + 'px');
     }
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', alignAdSkins);
+        document.addEventListener('DOMContentLoaded', placeAdSkins);
     } else {
-        alignAdSkins();
+        placeAdSkins();
     }
-    window.addEventListener('resize', alignAdSkins);
-    window.addEventListener('scroll', alignAdSkins, { passive: true });
+    window.addEventListener('resize', placeAdSkins);
+    /* NÃO escuta scroll — fixed fica estável abaixo do header */
 })();
 </script>
 {% endif %}

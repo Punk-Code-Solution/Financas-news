@@ -115,16 +115,17 @@
 
     /*
       HLTV: publicidade no MEIO de cada margem lateral.
-      Miolo = max-w-7xl (80rem), centralizado — NÃO encolhe o conteúdo.
-      Gutter = (100vw - 80rem) / 2
-      Centro do gutter a partir da borda = gutter / 2 = (100vw - 80rem) / 4
+      position:fixed estável (sem recalcular no scroll — evita corte sob o nav).
+      Miolo = max-w-7xl (80rem). Gutter centro = (100vw - 80rem) / 4.
     */
     .ad-skin {
         display: none;
         position: fixed;
-        top: 7.5rem;
-        z-index: 30;
+        top: var(--ad-skin-top, 7.5rem);
+        z-index: 40;
         width: 160px;
+        max-height: calc(100vh - var(--ad-skin-top, 7.5rem) - 1rem);
+        overflow: hidden;
         pointer-events: auto;
     }
     .ad-skin--left {
@@ -145,8 +146,8 @@
     }
     .ad-skin__box {
         width: 160px;
-        min-height: 600px;
-        max-height: 600px;
+        height: 600px;
+        max-height: calc(100vh - var(--ad-skin-top, 7.5rem) - 2.5rem);
         overflow: hidden;
         border-radius: 0.25rem;
         background: rgba(148, 163, 184, 0.08);
@@ -155,7 +156,8 @@
     .ad-skin__box > ins.adsbygoogle {
         display: inline-block !important;
         width: 160px !important;
-        height: 600px !important;
+        height: 100% !important;
+        max-height: 600px !important;
     }
 
     /* Só mostra quando há margem real ao lado do max-w-7xl */
