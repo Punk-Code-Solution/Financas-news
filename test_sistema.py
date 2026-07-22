@@ -83,9 +83,61 @@ def run() -> int:
         check("Home: market-ticker.js", "market-ticker.js" in r.text)
         check("Home: animação ticker", "data-ticker-animated" in r.text or "@keyframes ticker" in r.text)
         check("Home: categorias", all(t in r.text for t in VALID_TAGS[:3]))
+        check("Home: CSS estático", "/static/css/app.css" in r.text)
+        check("Home: sem Tailwind CDN", "cdn.tailwindcss.com" not in r.text)
+        check("Home: google-site-verification meta", "google-site-verification" in r.text)
+        check("Home: hreflang absoluto", 'hreflang="pt-BR"' in r.text and "https://financas-news.net.br" in r.text)
+        check("Home: seletor idioma", 'hreflang="en"' in r.text and 'hreflang="ja"' in r.text)
 
         r = client.get("/static/js/market-ticker.js")
         check("Static JS ticker", r.status_code == 200 and "AwesomeAPI" in r.text, f"status={r.status_code}")
+        check(
+            "Static JS cache",
+            "max-age" in r.headers.get("cache-control", "").lower(),
+            f"cache={r.headers.get('cache-control')}",
+        )
+
+        r = client.get("/static/css/app.css")
+        check(
+            "Static CSS app.css",
+            r.status_code == 200 and len(r.content) > 1000,
+            f"status={r.status_code} bytes={len(r.content)}",
+        )
+        check(
+            "Static CSS cache",
+            "max-age" in r.headers.get("cache-control", "").lower(),
+            f"cache={r.headers.get('cache-control')}",
+        )
+
+        r = client.get("/google57b1aa23d9e87d82.html")
+        check(
+            "Google verification HTML file",
+            r.status_code == 200 and "google-site-verification" in r.text,
+            f"status={r.status_code}",
+        )
+
+        # i18n
+        r = client.get("/", params={"lang": "en"})
+        check("Home EN 200", r.status_code == 200)
+        check("Home EN UI", "Latest" in r.text or "Search" in r.text or "About Us" in r.text)
+        check("Home EN aviso conteúdo PT", "originally published in Portuguese" in r.text or "Portuguese" in r.text)
+        r = client.get("/", params={"lang": "ja"})
+        check("Home JA 200", r.status_code == 200)
+        check("Home JA UI", "最新" in r.text or "検索" in r.text or "私たちについて" in r.text)
+
+        for path in ["/quem-somos", "/privacidade", "/termos"]:
+            r = client.get(path, params={"lang": "en"})
+            check(f"{path} EN", r.status_code == 200 and "cdn.tailwindcss.com" not in r.text, f"status={r.status_code}")
+            r = client.get(path, params={"lang": "ja"})
+            check(f"{path} JA", r.status_code == 200, f"status={r.status_code}")
+
+        # security headers
+        r = client.get("/")
+        check("Header X-Content-Type-Options", r.headers.get("x-content-type-options") == "nosniff")
+        check("Header X-Frame-Options", r.headers.get("x-frame-options", "").upper() == "SAMEORIGIN")
+
+        # Evita cookie lang=en/ja afetar o restante da suíte (padrão PT).
+        client.cookies.clear()
 
         for tag in VALID_TAGS:
             r = client.get("/", params={"categoria": tag})
@@ -97,8 +149,11 @@ def run() -> int:
             r.status_code == 200
             and (
                 "Nenhuma notícia" in r.text
+                or "No stories found" in r.text
+                or "記事が見つかりません" in r.text
                 or "Outras análises" in r.text
                 or "Ver todas" in r.text
+                or "See all" in r.text
             ),
         )
 
@@ -107,7 +162,15 @@ def run() -> int:
         r = client.get("/", params={"q": "xyznonexistent999"})
         check(
             "Busca vazia",
-            r.status_code == 200 and ("Nenhuma" in r.text or "Outras" in r.text or "Ver todas" in r.text),
+            r.status_code == 200
+            and (
+                "Nenhuma" in r.text
+                or "No stories" in r.text
+                or "記事が見つかりません" in r.text
+                or "Outras" in r.text
+                or "Ver todas" in r.text
+                or "See all" in r.text
+            ),
         )
         r = client.get("/api/feed", params={"offset": 8})
         check("Feed carregar mais", r.status_code == 200)
@@ -124,10 +187,15 @@ def run() -> int:
             ok = r.status_code == 200
             check(f"Notícia {nid}", ok, f"status={r.status_code}")
             if ok:
-                check(f"Notícia {nid}: Análise Completa", "Análise Completa" in html or "analise-completa" in html)
-                check(f"Notícia {nid}: Impacto", "Impacto no seu Bolso" in html)
-                check(f"Notícia {nid}: Voltar home", 'href="/"' in html)
+                check(f"Notícia {nid}: Análise Completa", "Análise Completa" in html or "analise-completa" in html or "Full Analysis" in html)
+                check(f"Notícia {nid}: Impacto", "Impacto no seu Bolso" in html or "Impact on Your Wallet" in html or "pocket_impact" in html or "id=\"impacto-texto\"" in html)
+                check(
+                    f"Notícia {nid}: Voltar home",
+                    'href="/"' in html or 'href="/?' in html or 'href="/?lang=' in html,
+                )
                 check(f"Notícia {nid}: ticker JS", "market-ticker.js" in html)
+                check(f"Notícia {nid}: CSS estático", "/static/css/app.css" in html)
+                check(f"Notícia {nid}: sem Tailwind CDN", "cdn.tailwindcss.com" not in html)
 
         if ids:
             r = client.get(f"/noticia/{ids[0]}")
@@ -135,17 +203,32 @@ def run() -> int:
             check(
                 "Enrichment: acervo/relacionados",
                 "Contexto do acervo" in html
+                or "Archive context" in html
+                or "アーカイブの文脈" in html
                 or "Leia também" in html
+                or "Related" in html
                 or "Matérias relacionadas" in html
-                or "Para aprofundar" in html,
+                or "Related stories" in html
+                or "Para aprofundar" in html
             )
             check(
                 "Enrichment: temas/pontos",
-                "Temas relacionados" in html or "Pontos-chave" in html or "pontos-chave" in html,
+                "Temas relacionados" in html
+                or "Related themes" in html
+                or "Pontos-chave" in html
+                or "Key takeaways" in html
+                or "pontos-chave" in html,
             )
-            check("Fonte / metodologia", "Fonte" in html)
+            check("Fonte / metodologia", "Fonte" in html or "Source" in html or "出典" in html)
             check("Sem href malformado", "/?categoria=<a" not in html and "categoria=%3Ca" not in html)
-            check("Impacto redesenhado", "Guia prático" in html or "Impacto no seu Bolso" in html)
+            check(
+                "Impacto redesenhado",
+                "Guia prático" in html
+                or "Practical guide" in html
+                or "Impacto no seu Bolso" in html
+                or "Impact on Your Wallet" in html
+                or 'id="impacto-texto"' in html,
+            )
 
             # links de notícia no artigo
             noticia_links = re.findall(r'href="(/noticia/\d+)"', html)
