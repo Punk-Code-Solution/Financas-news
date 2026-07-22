@@ -23,6 +23,7 @@
     <meta name="description" content="{{ t('meta_home_description') }}" />
 
     {% include "partials/_styles.html" %}
+    {% include "partials/_adsense_styles.html" %}
     
     {% if monetization.adsense.enabled %}
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ monetization.adsense.client }}" crossorigin="anonymous"></script>
@@ -50,8 +51,6 @@
         input[type=number]::-webkit-inner-spin-button, 
         input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         input[type=number] { -moz-appearance: textfield; }
-        
-        ins.adsbygoogle[data-ad-status="unfilled"] { display: none !important; }
 
         .filter-scroll {
             -ms-overflow-style: none;
@@ -68,9 +67,11 @@
             right: 0;
             width: 84px;
             height: 38px;
-            overflow: visible;
+            overflow: hidden;
+            z-index: 1;
             filter: drop-shadow(0 6px 12px rgba(74, 222, 128, 0.12));
             opacity: 0.95;
+            pointer-events: none;
         }
         .sparkline .spark-baseline { stroke: rgba(148, 163, 184, 0.22); stroke-width: 1; }
         .sparkline .spark-area { opacity: 0.16; }
@@ -127,6 +128,8 @@
     </style>
 </head>
 <body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 transition-colors duration-200 flex flex-col min-h-screen">
+
+    {% include "partials/_adsense_skyscrapers.html" %}
 
     <div id="analise-refine-overlay" role="status" aria-live="polite" aria-busy="false">
         <div class="refine-card">
@@ -262,8 +265,8 @@
         {% endif %}
 
         {% set feed_news = news[4:] if news and not q else news %}
-        <div class="flex flex-col lg:flex-row gap-8 w-full items-start">
-            <div class="w-full {% if monetization.sidebar_visible %}lg:w-2/3{% endif %}">
+        <div class="layout-with-sidebar{% if monetization.sidebar_widgets_visible %} has-sidebar{% endif %}">
+            <div class="layout-main">
                 {% if feed_news %}
                 <div class="flex items-center justify-between border-b-2 border-gray-900 dark:border-white pb-2 mb-5">
                     <h2 class="text-xl font-black text-gray-900 dark:text-white">
@@ -273,8 +276,20 @@
                 </div>
                 {% endif %}
 
-                <div id="news-feed-grid" class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-0">
-                {% include "partials/feed_news_items.html" %}
+                <div id="news-feed" class="min-w-0 w-full">
+                    {% for batch in feed_news|batch(4) %}
+                    <div class="news-batch">
+                        {% with feed_news=batch %}
+                        {% include "partials/feed_news_items.html" %}
+                        {% endwith %}
+                    </div>
+                    {% if not loop.last and loop.index == 1 %}
+                        {% include "partials/_adsense_fluid.html" %}
+                    {% elif not loop.last and loop.index == 2 %}
+                        {% include "partials/_adsense_fluid2.html" %}
+                    {% endif %}
+                    {% endfor %}
+                    <div id="news-feed-grid" class="news-batch"></div>
                 </div>
 
                 {% if not news %}
@@ -295,11 +310,11 @@
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-0">
                         {% for n in suggested_news %}
-                        <article class="relative py-5 border-b border-gray-200 dark:border-slate-800">
-                            <a href="/noticia/{{ n[0] }}?lang={{ lang }}" class="group flex gap-4">
+                        <article class="relative py-5 border-b border-gray-200 dark:border-slate-800 min-w-0 overflow-hidden">
+                            <a href="/noticia/{{ n[0] }}?lang={{ lang }}" class="group flex gap-4 min-w-0">
                                 <img src="{{ n[11] or category_image(n[5]) }}" alt="{{ n[1] }}" loading="lazy" class="w-28 h-24 md:w-32 md:h-28 rounded-lg object-cover object-center shrink-0">
-                                <div class="relative min-w-0 flex-1 pr-20 md:pr-24">
-                                    <svg class="sparkline" viewBox="0 0 84 38" aria-hidden="true" data-sparkline="market"></svg>
+                                <div class="relative min-w-0 flex-1 overflow-hidden pr-20 md:pr-24">
+                                    <svg class="sparkline pointer-events-none" viewBox="0 0 84 38" aria-hidden="true" data-sparkline="market"></svg>
                                     <div class="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider">
                                         <span class="text-blue-600 dark:text-[#4ade80]">{{ tr_tag(n[5]) }}</span>
                                         {% set sent = (n[6] | default('Neutro', true)) | lower %}
@@ -338,8 +353,8 @@
                 {% endif %}
             </div>
 
-            {% if monetization.sidebar_visible %}
-            <aside class="w-full lg:w-1/3 flex flex-col gap-6">
+            {% if monetization.sidebar_widgets_visible %}
+            <aside class="site-sidebar flex flex-col gap-6 lg:sticky lg:top-24">
                 {% include "partials/sidebar_monetization.html" %}
             </aside>
             {% endif %}

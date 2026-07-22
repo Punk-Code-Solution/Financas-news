@@ -1,0 +1,13 @@
+{% if monetization.adsense.enabled and monetization.adsense.autorelaxed_slot %}
+<div class="ad-rail my-6">
+    <span class="ad-rail__label">Publicidade</span>
+    <div class="ad-rail__box p-1" style="max-height:320px;">
+        <ins class="adsbygoogle"
+             style="display:block;width:100%;max-width:100%;"
+             data-ad-format="autorelaxed"
+             data-ad-client="{{ monetization.adsense.client }}"
+             data-ad-slot="{{ monetization.adsense.autorelaxed_slot }}"></ins>
+        <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+    </div>
+</div>
+{% endif %}

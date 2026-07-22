@@ -2,6 +2,7 @@ import os
 import json
 import threading
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,9 @@ from i18n import COOKIE_MAX_AGE, COOKIE_NAME, build_i18n_context, resolve_lang
 
 load_dotenv()
 
+FEED_BATCH = 8
+FEATURED_COUNT = 4
+
 
 class CachedStaticFiles(StarletteStaticFiles):
     """StaticFiles com Cache-Control longo para assets versionados."""
@@ -37,7 +41,20 @@ class CachedStaticFiles(StarletteStaticFiles):
         return response
 
 
-app = FastAPI()
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    def _run():
+        try:
+            core.warmup_market_caches()
+            _load_home_listing(None, 0, FEATURED_COUNT + FEED_BATCH, None)
+        except Exception as exc:
+            print(f"Aviso: warmup inicial falhou: {exc}")
+
+    threading.Thread(target=_run, daemon=True).start()
+    yield
+
+
+app = FastAPI(lifespan=_lifespan)
 
 ARTICLE_IMAGES_DIR = os.getenv("ARTICLE_IMAGES_DIR", "static/images/articles")
 os.makedirs(ARTICLE_IMAGES_DIR, exist_ok=True)
@@ -125,18 +142,6 @@ except Exception as e:
     print(f"Aviso: Falha na inicialização do Turso: {e}")
 
 
-@app.on_event("startup")
-def _warmup_on_startup():
-    def _run():
-        try:
-            core.warmup_market_caches()
-            # Aquece a listagem padrão da home (destaques + 1º lote do feed).
-            _load_home_listing(None, 0, FEATURED_COUNT + FEED_BATCH, None)
-        except Exception as exc:
-            print(f"Aviso: warmup inicial falhou: {exc}")
-
-    threading.Thread(target=_run, daemon=True).start()
-
 # ==========================================
 # ROTAS DE PÁGINAS (FRONTEND) - ATUALIZADAS PARA FASTAPI MODERNO
 # ==========================================
@@ -162,10 +167,6 @@ NEWS_LIST_SELECT = """
 def _invalidate_home_cache() -> None:
     with _HOME_CACHE_LOCK:
         _HOME_CACHE.clear()
-
-
-FEED_BATCH = 8
-FEATURED_COUNT = 4
 
 
 def _home_cache_key(categoria: str | None, offset: int, limit: int, q: str | None) -> str:
@@ -305,6 +306,7 @@ def api_feed(
             "feed_news": listing["news"],
             "sparklines": sparklines,
             "request": request,
+            "monetization": get_monetization_config(),
             **i18n,
         }
     )

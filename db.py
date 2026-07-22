@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import ssl
 import threading
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -77,6 +78,33 @@ def _configure_ssl_certs() -> None:
     except ImportError:
         pass
 
+    # Python 3.13+ ativa VERIFY_X509_STRICT e rejeita CAs com Basic Constraints
+    # sem flag critical (comum em Windows com antivírus/proxy corporativo).
+    # O aiohttp cria o SSLContext na importação — precisamos alterar o cache.
+    if not hasattr(ssl, "VERIFY_X509_STRICT"):
+        return
+
+    if not getattr(ssl.create_default_context, "_financas_x509_relaxed", False):
+        _original = ssl.create_default_context
+
+        def create_default_context(*args, **kwargs):
+            ctx = _original(*args, **kwargs)
+            ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT
+            return ctx
+
+        create_default_context._financas_x509_relaxed = True  # type: ignore[attr-defined]
+        ssl.create_default_context = create_default_context  # type: ignore[assignment]
+
+    try:
+        import aiohttp.connector as aio_connector
+
+        for name in ("_SSL_CONTEXT_VERIFIED", "_SSL_CONTEXT_UNVERIFIED"):
+            ctx = getattr(aio_connector, name, None)
+            if isinstance(ctx, ssl.SSLContext):
+                ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT
+    except Exception:
+        pass
+
 
 class PooledClient:
     """Proxy que reutiliza o client remoto sem fechar a cada request."""
@@ -107,8 +135,14 @@ def _create_client() -> LocalDbClient | PooledClient:
     _configure_ssl_certs()
 
     url = os.environ.get("TURSO_DATABASE_URL", "")
-    if url.startswith("wss://"):
-        url = url.replace("wss://", "libsql://")
+    # Preferir HTTPS: o handshake WSS do Hrana falha em alguns ambientes
+    # (proxy/antivírus). O cliente HTTP do libsql_client é equivalente.
+    if url.startswith("libsql://"):
+        url = "https://" + url[len("libsql://") :]
+    elif url.startswith("wss://"):
+        url = "https://" + url[len("wss://") :]
+    elif url.startswith("ws://"):
+        url = "http://" + url[len("ws://") :]
 
     token = os.environ.get("TURSO_AUTH_TOKEN")
     if not url or not token:

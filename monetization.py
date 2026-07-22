@@ -99,9 +99,19 @@ def get_contextual_affiliate(tag: str) -> dict[str, object] | None:
 
 
 def get_monetization_config() -> dict[str, object]:
-    adsense_client = _env("GOOGLE_ADSENSE_CLIENT")
+    adsense_client = _env("GOOGLE_ADSENSE_CLIENT") or "ca-pub-3623062544438213"
     adsense_slot = _env("ADSENSE_AD_SLOT")
+    adsense_fluid_slot = _env("ADSENSE_FLUID_SLOT") or "5920613886"
+    adsense_fluid_layout = _env("ADSENSE_FLUID_LAYOUT_KEY") or "-gp+18-5a-gr+1eg"
+    adsense_fluid2_slot = _env("ADSENSE_FLUID2_SLOT") or "5003238179"
+    adsense_fluid2_layout = _env("ADSENSE_FLUID2_LAYOUT_KEY") or "-fd-l+6i-lx+n1"
+    adsense_in_article_slot = _env("ADSENSE_IN_ARTICLE_SLOT") or "3294450543"
+    adsense_sidebar_slot = _env("ADSENSE_SIDEBAR_SLOT") or "1019761130"
+    # Margens HLTV: slot próprio ou reutiliza o da sidebar.
+    adsense_skyscraper_slot = _env("ADSENSE_SKYSCRAPER_SLOT") or adsense_sidebar_slot
+    adsense_autorelaxed_slot = _env("ADSENSE_AUTORELAXED_SLOT") or "2568646523"
     adsense_enabled = bool(adsense_client)
+    adsense_display_enabled = adsense_enabled and bool(adsense_slot)
 
     affiliates: list[dict[str, object]] = []
     for item in DEFAULT_AFFILIATES:
@@ -127,20 +137,30 @@ def get_monetization_config() -> dict[str, object]:
 
     premium_enabled = _env("PREMIUM_TEASER_ENABLED").lower() == "true"
 
-    sidebar_visible = (
-        adsense_enabled
-        or bool(affiliates)
+    sidebar_widgets_visible = (
+        bool(affiliates)
         or bool(amazon_url)
         or newsletter_enabled
     )
+    # Anúncios laterais usam skins/faixas; a coluna interna só aparece com widgets reais.
+    sidebar_visible = sidebar_widgets_visible
 
     article_extras_visible = sponsored_enabled or premium_enabled or adsense_enabled
 
     return {
         "adsense": {
             "enabled": adsense_enabled,
+            "display_enabled": adsense_display_enabled,
             "client": adsense_client,
-            "slot": adsense_slot or "1234567890",
+            "slot": adsense_slot or "",
+            "fluid_slot": adsense_fluid_slot,
+            "fluid_layout_key": adsense_fluid_layout,
+            "fluid2_slot": adsense_fluid2_slot,
+            "fluid2_layout_key": adsense_fluid2_layout,
+            "in_article_slot": adsense_in_article_slot,
+            "sidebar_slot": adsense_sidebar_slot,
+            "skyscraper_slot": adsense_skyscraper_slot,
+            "autorelaxed_slot": adsense_autorelaxed_slot,
         },
         "affiliates": affiliates,
         "amazon_books_url": amazon_url,
@@ -164,5 +184,6 @@ def get_monetization_config() -> dict[str, object]:
             ),
         },
         "sidebar_visible": sidebar_visible,
+        "sidebar_widgets_visible": sidebar_widgets_visible,
         "article_extras_visible": article_extras_visible,
     }

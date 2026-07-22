@@ -1,0 +1,15 @@
+{# Poder360: segunda faixa central (slot alternativo) #}
+{% if monetization.adsense.enabled and monetization.adsense.fluid2_slot %}
+<div class="ad-center" aria-label="Publicidade">
+    <span class="ad-center__label">publicidade</span>
+    <div class="ad-center__box">
+        <ins class="adsbygoogle"
+             style="display:block;width:100%;height:90px;max-height:120px;"
+             data-ad-client="{{ monetization.adsense.client }}"
+             data-ad-slot="{{ monetization.adsense.fluid2_slot }}"
+             data-ad-format="horizontal"
+             data-full-width-responsive="false"></ins>
+        <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+    </div>
+</div>
+{% endif %}

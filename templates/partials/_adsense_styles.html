@@ -1,0 +1,195 @@
+{# Layout: miolo largo (max-w-7xl) + laterais no meio dos gutters + centrais Poder360 #}
+<style>
+    /* —— Núcleo editorial (largura original do portal) —— */
+    .layout-with-sidebar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 2rem;
+        width: 100%;
+        align-items: start;
+    }
+    /* Coluna lateral só quando há widgets reais (newsletter/afiliados) */
+    @media (min-width: 1024px) {
+        .layout-with-sidebar.has-sidebar {
+            grid-template-columns: minmax(0, 1fr) 20rem;
+        }
+    }
+
+    .layout-with-sidebar > .layout-main {
+        min-width: 0;
+        max-width: 100%;
+        overflow: hidden;
+    }
+
+    aside.site-sidebar {
+        width: 100%;
+        max-width: 20rem;
+        min-width: 0;
+        justify-self: stretch;
+        overflow: hidden;
+    }
+
+    /* —— Poder360: faixa central entre notícias —— */
+    .ad-center {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        margin: 1.75rem 0;
+        clear: both;
+        grid-column: 1 / -1;
+    }
+    .ad-center__label {
+        display: block;
+        margin-bottom: 0.4rem;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: lowercase;
+        color: #94a3b8;
+        text-align: center;
+    }
+    .ad-center__box {
+        position: relative;
+        width: 100%;
+        max-width: 728px;
+        min-height: 90px;
+        max-height: 120px;
+        margin: 0 auto;
+        overflow: hidden;
+        border-radius: 0.25rem;
+        background: rgba(148, 163, 184, 0.1);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .dark .ad-center__box {
+        background: rgba(30, 41, 59, 0.65);
+        border-color: rgba(71, 85, 105, 0.45);
+    }
+    .ad-center__box > ins.adsbygoogle {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        max-height: 120px !important;
+        overflow: hidden !important;
+    }
+    .ad-center__box iframe {
+        max-width: 100% !important;
+        max-height: 120px !important;
+    }
+
+    /* —— Lateral interna (<1500px) —— */
+    .ad-rail {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        overflow: hidden;
+    }
+    .ad-rail__label {
+        display: block;
+        margin-bottom: 0.35rem;
+        font-size: 0.65rem;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #94a3b8;
+        text-align: center;
+    }
+    .ad-rail__box {
+        position: relative;
+        width: 100%;
+        max-width: 100%;
+        min-height: 250px;
+        max-height: 600px;
+        overflow: hidden;
+        border-radius: 0.5rem;
+        background: rgba(148, 163, 184, 0.08);
+        border: 1px solid rgba(148, 163, 184, 0.18);
+    }
+    .ad-rail__box > ins.adsbygoogle,
+    .ad-rail__box iframe {
+        max-width: 100% !important;
+    }
+
+    /*
+      HLTV: publicidade no MEIO de cada margem lateral.
+      Miolo = max-w-7xl (80rem), centralizado — NÃO encolhe o conteúdo.
+      Gutter = (100vw - 80rem) / 2
+      Centro do gutter a partir da borda = gutter / 2 = (100vw - 80rem) / 4
+    */
+    .ad-skin {
+        display: none;
+        position: fixed;
+        top: 7.5rem;
+        z-index: 30;
+        width: 160px;
+        pointer-events: auto;
+    }
+    .ad-skin--left {
+        left: max(0.75rem, calc((100vw - 80rem) / 4 - 5rem));
+    }
+    .ad-skin--right {
+        right: max(0.75rem, calc((100vw - 80rem) / 4 - 5rem));
+    }
+    .ad-skin__label {
+        display: block;
+        margin-bottom: 0.35rem;
+        font-size: 0.6rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #64748b;
+        text-align: center;
+    }
+    .ad-skin__box {
+        width: 160px;
+        min-height: 600px;
+        max-height: 600px;
+        overflow: hidden;
+        border-radius: 0.25rem;
+        background: rgba(148, 163, 184, 0.08);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+    }
+    .ad-skin__box > ins.adsbygoogle {
+        display: inline-block !important;
+        width: 160px !important;
+        height: 600px !important;
+    }
+
+    /* Só mostra quando há margem real ao lado do max-w-7xl */
+    @media (min-width: 1500px) {
+        .ad-skin { display: block; }
+    }
+
+    .ad-center:has(ins.adsbygoogle[data-ad-status="unfilled"]),
+    .ad-rail:has(ins.adsbygoogle[data-ad-status="unfilled"]),
+    .ad-skin:has(ins.adsbygoogle[data-ad-status="unfilled"]) {
+        display: none !important;
+    }
+
+    #news-feed {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        min-width: 0;
+        width: 100%;
+    }
+    #news-feed > .news-batch {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0 1.5rem;
+        min-width: 0;
+        width: 100%;
+    }
+    @media (min-width: 768px) {
+        #news-feed > .news-batch {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+    #news-feed > .news-batch > article {
+        min-width: 0;
+        overflow: hidden;
+    }
+</style>

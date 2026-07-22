@@ -1,0 +1,49 @@
+{# Skyscrapers simétricos no meio de cada margem (fora do miolo max-w-7xl) #}
+{% if monetization.adsense.enabled and monetization.adsense.skyscraper_slot %}
+<aside class="ad-skin ad-skin--left" aria-label="Publicidade">
+    <span class="ad-skin__label">Publicidade</span>
+    <div class="ad-skin__box">
+        <ins class="adsbygoogle"
+             style="display:inline-block;width:160px;height:600px"
+             data-ad-client="{{ monetization.adsense.client }}"
+             data-ad-slot="{{ monetization.adsense.skyscraper_slot }}"></ins>
+        <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+    </div>
+</aside>
+<aside class="ad-skin ad-skin--right" aria-label="Publicidade">
+    <span class="ad-skin__label">Publicidade</span>
+    <div class="ad-skin__box">
+        <ins class="adsbygoogle"
+             style="display:inline-block;width:160px;height:600px"
+             data-ad-client="{{ monetization.adsense.client }}"
+             data-ad-slot="{{ monetization.adsense.skyscraper_slot }}"></ins>
+        <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+    </div>
+</aside>
+<script>
+(function () {
+    function alignAdSkins() {
+        var skins = document.querySelectorAll('.ad-skin');
+        if (!skins.length) return;
+        var anchor =
+            document.querySelector('main article') ||
+            document.querySelector('main section') ||
+            document.querySelector('main .layout-with-sidebar') ||
+            document.querySelector('main');
+        if (!anchor) return;
+        /* fixed: alinha ao topo do conteúdo; ao rolar, trava abaixo do nav */
+        var viewTop = Math.max(72, Math.round(anchor.getBoundingClientRect().top));
+        skins.forEach(function (el) {
+            el.style.top = viewTop + 'px';
+        });
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', alignAdSkins);
+    } else {
+        alignAdSkins();
+    }
+    window.addEventListener('resize', alignAdSkins);
+    window.addEventListener('scroll', alignAdSkins, { passive: true });
+})();
+</script>
+{% endif %}

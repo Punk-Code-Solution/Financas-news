@@ -1,0 +1,15 @@
+{# In-article estilo Poder360 (meio do texto) #}
+{% if monetization.adsense.enabled and monetization.adsense.in_article_slot %}
+<div class="ad-center my-8 clear-both" aria-label="Publicidade">
+    <span class="ad-center__label">publicidade</span>
+    <div class="ad-center__box" style="max-height:280px;min-height:120px;">
+        <ins class="adsbygoogle"
+             style="display:block;text-align:center;width:100%;max-width:100%;max-height:280px;"
+             data-ad-layout="in-article"
+             data-ad-format="fluid"
+             data-ad-client="{{ monetization.adsense.client }}"
+             data-ad-slot="{{ monetization.adsense.in_article_slot }}"></ins>
+        <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+    </div>
+</div>
+{% endif %}

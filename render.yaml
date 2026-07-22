@@ -17,9 +17,23 @@ services:
       - key: IMAGE_PROVIDER
         value: gemini
       - key: GOOGLE_ADSENSE_CLIENT
-        sync: false
+        value: ca-pub-3623062544438213
       - key: ADSENSE_AD_SLOT
         sync: false
+      - key: ADSENSE_FLUID_SLOT
+        value: "5920613886"
+      - key: ADSENSE_FLUID_LAYOUT_KEY
+        value: "-gp+18-5a-gr+1eg"
+      - key: ADSENSE_FLUID2_SLOT
+        value: "5003238179"
+      - key: ADSENSE_FLUID2_LAYOUT_KEY
+        value: "-fd-l+6i-lx+n1"
+      - key: ADSENSE_IN_ARTICLE_SLOT
+        value: "3294450543"
+      - key: ADSENSE_SIDEBAR_SLOT
+        value: "1019761130"
+      - key: ADSENSE_AUTORELAXED_SLOT
+        value: "2568646523"
       - key: AFFILIATE_BINANCE_URL
         sync: false
       - key: TURSO_DATABASE_URL

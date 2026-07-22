@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 from dotenv import load_dotenv
 import requests
+import urllib3
 from urllib3.exceptions import InsecureRequestWarning
 
 from db import get_db, get_editorial_context
@@ -66,10 +67,9 @@ def _http_get_json(url: str, timeout: float | None = None) -> Any | None:
     except requests.exceptions.SSLError:
         try:
             # Alguns ambientes Windows não reconhecem a cadeia local mesmo com
-            # certifi. O fallback é restrito a esta chamada e seu aviso esperado.
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", InsecureRequestWarning)
-                res = requests.get(url, headers=HEADERS, timeout=timeout, verify=False)
+            # certifi. O fallback é restrito a esta chamada.
+            urllib3.disable_warnings(InsecureRequestWarning)
+            res = requests.get(url, headers=HEADERS, timeout=timeout, verify=False)
             if res.status_code == 200:
                 return res.json()
         except Exception:
