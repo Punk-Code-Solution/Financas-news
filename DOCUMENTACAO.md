@@ -170,6 +170,8 @@ Ordem padrão (configurável via `GEMINI_MODELOS`):
 1. `gemini-3.1-flash-lite-preview` — 500 req/dia (free tier)
 2. `gemini-2.5-flash-lite` — fallback
 3. `gemini-2.5-flash` — fallback
+4. `gemini-2.0-flash` — fallback
+5. `gemini-2.0-flash-lite` — fallback
 
 O sistema **troca de modelo** quando a cota diária esgota e **só faz retry** em limite por minuto (RPM), evitando loops inúteis.
 
@@ -177,9 +179,13 @@ O sistema **troca de modelo** quando a cota diária esgota e **só faz retry** e
 
 Tentativa em ordem (Nano Banana / Gemini Image):
 
-1. `gemini-2.5-flash-image`
-2. `gemini-3.1-flash-image-preview`
-3. `gemini-3.1-flash-lite-image-preview`
+1. `gemini-3.1-flash-lite-image` — GA, prioridade (volume/custo)
+2. `gemini-3.1-flash-image` — GA
+3. `gemini-2.5-flash-image` — GA
+4. `gemini-3.1-flash-lite-image-preview` — fallback
+5. `gemini-3.1-flash-image-preview` — fallback (deprecado)
+6. `gemini-3-pro-image` — GA (mais caro)
+7. `gemini-3-pro-image-preview` — fallback
 
 > **Nota:** Imagen 4 (`imagen-4.0-*`) foi descontinuado na API Gemini. Não usar mais em `GEMINI_IMAGE_MODELOS`.
 
@@ -295,8 +301,8 @@ TURSO_AUTH_TOKEN=         # Token de autenticação Turso
 ### IA (opcionais)
 
 ```env
-GEMINI_MODELOS=gemini-3.1-flash-lite-preview,gemini-2.5-flash-lite,gemini-2.5-flash
-GEMINI_IMAGE_MODELOS=gemini-2.5-flash-image,gemini-3.1-flash-image-preview,gemini-3.1-flash-lite-image-preview
+GEMINI_MODELOS=gemini-3.1-flash-lite-preview,gemini-2.5-flash-lite,gemini-2.5-flash,gemini-2.0-flash,gemini-2.0-flash-lite
+GEMINI_IMAGE_MODELOS=gemini-3.1-flash-lite-image,gemini-3.1-flash-image,gemini-2.5-flash-image,gemini-3.1-flash-lite-image-preview,gemini-3.1-flash-image-preview,gemini-3-pro-image,gemini-3-pro-image-preview
 # Produção (Render): sempre Gemini (já forçado no código quando RENDER=true).
 # Local: gemini | cursor | auto (Cursor → fallback Gemini).
 IMAGE_PROVIDER=gemini

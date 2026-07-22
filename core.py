@@ -94,6 +94,21 @@ VALID_TAGS = [
 
 DEFAULT_GEMINI_MODELOS = [
     "gemini-3.1-flash-lite-preview",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+]
+
+# Ordem: lite/barato primeiro; GA estável antes de preview/pro.
+DEFAULT_GEMINI_IMAGE_MODELOS = [
+    "gemini-3.1-flash-lite-image",
+    "gemini-3.1-flash-image",
+    "gemini-2.5-flash-image",
+    "gemini-3.1-flash-lite-image-preview",
+    "gemini-3.1-flash-image-preview",
+    "gemini-3-pro-image",
+    "gemini-3-pro-image-preview",
 ]
 
 _exhausted_models: set[str] = set()
@@ -937,12 +952,8 @@ def get_gemini_image_models() -> list[str]:
     raw = os.getenv("GEMINI_IMAGE_MODELOS", "")
     if raw.strip():
         return [m.strip() for m in raw.split(",") if m.strip()]
-    # Imagen 4 foi descontinuado na API — migrar para Nano Banana (Gemini Image).
-    return [
-        "gemini-2.5-flash-image",
-        "gemini-3.1-flash-image-preview",
-        "gemini-3.1-flash-lite-image-preview",
-    ]
+    # Imagen 4 foi descontinuado — usar Nano Banana / Gemini Image (GA + fallbacks).
+    return DEFAULT_GEMINI_IMAGE_MODELOS.copy()
 
 
 TAG_IMAGE_VISUALS = {

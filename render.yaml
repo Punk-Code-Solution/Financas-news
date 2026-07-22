@@ -11,9 +11,9 @@ services:
       - key: GOOGLE_API_KEY
         sync: false
       - key: GEMINI_MODELOS
-        value: gemini-3.1-flash-lite-preview
+        value: gemini-3.1-flash-lite-preview,gemini-2.5-flash-lite,gemini-2.5-flash,gemini-2.0-flash,gemini-2.0-flash-lite
       - key: GEMINI_IMAGE_MODELOS
-        value: gemini-2.5-flash-image,gemini-3.1-flash-image-preview,gemini-3.1-flash-lite-image-preview
+        value: gemini-3.1-flash-lite-image,gemini-3.1-flash-image,gemini-2.5-flash-image,gemini-3.1-flash-lite-image-preview,gemini-3.1-flash-image-preview,gemini-3-pro-image,gemini-3-pro-image-preview
       - key: IMAGE_PROVIDER
         value: gemini
       - key: GOOGLE_ADSENSE_CLIENT
