@@ -271,6 +271,10 @@
             </div>
             {% endif %}
 
+            {% with center_slot=monetization.adsense.article_top_slot %}
+            {% include "partials/_adsense_center.html" %}
+            {% endwith %}
+
             {% set resumo_parts = enrichment.linked_resumo_parts or [] %}
             {% set split_at = 1 if resumo_parts|length <= 2 else (resumo_parts|length // 2) %}
             <section id="analise-completa" class="analise-completa mb-12 rounded-2xl border border-blue-100 dark:border-slate-700/80 p-6 md:p-10 lg:p-12 shadow-sm transition-colors" aria-labelledby="analise-completa-titulo">
@@ -359,6 +363,10 @@
                     {% endif %}
                     </div>
                 </section>
+
+            {% with center_slot=monetization.adsense.article_mid_slot, center_tall=true %}
+            {% include "partials/_adsense_center.html" %}
+            {% endwith %}
 
                 {% if enrichment.faq %}
                 <section class="mb-8" aria-labelledby="faq-titulo">

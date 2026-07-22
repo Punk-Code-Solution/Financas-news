@@ -43,14 +43,19 @@ class CachedStaticFiles(StarletteStaticFiles):
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
-    def _run():
+    def _boot():
+        try:
+            ensure_schema(get_db())
+        except Exception as exc:
+            print(f"Aviso: schema/DB no startup: {exc}")
         try:
             core.warmup_market_caches()
             _load_home_listing(None, 0, FEATURED_COUNT + FEED_BATCH, None)
         except Exception as exc:
             print(f"Aviso: warmup inicial falhou: {exc}")
 
-    threading.Thread(target=_run, daemon=True).start()
+    # Background: não bloqueia o worker no reload (Turso remoto pode demorar).
+    threading.Thread(target=_boot, daemon=True, name="startup-boot").start()
     yield
 
 
@@ -134,12 +139,6 @@ def category_image_url(tag: object) -> str:
 
 
 templates.env.globals["category_image"] = category_image_url
-
-try:
-    startup_client = get_db()
-    ensure_schema(startup_client)
-except Exception as e:
-    print(f"Aviso: Falha na inicialização do Turso: {e}")
 
 
 # ==========================================
@@ -604,4 +603,13 @@ def atualizar_artigos(token: str | None = None, limit: int = 10):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    # Reload só em .py — evita reinício ao editar templates e trava menos no Windows.
+    use_reload = os.getenv("UVICORN_RELOAD", "1").lower() in ("1", "true", "yes")
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=port,
+        reload=use_reload,
+        reload_includes=["*.py"] if use_reload else None,
+        reload_excludes=[".venv", "__pycache__", "*.pyc", "*.db", "*.html"] if use_reload else None,
+    )

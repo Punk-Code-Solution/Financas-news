@@ -1,0 +1,16 @@
+{# Faixa central estilo Poder360 — passe center_slot (e opcionalmente center_tall) #}
+{% set _slot = center_slot|default('') %}
+{% if monetization.adsense.enabled and _slot %}
+<div class="ad-center{% if center_tall|default(false) %} ad-center--tall{% endif %}" aria-label="Publicidade">
+    <span class="ad-center__label">publicidade</span>
+    <div class="ad-center__box">
+        <ins class="adsbygoogle"
+             style="display:block;width:100%;max-height:{% if center_tall|default(false) %}280px{% else %}120px{% endif %};"
+             data-ad-client="{{ monetization.adsense.client }}"
+             data-ad-slot="{{ _slot }}"
+             data-ad-format="{% if center_format|default('') %}{{ center_format }}{% elif center_tall|default(false) %}rectangle{% else %}horizontal{% endif %}"
+             data-full-width-responsive="false"></ins>
+        <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+    </div>
+</div>
+{% endif %}

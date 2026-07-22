@@ -161,6 +161,11 @@ def get_monetization_config() -> dict[str, object]:
             "sidebar_slot": adsense_sidebar_slot,
             "skyscraper_slot": adsense_skyscraper_slot,
             "autorelaxed_slot": adsense_autorelaxed_slot,
+            # Reuso dos slots existentes para mais faixas (mesmo design).
+            "feed_top_slot": adsense_fluid_slot,
+            "feed_bottom_slot": adsense_fluid2_slot or adsense_fluid_slot,
+            "article_top_slot": adsense_fluid2_slot or adsense_fluid_slot,
+            "article_mid_slot": adsense_sidebar_slot or adsense_fluid_slot,
         },
         "affiliates": affiliates,
         "amazon_books_url": amazon_url,

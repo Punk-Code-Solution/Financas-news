@@ -264,6 +264,12 @@
         </section>
         {% endif %}
 
+        {% if monetization.adsense.enabled and not q %}
+        {% with center_slot=monetization.adsense.feed_top_slot %}
+        {% include "partials/_adsense_center.html" %}
+        {% endwith %}
+        {% endif %}
+
         {% set feed_news = news[4:] if news and not q else news %}
         <div class="layout-with-sidebar{% if monetization.sidebar_widgets_visible %} has-sidebar{% endif %}">
             <div class="layout-main">
@@ -283,10 +289,16 @@
                         {% include "partials/feed_news_items.html" %}
                         {% endwith %}
                     </div>
-                    {% if not loop.last and loop.index == 1 %}
-                        {% include "partials/_adsense_fluid.html" %}
-                    {% elif not loop.last and loop.index == 2 %}
-                        {% include "partials/_adsense_fluid2.html" %}
+                    {% if not loop.last %}
+                        {% if loop.index % 3 == 1 %}
+                            {% include "partials/_adsense_fluid.html" %}
+                        {% elif loop.index % 3 == 2 %}
+                            {% include "partials/_adsense_fluid2.html" %}
+                        {% else %}
+                            {% with center_slot=monetization.adsense.in_article_slot, center_tall=true %}
+                            {% include "partials/_adsense_center.html" %}
+                            {% endwith %}
+                        {% endif %}
                     {% endif %}
                     {% endfor %}
                     <div id="news-feed-grid" class="news-batch"></div>
@@ -351,6 +363,10 @@
                     </button>
                 </div>
                 {% endif %}
+
+                {% with center_slot=monetization.adsense.feed_bottom_slot %}
+                {% include "partials/_adsense_center.html" %}
+                {% endwith %}
             </div>
 
             {% if monetization.sidebar_widgets_visible %}

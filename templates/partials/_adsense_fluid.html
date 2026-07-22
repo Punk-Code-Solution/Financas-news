@@ -1,15 +1,4 @@
-{# Poder360: faixa central entre lotes do feed #}
-{% if monetization.adsense.enabled and monetization.adsense.fluid_slot %}
-<div class="ad-center" aria-label="Publicidade">
-    <span class="ad-center__label">publicidade</span>
-    <div class="ad-center__box">
-        <ins class="adsbygoogle"
-             style="display:block;width:100%;height:90px;max-height:120px;"
-             data-ad-client="{{ monetization.adsense.client }}"
-             data-ad-slot="{{ monetization.adsense.fluid_slot }}"
-             data-ad-format="horizontal"
-             data-full-width-responsive="false"></ins>
-        <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
-    </div>
-</div>
-{% endif %}
+{# Compat: faixa 1 do feed #}
+{% with center_slot=monetization.adsense.fluid_slot %}
+{% include "partials/_adsense_center.html" %}
+{% endwith %}

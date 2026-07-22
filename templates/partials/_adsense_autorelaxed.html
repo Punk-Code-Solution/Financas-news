@@ -1,7 +1,8 @@
+{# Multiplex / relacionados no rodapé do artigo #}
 {% if monetization.adsense.enabled and monetization.adsense.autorelaxed_slot %}
-<div class="ad-rail my-6">
-    <span class="ad-rail__label">Publicidade</span>
-    <div class="ad-rail__box p-1" style="max-height:320px;">
+<div class="ad-center ad-center--tall my-6" aria-label="Publicidade">
+    <span class="ad-center__label">publicidade</span>
+    <div class="ad-center__box" style="max-height:320px;min-height:160px;">
         <ins class="adsbygoogle"
              style="display:block;width:100%;max-width:100%;"
              data-ad-format="autorelaxed"
