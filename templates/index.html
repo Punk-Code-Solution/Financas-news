@@ -10,7 +10,6 @@
     <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="preconnect" href="https://cdn.tailwindcss.com">
     <link rel="preconnect" href="https://economia.awesomeapi.com.br">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800;900&display=swap" rel="stylesheet"></noscript>
@@ -24,23 +23,12 @@
     <meta property="og:url" content="{{ request.url }}" />
     <meta property="og:site_name" content="{{ t('site_name') }}" />
     <meta name="description" content="{{ t('meta_home_description') }}" />
-    
-    <script src="https://cdn.tailwindcss.com"></script>
+
+    {% include "partials/_styles.html" %}
     
     {% if monetization.adsense.enabled %}
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ monetization.adsense.client }}" crossorigin="anonymous"></script>
     {% endif %}
-
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Inter', 'sans-serif'] },
-                }
-            }
-        }
-    </script>
 
     <script>
         if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {

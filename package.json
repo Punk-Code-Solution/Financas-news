@@ -1,0 +1,8 @@
+{
+  "name": "financas-news",
+  "private": true,
+  "scripts": {
+    "build:css": "node ./tools/build-css.js",
+    "watch:css": "node ./tools/build-css.js --watch"
+  }
+}

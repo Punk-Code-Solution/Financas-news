@@ -71,7 +71,7 @@ GET /api/rodar-robo?token=SEU_TOKEN
 | Camada | Tecnologia |
 |--------|------------|
 | Backend | Python 3.13, FastAPI, Uvicorn |
-| Frontend | Jinja2, Tailwind CSS (CDN), JavaScript |
+| Frontend | Jinja2, Tailwind CSS (build estático), JavaScript |
 | Banco de dados | Turso (libSQL — SQLite distribuído) |
 | Inteligência artificial | Google Gemini (texto + imagem) |
 | Hospedagem | Render.com (web service + disco persistente) |
@@ -86,11 +86,16 @@ financas_auto/
 ├── db.py                # Conexão Turso, schema, contexto editorial
 ├── monetization.py      # Configuração de receita (env-driven)
 ├── templates/           # Páginas HTML e partials de monetização
-├── static/              # Favicon e assets
+├── static/              # Favicon, CSS buildado (app.css) e assets
+├── src/styles.css       # Entrada do Tailwind
+├── tailwind.config.js   # Conteúdo/templates para purge
+├── tools/build-css.js   # Build via CLI standalone
 ├── requirements.txt     # Dependências Python
 ├── render.yaml          # Deploy no Render
 └── runtime.txt          # Versão Python fixada
 ```
+
+Para regenerar o CSS após mudar classes nos templates: baixe o [CLI standalone do Tailwind](https://github.com/tailwindlabs/tailwindcss/releases) para `tools/tailwindcss.exe` e rode `npm run build:css` (o arquivo `static/css/app.css` é versionado e usado em produção).
 
 ---
 

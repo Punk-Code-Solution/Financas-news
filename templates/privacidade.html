@@ -12,9 +12,8 @@
     <link rel="alternate" hreflang="pt-BR" href="/privacidade?lang=pt">
     <link rel="alternate" hreflang="en" href="/privacidade?lang=en">
     <link rel="alternate" hreflang="ja" href="/privacidade?lang=ja">
-    <script src="https://cdn.tailwindcss.com"></script>
+    {% include "partials/_styles.html" %}
     <script>
-        tailwind.config = { darkMode: 'class', theme: { extend: { fontFamily: { sans: ['Inter', 'sans-serif'] } } } };
         if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
             document.documentElement.classList.add('dark');
         } else { document.documentElement.classList.remove('dark'); }

@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Equivalente leve a @tailwindcss/typography (só o usado na notícia) */
+@layer components {
+  .prose {
+    @apply text-gray-700 dark:text-slate-300 leading-relaxed;
+  }
+  .prose-lg {
+    @apply text-lg;
+  }
+  .prose p {
+    @apply mb-4;
+  }
+  .not-prose {
+    /* Evita herança tipográfica do bloco .prose */
+  }
+}
