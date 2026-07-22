@@ -17,8 +17,17 @@
         { key: 'BTCBRL', label: '₿ BTC:' },
     ];
 
+    const resolveLocale = () => {
+        const root = document.documentElement;
+        const ticker = document.getElementById('market-ticker');
+        return (ticker && ticker.getAttribute('data-locale'))
+            || root.getAttribute('data-locale')
+            || root.getAttribute('lang')
+            || 'pt-BR';
+    };
+
     const formatCurrency = (value) =>
-        parseFloat(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        parseFloat(value).toLocaleString(resolveLocale(), { style: 'currency', currency: 'BRL' });
     const formatPct = (pct) => (parseFloat(pct) > 0 ? `+${pct}%` : `${pct}%`);
     const getColorClass = (pct) => (parseFloat(pct) >= 0 ? 'ticker-up' : 'ticker-down');
 

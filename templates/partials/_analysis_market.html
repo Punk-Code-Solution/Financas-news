@@ -1,17 +1,15 @@
 {% set stats = enrichment.market_stats %}
-
 {% if stats.cotacoes or stats.indicadores %}
 <section class="mb-8" id="market-panel-server">
     <div class="flex flex-wrap items-end justify-between gap-2 mb-4">
         <div>
-            <p class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-[#4ade80]">Evidência de mercado</p>
-            <h3 class="text-base font-black text-gray-900 dark:text-white">Dados no momento da análise{% if enrichment.periodo_analise %} · {{ enrichment.periodo_analise }}{% endif %}</h3>
+            <p class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-[#4ade80]">{{ t('market_evidence') }}</p>
+            <h3 class="text-base font-black text-gray-900 dark:text-white">{{ t('data_at_analysis') }}{% if enrichment.periodo_analise %} · {{ enrichment.periodo_analise }}{% endif %}</h3>
         </div>
         {% if stats.coletado_em %}
-        <span class="text-xs text-gray-500 dark:text-slate-500">Coletado em {{ stats.coletado_em }}</span>
+        <span class="text-xs text-gray-500 dark:text-slate-500">{{ t('collected_at') }} {{ stats.coletado_em }}</span>
         {% endif %}
     </div>
-
     <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
         {% for c in stats.cotacoes %}
         <div class="bg-white/80 dark:bg-[#0f172a]/80 border border-gray-200/80 dark:border-slate-700 rounded-xl p-4 shadow-sm">
@@ -25,12 +23,11 @@
             </div>
         </div>
         {% endfor %}
-
         {% for ind in stats.indicadores %}
         <div class="bg-white/80 dark:bg-[#0f172a]/80 border border-gray-200/80 dark:border-slate-700 rounded-xl p-4 shadow-sm">
             <p class="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400">{{ ind.label }}</p>
             <p class="mt-1 text-xl font-black text-gray-900 dark:text-white">{{ ind.valor }}</p>
-            {% if ind.data %}<p class="mt-1 text-xs text-gray-500 dark:text-slate-500">Ref. {{ ind.data }}</p>{% endif %}
+            {% if ind.data %}<p class="mt-1 text-xs text-gray-500 dark:text-slate-500">{{ t('ref_label') }} {{ ind.data }}</p>{% endif %}
             <div class="mt-2 h-1.5 bg-gray-200 dark:bg-slate-700 rounded-full overflow-hidden">
                 <div class="h-full bg-blue-500 dark:bg-[#4ade80] rounded-full" style="width: {{ ind.bar }}%"></div>
             </div>
@@ -42,8 +39,8 @@
 <section class="mb-8 hidden" id="market-panel-live">
     <div class="flex flex-wrap items-end justify-between gap-2 mb-4">
         <div>
-            <p class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-[#4ade80]">Evidência de mercado</p>
-            <h3 class="text-base font-black text-gray-900 dark:text-white">Cotações em tempo real</h3>
+            <p class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-[#4ade80]">{{ t('market_evidence') }}</p>
+            <h3 class="text-base font-black text-gray-900 dark:text-white">{{ t('live_quotes') }}</h3>
         </div>
         <span class="text-xs text-gray-500 dark:text-slate-500" id="market-live-time"></span>
     </div>

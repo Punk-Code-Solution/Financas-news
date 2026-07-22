@@ -21,6 +21,7 @@ from article_enrichment import (
     resolve_referencias_internas,
     source_homepage,
 )
+from i18n import COOKIE_MAX_AGE, COOKIE_NAME, build_i18n_context, resolve_lang
 
 load_dotenv()
 
@@ -37,6 +38,28 @@ if os.path.isdir(ARTICLE_IMAGES_DIR):
 templates = Jinja2Templates(directory="templates")
 
 CATEGORIAS = core.VALID_TAGS
+
+
+def _render(request: Request, name: str, context: dict[str, Any] | None = None, *, status_code: int = 200):
+    """Renderiza template com i18n e persiste cookie de idioma quando ?lang= estiver presente."""
+    ctx = {"request": request, **build_i18n_context(request)}
+    if context:
+        ctx.update(context)
+    response = templates.TemplateResponse(
+        request=request,
+        name=name,
+        context=ctx,
+        status_code=status_code,
+    )
+    if request.query_params.get("lang"):
+        response.set_cookie(
+            COOKIE_NAME,
+            resolve_lang(request),
+            max_age=COOKIE_MAX_AGE,
+            samesite="lax",
+            httponly=False,
+        )
+    return response
 
 # Cache curto da listagem da home (evita round-trips repetidos no Turso).
 _HOME_CACHE: dict[str, tuple[float, dict[str, object]]] = {}
@@ -211,11 +234,10 @@ def index(request: Request, categoria: str | None = None, q: str | None = None):
     listing = _load_home_listing(categoria, 0, initial_limit, q)
     sparklines = core.fetch_sparkline_data(blocking=False)
 
-    response = templates.TemplateResponse(
-        request=request,
-        name="index.html",
-        context={
-            "request": request,
+    response = _render(
+        request,
+        "index.html",
+        {
             "news": listing["news"],
             "categoria_ativa": categoria,
             "categorias": CATEGORIAS,
@@ -247,14 +269,16 @@ def api_feed(
         include_suggestions=False,
     )
     sparklines = core.fetch_sparkline_data(blocking=False)
+    i18n = build_i18n_context(request)
     html = templates.get_template("partials/feed_news_items.html").render(
         {
             "feed_news": listing["news"],
             "sparklines": sparklines,
             "request": request,
+            **i18n,
         }
     )
-    return HTMLResponse(
+    response = HTMLResponse(
         content=html,
         headers={
             "X-Has-More": "1" if listing["has_more"] else "0",
@@ -262,6 +286,15 @@ def api_feed(
             "Cache-Control": "public, max-age=15, stale-while-revalidate=30",
         },
     )
+    if request.query_params.get("lang"):
+        response.set_cookie(
+            COOKIE_NAME,
+            resolve_lang(request),
+            max_age=COOKIE_MAX_AGE,
+            samesite="lax",
+            httponly=False,
+        )
+    return response
 
 
 @app.get("/noticia/{noticia_id}", response_class=HTMLResponse)
@@ -303,11 +336,10 @@ def ver_noticia(request: Request, noticia_id: int):
     )
     contextual_affiliate = get_contextual_affiliate(tag)
 
-    response = templates.TemplateResponse(
-        request=request,
-        name="noticia.html",
-        context={
-            "request": request,
+    response = _render(
+        request,
+        "noticia.html",
+        {
             "noticia": noticia,
             "dados_mercado": dados_mercado,
             "enrichment": enrichment,
@@ -349,27 +381,15 @@ async def newsletter_signup(email: str = Form(...)):
 
 @app.get("/quem-somos", response_class=HTMLResponse)
 async def quem_somos(request: Request):
-    return templates.TemplateResponse(
-        request=request,
-        name="quem-somos.html", 
-        context={"request": request}
-    )
+    return _render(request, "quem-somos.html")
 
 @app.get("/privacidade", response_class=HTMLResponse)
 async def privacidade(request: Request):
-    return templates.TemplateResponse(
-        request=request,
-        name="privacidade.html", 
-        context={"request": request}
-    )
+    return _render(request, "privacidade.html")
 
 @app.get("/termos", response_class=HTMLResponse)
 async def termos(request: Request):
-    return templates.TemplateResponse(
-        request=request,
-        name="termos.html", 
-        context={"request": request}
-    )
+    return _render(request, "termos.html")
 
 # ==========================================
 # ROTAS DE SEO E INTEGRAÇÕES

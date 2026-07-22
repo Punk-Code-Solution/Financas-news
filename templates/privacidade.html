@@ -1,179 +1,74 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="{{ html_lang }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Política de Privacidade | Finanças News</title>
-    <meta name="description" content="Saiba como o Finanças News coleta, utiliza e protege dados pessoais.">
-    
+    <title>{{ t('privacy_meta_title') }}</title>
+    <meta name="description" content="{{ t('privacy_meta_description') }}">
     <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800;900&display=swap" rel="stylesheet">
+    <link rel="alternate" hreflang="pt-BR" href="/privacidade?lang=pt">
+    <link rel="alternate" hreflang="en" href="/privacidade?lang=en">
+    <link rel="alternate" hreflang="ja" href="/privacidade?lang=ja">
     <script src="https://cdn.tailwindcss.com"></script>
-
     <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: { extend: { fontFamily: { sans: ['Inter', 'sans-serif'] } } }
-        }
+        tailwind.config = { darkMode: 'class', theme: { extend: { fontFamily: { sans: ['Inter', 'sans-serif'] } } } };
         if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
             document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
+        } else { document.documentElement.classList.remove('dark'); }
     </script>
-
     <style>
         .ticker-wrapper { overflow: hidden; white-space: nowrap; background-color: #111827; color: #cbd5e1; font-size: 0.75rem; padding: 0.25rem 0; border-bottom: 1px solid #1e293b;}
         .ticker-content { display: inline-block; animation: ticker 30s linear infinite; }
         @keyframes ticker { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
         .ticker-item { margin-right: 3rem; font-weight: 600; letter-spacing: 0.05em; }
-        .ticker-up { color: #4ade80; } .ticker-down { color: #f87171; } 
+        .ticker-up { color: #4ade80; } .ticker-down { color: #f87171; }
     </style>
 </head>
 <body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 transition-colors duration-200 flex flex-col min-h-screen">
-
     <div class="ticker-wrapper">
-        <div class="ticker-content" id="market-ticker"><span class="text-slate-500">Carregando cotações...</span></div>
+        <div class="ticker-content" id="market-ticker" data-locale="{{ number_locale }}"><span class="text-slate-500">{{ t('loading_quotes') }}</span></div>
     </div>
-
     <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] transition-colors duration-200 pt-4 pb-4">
         <div class="container mx-auto px-4 flex flex-col lg:flex-row justify-between items-center gap-4">
-            
-            <a href="/" class="text-2xl font-black tracking-tighter">
-                <span class="text-blue-600 dark:text-[#4ade80]">FINANÇAS</span><span class="text-gray-900 dark:text-white">NEWS</span>
+            <a href="/?lang={{ lang }}" class="text-2xl font-black tracking-tighter">
+                <span class="text-blue-600 dark:text-[#4ade80]">{{ t('brand_finance') }}</span><span class="text-gray-900 dark:text-white">{{ t('brand_news') }}</span>
             </a>
-
-            <div class="flex flex-col md:flex-row items-center gap-4 w-full lg:w-auto">
-                <div class="flex items-center justify-between w-full md:w-auto">
-                    <a href="/" class="text-sm font-semibold text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white flex items-center transition-colors">
-                        &larr; Voltar para a Home
-                    </a>
-
-                    <button id="theme-toggle" type="button" class="text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 focus:outline-none rounded-lg text-sm p-2 transition-colors ml-6">
-                        <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
-                        </svg>
-                        <svg id="theme-toggle-light-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path>
-                        </svg>
-                    </button>
-                </div>
+            <div class="flex items-center gap-4">
+                <a href="/?lang={{ lang }}" class="text-sm font-semibold text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white transition-colors">&larr; {{ t('back_home') }}</a>
+                {% include "partials/_lang_switcher.html" %}
+                <button id="theme-toggle" type="button" class="text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 focus:outline-none rounded-lg text-sm p-2 transition-colors">
+                    <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
+                    <svg id="theme-toggle-light-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path></svg>
+                </button>
             </div>
         </div>
     </nav>
-
     <main class="container mx-auto px-4 py-10 max-w-4xl flex-grow">
         <article class="bg-white dark:bg-[#1e293b] rounded-xl shadow-sm dark:shadow-none p-6 md:p-12 border border-gray-200 dark:border-slate-800 transition-colors">
             <div class="border-b border-gray-200 dark:border-slate-800 pb-5 mb-8">
-                <p class="text-xs font-bold uppercase tracking-[0.18em] text-blue-600 dark:text-[#4ade80] mb-2">Transparência e LGPD</p>
-                <h1 class="text-3xl md:text-4xl font-extrabold text-gray-900 dark:text-white">Política de Privacidade</h1>
-                <p class="text-sm text-gray-500 dark:text-slate-400 mt-3">Última atualização: 17 de julho de 2026</p>
+                <p class="text-xs font-bold uppercase tracking-[0.18em] text-blue-600 dark:text-[#4ade80] mb-2">{{ t('privacy_eyebrow') }}</p>
+                <h1 class="text-3xl md:text-4xl font-extrabold text-gray-900 dark:text-white">{{ t('privacy_title') }}</h1>
+                <p class="text-sm text-gray-500 dark:text-slate-400 mt-3">{{ t('privacy_updated') }}</p>
             </div>
-
-            <p class="text-lg leading-relaxed text-gray-700 dark:text-slate-300 mb-6">Esta Política explica como o <strong>Finanças News</strong>, portal mantido pela Punk Code Solution, trata dados pessoais durante o uso do site. O tratamento observa a Lei Geral de Proteção de Dados — LGPD (Lei nº 13.709/2018) e demais normas aplicáveis.</p>
-
-            <h2 class="text-2xl font-bold text-blue-600 dark:text-[#4ade80] mb-3 mt-8">1. Dados que podemos tratar</h2>
-            <ul class="list-disc pl-6 space-y-2 text-lg leading-relaxed text-gray-700 dark:text-slate-300 mb-4">
-                <li><strong>Newsletter:</strong> endereço de e-mail informado voluntariamente e data da inscrição;</li>
-                <li><strong>Dados técnicos:</strong> endereço IP, navegador, dispositivo, páginas acessadas, data, horário e registros de segurança, conforme gerados pela hospedagem e por serviços integrados;</li>
-                <li><strong>Preferências locais:</strong> tema claro ou escuro e perfil de leitura, armazenados no próprio navegador por meio de <em>localStorage</em>;</li>
-                <li><strong>Publicidade e métricas:</strong> identificadores, cookies e dados de interação tratados por provedores habilitados no portal.</li>
-            </ul>
-            <p class="text-lg leading-relaxed text-gray-700 dark:text-slate-300 mb-4">Não solicitamos dados financeiros, documentos de identidade ou senhas bancárias para a leitura das notícias.</p>
-
-            <h2 class="text-2xl font-bold text-blue-600 dark:text-[#4ade80] mb-3 mt-8">2. Finalidades e bases legais</h2>
-            <p class="text-lg leading-relaxed text-gray-700 dark:text-slate-300 mb-3">Os dados podem ser usados para:</p>
-            <ul class="list-disc pl-6 space-y-2 text-lg leading-relaxed text-gray-700 dark:text-slate-300 mb-4">
-                <li>entregar a newsletter e administrar inscrições solicitadas pelo usuário;</li>
-                <li>manter preferências, funcionamento, desempenho e segurança do portal;</li>
-                <li>prevenir abuso, fraude e acessos indevidos;</li>
-                <li>produzir estatísticas de uso e exibir publicidade quando esses recursos estiverem habilitados;</li>
-                <li>cumprir obrigações legais e responder ao exercício de direitos.</li>
-            </ul>
-            <p class="text-lg leading-relaxed text-gray-700 dark:text-slate-300 mb-4">Conforme a atividade, o tratamento pode se basear no consentimento, na execução de serviço solicitado, no legítimo interesse, no cumprimento de obrigação legal ou no exercício regular de direitos. O consentimento, quando utilizado, pode ser revogado.</p>
-
-            <h2 class="text-2xl font-bold text-blue-600 dark:text-[#4ade80] mb-3 mt-8">3. Cookies e armazenamento local</h2>
-            <p class="text-lg leading-relaxed text-gray-700 dark:text-slate-300 mb-4">O portal usa armazenamento local para lembrar preferências de interface. Serviços de terceiros, como o Google AdSense quando habilitado, podem usar cookies ou tecnologias semelhantes para entregar e medir anúncios, inclusive personalizados conforme as configurações e o consentimento aplicáveis. O usuário pode gerenciar cookies nas configurações do navegador e consultar as opções de anúncios do Google. O bloqueio de determinadas tecnologias pode limitar algumas funcionalidades.</p>
-
-            <h2 class="text-2xl font-bold text-blue-600 dark:text-[#4ade80] mb-3 mt-8">4. Compartilhamento e operadores</h2>
-            <p class="text-lg leading-relaxed text-gray-700 dark:text-slate-300 mb-4">Dados podem ser processados por fornecedores necessários à operação, como hospedagem, banco de dados, entrega de newsletter, segurança, fontes web, publicidade e serviços de infraestrutura. Também poderão ser compartilhados por obrigação legal, ordem de autoridade competente, proteção de direitos ou em reorganização societária. Não comercializamos listas de e-mails nem vendemos dados pessoais.</p>
-
-            <h2 class="text-2xl font-bold text-blue-600 dark:text-[#4ade80] mb-3 mt-8">5. Links externos e afiliados</h2>
-            <p class="text-lg leading-relaxed text-gray-700 dark:text-slate-300 mb-4">O portal pode conter links para veículos de imprensa, fontes, anunciantes e parceiros afiliados. Ao acessar um site externo, o tratamento de dados passa a seguir as regras desse terceiro. Recomendamos a leitura de sua política de privacidade antes de fornecer informações.</p>
-
-            <h2 class="text-2xl font-bold text-blue-600 dark:text-[#4ade80] mb-3 mt-8">6. Transferências internacionais</h2>
-            <p class="text-lg leading-relaxed text-gray-700 dark:text-slate-300 mb-4">Alguns fornecedores podem armazenar ou processar dados fora do Brasil. Nesses casos, buscamos utilizar serviços que adotem mecanismos de proteção e salvaguardas compatíveis com a LGPD e a regulamentação aplicável.</p>
-
-            <h2 class="text-2xl font-bold text-blue-600 dark:text-[#4ade80] mb-3 mt-8">7. Retenção e segurança</h2>
-            <p class="text-lg leading-relaxed text-gray-700 dark:text-slate-300 mb-4">Mantemos dados pelo período necessário às finalidades descritas, ao cumprimento de obrigações legais e ao exercício de direitos. Inscrições na newsletter são conservadas até o cancelamento ou outra hipótese legítima de exclusão. Adotamos medidas técnicas e administrativas razoáveis, mas nenhum sistema conectado à internet é completamente imune a incidentes.</p>
-
-            <h2 class="text-2xl font-bold text-blue-600 dark:text-[#4ade80] mb-3 mt-8">8. Seus direitos</h2>
-            <p class="text-lg leading-relaxed text-gray-700 dark:text-slate-300 mb-3">Nos termos da LGPD, o titular pode solicitar, quando aplicável:</p>
-            <ul class="list-disc pl-6 space-y-2 text-lg leading-relaxed text-gray-700 dark:text-slate-300 mb-4">
-                <li>confirmação e acesso aos dados;</li>
-                <li>correção de informações incompletas, inexatas ou desatualizadas;</li>
-                <li>anonimização, bloqueio, portabilidade ou eliminação;</li>
-                <li>informações sobre compartilhamento e consequências de negar consentimento;</li>
-                <li>revogação do consentimento e oposição ao tratamento, quando cabível.</li>
-            </ul>
-            <p class="text-lg leading-relaxed text-gray-700 dark:text-slate-300 mb-4">Poderemos solicitar informações para confirmar a identidade do requerente e proteger o titular contra pedidos fraudulentos.</p>
-
-            <h2 class="text-2xl font-bold text-blue-600 dark:text-[#4ade80] mb-3 mt-8">9. Crianças e adolescentes</h2>
-            <p class="text-lg leading-relaxed text-gray-700 dark:text-slate-300 mb-4">O portal é dirigido ao público geral e não busca coletar intencionalmente dados de crianças. Caso um responsável identifique tratamento indevido, poderá solicitar a análise e a exclusão das informações.</p>
-
-            <h2 class="text-2xl font-bold text-blue-600 dark:text-[#4ade80] mb-3 mt-8">10. Atualizações e contato</h2>
-            <p class="text-lg leading-relaxed text-gray-700 dark:text-slate-300 mb-8">Esta Política pode ser atualizada para refletir mudanças legais, tecnológicas ou operacionais. A versão vigente permanecerá nesta página. Para exercer direitos ou esclarecer dúvidas sobre privacidade, utilize os canais oficiais da <a href="https://www.punkcodesolution.com.br/" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-[#4ade80] hover:underline">Punk Code Solution</a>.</p>
+            {% include "i18n/privacy_" ~ lang ~ ".html" %}
         </article>
     </main>
-
-    <footer class="border-t border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] text-center py-8 mt-auto transition-colors">
-        <div class="container mx-auto px-4">
-            <p class="text-sm text-gray-500 dark:text-slate-500 font-medium">&copy; 2026 Finanças News. Desenvolvido por <a href="https://www.punkcodesolution.com.br/" target="_blank" rel="noopener noreferrer" class="text-gray-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-slate-100 transition font-semibold">Punk Code Solution</a>.</p>
-            <div class="mt-4 space-x-4 text-xs text-gray-500 dark:text-slate-600 flex justify-center font-semibold">
-                <a href="/quem-somos" class="hover:text-blue-600 dark:hover:text-slate-300 transition">Quem Somos</a>
-                <a href="/termos" class="hover:text-blue-600 dark:hover:text-slate-300 transition">Termos de Uso</a>
-                <a href="/privacidade" class="text-blue-600 dark:text-slate-300 transition">Privacidade</a>
-            </div>
-        </div>
-    </footer>
-
+    {% include "partials/_footer.html" %}
     <script>
-        function setInitialThemeIcons() {
+        document.addEventListener('DOMContentLoaded', () => {
             const darkIcon = document.getElementById('theme-toggle-dark-icon');
             const lightIcon = document.getElementById('theme-toggle-light-icon');
-            if (!darkIcon || !lightIcon) return;
-            
-            if (document.documentElement.classList.contains('dark')) {
-                lightIcon.classList.remove('hidden');
-                darkIcon.classList.add('hidden');
-            } else {
-                darkIcon.classList.remove('hidden');
-                lightIcon.classList.add('hidden');
-            }
-        }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            setInitialThemeIcons();
-
-            // Adiciona o funcionamento ao botão de tema
-            const themeBtn = document.getElementById('theme-toggle');
-            if (themeBtn) {
-                themeBtn.addEventListener('click', () => {
-                    const darkIcon = document.getElementById('theme-toggle-dark-icon');
-                    const lightIcon = document.getElementById('theme-toggle-light-icon');
-                    
-                    darkIcon.classList.toggle('hidden');
-                    lightIcon.classList.toggle('hidden');
-
-                    if (document.documentElement.classList.contains('dark')) {
-                        document.documentElement.classList.remove('dark');
-                        localStorage.setItem('color-theme', 'light');
-                    } else {
-                        document.documentElement.classList.add('dark');
-                        localStorage.setItem('color-theme', 'dark');
-                    }
-                });
-            }
+            const sync = () => {
+                if (document.documentElement.classList.contains('dark')) { lightIcon.classList.remove('hidden'); darkIcon.classList.add('hidden'); }
+                else { darkIcon.classList.remove('hidden'); lightIcon.classList.add('hidden'); }
+            };
+            sync();
+            document.getElementById('theme-toggle')?.addEventListener('click', () => {
+                document.documentElement.classList.toggle('dark');
+                localStorage.setItem('color-theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+                sync();
+            });
         });
     </script>
     <script src="/static/js/market-ticker.js"></script>

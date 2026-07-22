@@ -1,0 +1,14 @@
+<footer class="border-t border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] text-center py-8 mt-auto transition-colors">
+    <div class="container mx-auto px-4">
+        <p class="text-sm text-gray-500 dark:text-slate-500 font-medium">
+            &copy; 2026 {{ t('site_name') }}. {{ t('footer_developed') }}
+            <a href="https://www.punkcodesolution.com.br/" target="_blank" rel="noopener noreferrer" class="text-gray-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-slate-100 transition font-semibold">Punk Code Solution</a>.
+        </p>
+        <div class="mt-4 flex flex-wrap items-center justify-center gap-4 text-xs text-gray-500 dark:text-slate-600 font-semibold">
+            <a href="/quem-somos?lang={{ lang }}" class="hover:text-blue-600 dark:hover:text-slate-300 transition">{{ t('nav_about') }}</a>
+            <a href="/termos?lang={{ lang }}" class="hover:text-blue-600 dark:hover:text-slate-300 transition">{{ t('nav_terms') }}</a>
+            <a href="/privacidade?lang={{ lang }}" class="hover:text-blue-600 dark:hover:text-slate-300 transition">{{ t('nav_privacy') }}</a>
+            {% include "partials/_lang_switcher.html" %}
+        </div>
+    </div>
+</footer>

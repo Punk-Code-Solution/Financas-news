@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="{{ html_lang }}" data-locale="{{ number_locale }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ noticia[1] }} - Finanças News</title>
+    <title>{{ noticia[1] }} - {{ t('site_name') }}</title>
     <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,7 +20,7 @@
     <meta property="og:title" content="{{ noticia[1] }}" />
     <meta property="og:description" content="{{ noticia[2] }}" />
     <meta property="og:url" content="{{ request.url }}" />
-    <meta property="og:site_name" content="Finanças News" />
+    <meta property="og:site_name" content="{{ t('site_name') }}" />
     <meta property="og:image" content="{% if noticia[11] %}https://financas-news.net.br{{ noticia[11] }}{% else %}https://financas-news.net.br/static/favicon.svg?v=2{% endif %}" />
     <meta name="twitter:card" content="{% if noticia[11] %}summary_large_image{% else %}summary{% endif %}" />
 
@@ -161,27 +161,32 @@
 </head>
 <body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 transition-colors duration-200 flex flex-col min-h-screen">
 
-    <div id="analise-refine-overlay" role="status" aria-live="polite" aria-busy="true">
+    <div id="analise-refine-overlay" role="status" aria-live="polite" aria-busy="true"
+         data-step-1="{{ t('refining_step_1') }}"
+         data-step-2="{{ t('refining_step_2') }}"
+         data-step-3="{{ t('refining_step_3') }}"
+         data-step-4="{{ t('refining_step_4') }}">
         <div class="refine-card">
             <div class="refine-ring" aria-hidden="true"></div>
-            <p class="refine-title">Refinando a análise</p>
-            <p class="refine-status" id="refine-status">Cruzando indicadores do período...</p>
+            <p class="refine-title">{{ t('refining_title') }}</p>
+            <p class="refine-status" id="refine-status">{{ t('refining_status') }}</p>
             <div class="refine-bar" aria-hidden="true"><span></span></div>
         </div>
     </div>
 
     <div class="ticker-wrapper">
-        <div class="ticker-content" id="market-ticker"><span class="text-slate-500">Cotações em tempo real...</span></div>
+        <div class="ticker-content" id="market-ticker"><span class="text-slate-500">{{ t('quotes_realtime') }}</span></div>
     </div>
 
     <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] transition-colors duration-200 pt-4 pb-4 sticky top-0 z-50">
         <div class="container mx-auto px-4 flex justify-between items-center">
-            <a href="/" class="text-2xl font-black tracking-tighter">
-                <span class="text-blue-600 dark:text-[#4ade80]">FINANÇAS</span><span class="text-gray-900 dark:text-white">NEWS</span>
+            <a href="/?lang={{ lang }}" class="text-2xl font-black tracking-tighter">
+                <span class="text-blue-600 dark:text-[#4ade80]">{{ t('brand_finance') }}</span><span class="text-gray-900 dark:text-white">{{ t('brand_news') }}</span>
             </a>
             <div class="flex items-center gap-4">
-                <a href="/" class="text-sm font-semibold text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white flex items-center transition-colors">
-                    &larr; <span class="ml-1">Voltar</span>
+                {% include "partials/_lang_switcher.html" %}
+                <a href="/?lang={{ lang }}" class="text-sm font-semibold text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white flex items-center transition-colors">
+                    &larr; <span class="ml-1">{{ t('back') }}</span>
                 </a>
                 <button id="theme-toggle" class="p-2 rounded-lg text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors">
                     <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
@@ -192,16 +197,28 @@
     </nav>
 
     <main class="container mx-auto px-4 pt-8 pb-12 max-w-7xl flex-none w-full flex-grow">
+        {% if lang != 'pt' %}
+        <div class="mb-4 rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+            {{ t('content_original_notice', lang=t('content_lang_name')) }}
+        </div>
+        {% endif %}
         {# Seletor de perfil — sempre visível e funcional #}
-        <div id="perfil-banner" class="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div id="perfil-banner" class="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+             data-hint-template="{{ t('profile_active') }}"
+             data-highlight-template="{{ t('highlighting_profile') }}"
+             data-label-beginner="{{ t('profile_beginner') }}"
+             data-label-intermediate="{{ t('profile_intermediate') }}"
+             data-label-advanced="{{ t('profile_advanced') }}"
+             data-refine-title="{{ t('refining_title') }}"
+             data-refine-status="{{ t('refining_status') }}">
             <div>
-                <p class="text-sm font-bold text-blue-900 dark:text-blue-100">Personalize sua leitura</p>
-                <p id="perfil-banner-hint" class="text-xs text-blue-700 dark:text-blue-300 mt-0.5">Escolha seu perfil para destacar orientações relevantes.</p>
+                <p class="text-sm font-bold text-blue-900 dark:text-blue-100">{{ t('customize_reading') }}</p>
+                <p id="perfil-banner-hint" class="text-xs text-blue-700 dark:text-blue-300 mt-0.5">{{ t('customize_hint') }}</p>
             </div>
-            <div class="flex gap-2 flex-wrap" role="group" aria-label="Perfil do leitor">
-                <button type="button" data-perfil="conservador" class="perfil-btn text-xs font-bold px-3 py-1.5 rounded-full border border-blue-300 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition">Iniciante</button>
-                <button type="button" data-perfil="moderado" class="perfil-btn text-xs font-bold px-3 py-1.5 rounded-full border border-blue-300 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition">Intermediário</button>
-                <button type="button" data-perfil="arrojado" class="perfil-btn text-xs font-bold px-3 py-1.5 rounded-full border border-blue-300 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition">Avançado</button>
+            <div class="flex gap-2 flex-wrap" role="group" aria-label="{{ t('profile_aria') }}">
+                <button type="button" data-perfil="conservador" class="perfil-btn text-xs font-bold px-3 py-1.5 rounded-full border border-blue-300 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition">{{ t('profile_beginner') }}</button>
+                <button type="button" data-perfil="moderado" class="perfil-btn text-xs font-bold px-3 py-1.5 rounded-full border border-blue-300 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition">{{ t('profile_intermediate') }}</button>
+                <button type="button" data-perfil="arrojado" class="perfil-btn text-xs font-bold px-3 py-1.5 rounded-full border border-blue-300 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition">{{ t('profile_advanced') }}</button>
             </div>
         </div>
 
@@ -211,15 +228,15 @@
             <img src="{{ noticia[11] or category_image(noticia[5]) }}" alt="{{ noticia[1] }}" class="w-full h-56 md:h-72 object-cover object-center">
             <div class="p-6 md:p-12">
             <div class="flex items-center space-x-3 mb-6">
-                <span class="bg-blue-100 dark:bg-white text-blue-800 dark:text-blue-900 text-xs font-bold px-3 py-1 rounded-full uppercase">{{ noticia[5] }}</span>
+                <span class="bg-blue-100 dark:bg-white text-blue-800 dark:text-blue-900 text-xs font-bold px-3 py-1 rounded-full uppercase">{{ tr_tag(noticia[5]) }}</span>
                 
                 {% set sent = (noticia[6] | default('Neutro', true)) | lower %}
-                {% if 'positivo' in sent %}
-                    <span class="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-[#4ade80] text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide border border-transparent dark:border-green-800/50">Mercado Positivo</span>
-                {% elif 'negativo' in sent %}
-                    <span class="bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-[#f87171] text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide border border-transparent dark:border-red-800/50">Alerta de Queda</span>
+                {% if 'positiv' in sent %}
+                    <span class="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-[#4ade80] text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide border border-transparent dark:border-green-800/50">{{ t('market_positive') }}</span>
+                {% elif 'negativ' in sent %}
+                    <span class="bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-[#f87171] text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide border border-transparent dark:border-red-800/50">{{ t('market_negative') }}</span>
                 {% else %}
-                    <span class="bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide border border-transparent dark:border-slate-700">Neutro</span>
+                    <span class="bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-300 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide border border-transparent dark:border-slate-700">{{ t('market_neutral') }}</span>
                 {% endif %}
             </div>
 
@@ -229,16 +246,16 @@
                 {% if noticia[7] %}
                 <span class="flex items-center gap-1">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                    Publicado em {{ noticia[7] }}
+                    {{ t('published_on') }} {{ noticia[7] }}
                 </span>
                 {% endif %}
                 {% if noticia[8] or fonte_nome %}
                 <span class="flex items-center gap-1">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path></svg>
                     {% if fonte_url %}
-                    Fonte: <a href="{{ fonte_url }}" target="_blank" rel="noopener noreferrer" class="hover:text-blue-600 dark:hover:text-[#4ade80] underline-offset-2 hover:underline">{{ fonte_nome or noticia[8] }}</a>
+                    {{ t('source') }}: <a href="{{ fonte_url }}" target="_blank" rel="noopener noreferrer" class="hover:text-blue-600 dark:hover:text-[#4ade80] underline-offset-2 hover:underline">{{ fonte_nome or noticia[8] }}</a>
                     {% else %}
-                    Fonte: {{ fonte_nome or noticia[8] }}
+                    {{ t('source') }}: {{ fonte_nome or noticia[8] }}
                     {% endif %}
                 </span>
                 {% endif %}
@@ -246,7 +263,7 @@
 
             {% if noticia[10] %}
             <div class="mb-8 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-xl p-6">
-                <h3 class="text-xs font-black text-blue-700 dark:text-blue-300 uppercase tracking-wider mb-2">Panorama de Mercado no Momento da Análise</h3>
+                <h3 class="text-xs font-black text-blue-700 dark:text-blue-300 uppercase tracking-wider mb-2">{{ t('market_overview') }}</h3>
                 <p class="text-base text-blue-900 dark:text-blue-100 leading-relaxed">{{ noticia[10] }}</p>
             </div>
             {% endif %}
@@ -255,7 +272,7 @@
             {% set split_at = 1 if resumo_parts|length <= 2 else (resumo_parts|length // 2) %}
             <section id="analise-completa" class="analise-completa mb-12 rounded-2xl border border-blue-100 dark:border-slate-700/80 p-6 md:p-10 lg:p-12 shadow-sm transition-colors" aria-labelledby="analise-completa-titulo">
                 <header class="mb-8 md:mb-10 max-w-3xl">
-                    <h2 id="analise-completa-titulo" class="text-3xl md:text-4xl lg:text-5xl font-black text-gray-900 dark:text-white leading-[1.1] tracking-tight">Análise Completa</h2>
+                    <h2 id="analise-completa-titulo" class="text-3xl md:text-4xl lg:text-5xl font-black text-gray-900 dark:text-white leading-[1.1] tracking-tight">{{ t('full_analysis') }}</h2>
                 </header>
 
                 <div class="min-w-0">
@@ -278,7 +295,7 @@
                     </div>
 
                     <div class="analise-dados-box my-8 md:my-10 rounded-2xl border border-dashed border-blue-200/80 dark:border-slate-600 bg-blue-50/40 dark:bg-[#0b1220]/50 p-4 md:p-6">
-                        <p class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-[#4ade80] mb-5">Onde a análise se apoia nos dados</p>
+                        <p class="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-[#4ade80] mb-5">{{ t('data_backed_where') }}</p>
                         {% include "partials/_analysis_market.html" %}
                         {% include "partials/_analysis_charts.html" %}
                     </div>
@@ -308,14 +325,17 @@
                                     <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                                 </span>
                                 <div>
-                                    <p class="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-[#4ade80]">Guia prático</p>
-                                    <h2 class="text-xl md:text-2xl font-black text-gray-900 dark:text-white mt-0.5">Impacto no seu Bolso</h2>
-                                    <p class="mt-1 text-xs text-gray-500 dark:text-slate-400">O que muda na sua carteira e no dia a dia</p>
+                                    <p class="text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:text-[#4ade80]">{{ t('practical_guide') }}</p>
+                                    <h2 class="text-xl md:text-2xl font-black text-gray-900 dark:text-white mt-0.5">{{ t('pocket_impact') }}</h2>
+                                    <p class="mt-1 text-xs text-gray-500 dark:text-slate-400">{{ t('pocket_impact_sub') }}</p>
                                 </div>
                             </div>
-                            <button type="button" id="btn-ouvir-resumo" class="shrink-0 text-xs font-bold px-4 py-2 rounded-full bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-[#4ade80] hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition flex items-center gap-2 shadow-sm">
+                            <button type="button" id="btn-ouvir-resumo"
+                                data-label-listen="{{ t('listen_summary') }}"
+                                data-label-stop="{{ t('listen_stop') }}"
+                                class="shrink-0 text-xs font-bold px-4 py-2 rounded-full bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-[#4ade80] hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition flex items-center gap-2 shadow-sm">
                                 <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.617.793L4.5 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.5l3.883-3.793a1 1 0 011.617.793zM14.657 5.343a1 1 0 011.414 0 6 6 0 010 8.486 1 1 0 01-1.414-1.414 4 4 0 000-5.656 1 1 0 010-1.416zm2.829 2.828a1 1 0 011.414 0 10 10 0 010 14.142 1 1 0 01-1.414-1.414 8 8 0 000-11.314 1 1 0 010-1.414z"></path></svg>
-                                Ouvir resumo
+                                {{ t('listen_summary') }}
                             </button>
                         </div>
                         <blockquote class="not-prose border-0 p-0 m-0">
@@ -324,7 +344,7 @@
 
                     {% if contextual_affiliate %}
                     <div class="mt-6 pt-6 border-t border-emerald-200/60 dark:border-emerald-900/40">
-                        <p class="text-[10px] font-black uppercase text-gray-500 dark:text-slate-400 mb-2">Próximo passo · Parceiro</p>
+                        <p class="text-[10px] font-black uppercase text-gray-500 dark:text-slate-400 mb-2">{{ t('next_step_partner') }}</p>
                         <a href="{{ contextual_affiliate.url }}" target="_blank" rel="noopener sponsored" class="block bg-white/80 dark:bg-[#0f172a] border border-gray-200 dark:border-slate-700 rounded-xl p-4 hover:border-emerald-400 dark:hover:border-[#4ade80] transition">
                             <p class="text-sm font-black text-gray-900 dark:text-white">{{ contextual_affiliate.titulo }}</p>
                             <p class="mt-1 text-xs text-gray-600 dark:text-slate-400">{{ contextual_affiliate.descricao }}</p>
@@ -337,7 +357,7 @@
 
                 {% if enrichment.faq %}
                 <section class="mb-8" aria-labelledby="faq-titulo">
-                    <h2 id="faq-titulo" class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-3">Perguntas frequentes</h2>
+                    <h2 id="faq-titulo" class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-3">{{ t('faq_title') }}</h2>
                     <div class="space-y-2" id="faq-accordion">
                         {% for item in enrichment.faq %}
                         <details class="faq-item bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden"{% if loop.first %} open{% endif %}>
@@ -356,7 +376,7 @@
 
                 {% if enrichment.cross_links %}
                 <section class="mb-8" aria-labelledby="cruzados-titulo">
-                    <h2 id="cruzados-titulo" class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-3">Links cruzados</h2>
+                    <h2 id="cruzados-titulo" class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-3">{{ t('cross_links') }}</h2>
                     <div class="flex flex-wrap gap-2">
                         {% for link in enrichment.cross_links %}
                         <a href="{{ link.url }}" class="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-full border border-blue-200 dark:border-slate-600 bg-white dark:bg-[#1e293b] text-gray-800 dark:text-slate-200 hover:border-blue-400 dark:hover:border-[#4ade80] hover:text-blue-600 dark:hover:text-[#4ade80] transition">
@@ -392,7 +412,7 @@
                         <div class="flex items-start gap-4 min-w-0">
                             <span class="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-100 dark:bg-slate-800 text-blue-700 dark:text-[#4ade80] font-black text-sm">FN</span>
                             <div>
-                                <p class="text-base font-black text-gray-900 dark:text-white">Equipe de Análise · Finanças News</p>
+                                <p class="text-base font-black text-gray-900 dark:text-white">{{ t('analysis_team') }}</p>
                                 <div class="mt-3 flex flex-wrap gap-2">
                                     {% for src in enrichment.data_source_links or [] %}
                                     <a href="{{ src.url }}" {% if src.externo %}target="_blank" rel="noopener noreferrer"{% endif %}
@@ -401,17 +421,17 @@
                                     </a>
                                     {% endfor %}
                                     {% if noticia[5] %}
-                                    <a href="/?categoria={{ noticia[5]|urlencode }}" class="text-[10px] font-bold uppercase px-2.5 py-1 rounded-full bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-400 hover:border-blue-400 dark:hover:border-[#4ade80] hover:text-blue-600 dark:hover:text-[#4ade80] transition">
-                                        {{ noticia[5] }}
+                                    <a href="/?categoria={{ noticia[5]|urlencode }}&lang={{ lang }}" class="text-[10px] font-bold uppercase px-2.5 py-1 rounded-full bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-400 hover:border-blue-400 dark:hover:border-[#4ade80] hover:text-blue-600 dark:hover:text-[#4ade80] transition">
+                                        {{ tr_tag(noticia[5]) }}
                                     </a>
                                     {% endif %}
                                 </div>
                             </div>
                         </div>
                         {% if fonte_url %}
-                        <a href="{{ fonte_url }}" target="_blank" rel="noopener noreferrer" class="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-950 text-sm font-bold hover:bg-blue-700 dark:hover:bg-emerald-400 transition shadow-sm" title="Abrir reportagem original">
+                        <a href="{{ fonte_url }}" target="_blank" rel="noopener noreferrer" class="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-950 text-sm font-bold hover:bg-blue-700 dark:hover:bg-emerald-400 transition shadow-sm" title="{{ t('open_original') }}">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
-                            Ver no {{ fonte_nome or 'site original' }}
+                            {{ t('see_on_source', source=fonte_nome or t('original_site')) }}
                         </a>
                         {% endif %}
                     </div>
@@ -429,13 +449,7 @@
         </div>
     </main>
 
-    <footer class="border-t border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] text-center py-8 mt-auto transition-colors">
-        <div class="container mx-auto px-4">
-            <p class="text-sm text-gray-500 dark:text-slate-500 font-medium">
-                &copy; 2026 Finanças News. Desenvolvido por <a href="https://www.punkcodesolution.com.br/" target="_blank" rel="noopener noreferrer" class="text-gray-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-slate-100 transition font-semibold">Punk Code Solution</a>.
-            </p>
-        </div>
-    </footer>
+    {% include "partials/_footer.html" %}
 
     <script>
         function setInitialThemeIcons() {
@@ -459,11 +473,11 @@
                 if (!overlay || !statusEl) return;
 
                 const steps = [
-                    'Cruzando indicadores do período...',
-                    'Alinhando cotações à data da análise...',
-                    'Organizando pontos-chave e contexto...',
-                    'Quase pronto — abrindo a leitura...',
-                ];
+                    overlay.dataset.step1 || '',
+                    overlay.dataset.step2 || '',
+                    overlay.dataset.step3 || '',
+                    overlay.dataset.step4 || '',
+                ].filter(Boolean);
                 let step = 0;
                 const started = Date.now();
                 const minMs = 1100;
@@ -492,11 +506,16 @@
             })();
 
             // Personalização de perfil — funcional de ponta a ponta
+            const perfilBanner = document.getElementById('perfil-banner');
             const PERFIL_LABELS = {
-                conservador: 'Iniciante',
-                moderado: 'Intermediário',
-                arrojado: 'Avançado',
+                conservador: (perfilBanner && perfilBanner.dataset.labelBeginner) || 'Beginner',
+                moderado: (perfilBanner && perfilBanner.dataset.labelIntermediate) || 'Intermediate',
+                arrojado: (perfilBanner && perfilBanner.dataset.labelAdvanced) || 'Advanced',
             };
+            const perfilHintTemplate = (perfilBanner && perfilBanner.dataset.hintTemplate) || 'Active profile: {profile}.';
+            const perfilHighlightTemplate = (perfilBanner && perfilBanner.dataset.highlightTemplate) || 'Highlighting: {profile}';
+            const refineTitle = (perfilBanner && perfilBanner.dataset.refineTitle) || '';
+            const refineStatus = (perfilBanner && perfilBanner.dataset.refineStatus) || '';
             const perfilHint = document.getElementById('perfil-banner-hint');
             const perfilAtivoLabel = document.getElementById('perfil-ativo-label');
 
@@ -524,10 +543,10 @@
                 });
 
                 if (perfilHint) {
-                    perfilHint.textContent = `Perfil ativo: ${PERFIL_LABELS[perfil]}. Clique em outro para alterar.`;
+                    perfilHint.textContent = perfilHintTemplate.replace('{profile}', PERFIL_LABELS[perfil]);
                 }
                 if (perfilAtivoLabel) {
-                    perfilAtivoLabel.textContent = `Destacando: ${PERFIL_LABELS[perfil]}`;
+                    perfilAtivoLabel.textContent = perfilHighlightTemplate.replace('{profile}', PERFIL_LABELS[perfil]);
                     perfilAtivoLabel.classList.remove('hidden');
                 }
 
@@ -550,19 +569,20 @@
             const impactoTexto = document.getElementById('impacto-texto');
             if (btnOuvir && impactoTexto && 'speechSynthesis' in window) {
                 let falando = false;
+                const labelListen = btnOuvir.dataset.labelListen || 'Listen';
+                const labelStop = btnOuvir.dataset.labelStop || 'Stop';
                 btnOuvir.addEventListener('click', () => {
                     if (falando) {
                         window.speechSynthesis.cancel();
                         falando = false;
-                        btnOuvir.textContent = 'Ouvir resumo';
+                        btnOuvir.textContent = labelListen;
                         return;
                     }
                     const utter = new SpeechSynthesisUtterance(impactoTexto.textContent);
-                    utter.lang = 'pt-BR';
+                    utter.lang = document.documentElement.lang || 'pt-BR';
                     utter.rate = 0.95;
-                    utter.onend = () => { falando = false; btnOuvir.innerHTML = btnOuvir.dataset.label || 'Ouvir resumo'; };
-                    btnOuvir.dataset.label = btnOuvir.innerHTML;
-                    btnOuvir.textContent = 'Parar';
+                    utter.onend = () => { falando = false; btnOuvir.textContent = labelListen; };
+                    btnOuvir.textContent = labelStop;
                     falando = true;
                     window.speechSynthesis.speak(utter);
                 });
@@ -593,6 +613,14 @@
                 const link = e.target.closest('a[href^="/noticia/"]');
                 if (!link || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
                 e.preventDefault();
+                let href = link.href;
+                try {
+                    const url = new URL(href, window.location.origin);
+                    if (!url.searchParams.get('lang')) {
+                        url.searchParams.set('lang', '{{ lang }}');
+                        href = url.pathname + url.search;
+                    }
+                } catch (_) { /* ignore */ }
                 const overlay = document.createElement('div');
                 overlay.id = 'analise-refine-overlay';
                 overlay.setAttribute('role', 'status');
@@ -601,12 +629,12 @@
                 overlay.innerHTML = `
                     <div class="refine-card">
                         <div class="refine-ring" aria-hidden="true"></div>
-                        <p class="refine-title">Refinando a análise</p>
-                        <p class="refine-status">Cruzando indicadores do período...</p>
+                        <p class="refine-title">${refineTitle || ''}</p>
+                        <p class="refine-status">${refineStatus || ''}</p>
                         <div class="refine-bar" aria-hidden="true"><span></span></div>
                     </div>`;
                 document.body.appendChild(overlay);
-                window.location.href = link.href;
+                window.location.href = href;
             });
         });
     </script>

@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="{{ html_lang }}" data-locale="{{ number_locale }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Finanças News | Notícias em Tempo Real</title>
+    <title>{{ t('meta_home_title') }}</title>
     
     <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -12,12 +12,16 @@
     <link rel="preconnect" href="https://economia.awesomeapi.com.br">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800;900&display=swap" rel="stylesheet"></noscript>
+    <link rel="alternate" hreflang="pt-BR" href="/?lang=pt">
+    <link rel="alternate" hreflang="en" href="/?lang=en">
+    <link rel="alternate" hreflang="ja" href="/?lang=ja">
     
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Finanças News | O Essencial do Mercado" />
-    <meta property="og:description" content="Análises financeiras com dados de mercado, indicadores do Banco Central e cruzamento de fontes." />
+    <meta property="og:title" content="{{ t('meta_home_og_title') }}" />
+    <meta property="og:description" content="{{ t('meta_home_description') }}" />
     <meta property="og:url" content="{{ request.url }}" />
-    <meta property="og:site_name" content="Finanças News" />
+    <meta property="og:site_name" content="{{ t('site_name') }}" />
+    <meta name="description" content="{{ t('meta_home_description') }}" />
     
     <script src="https://cdn.tailwindcss.com"></script>
     
@@ -139,33 +143,36 @@
     <div id="analise-refine-overlay" role="status" aria-live="polite" aria-busy="false">
         <div class="refine-card">
             <div class="refine-ring" aria-hidden="true"></div>
-            <p class="refine-title">Refinando a análise</p>
-            <p class="refine-status" id="refine-status">Cruzando indicadores do período...</p>
+            <p class="refine-title">{{ t('refining_title') }}</p>
+            <p class="refine-status" id="refine-status">{{ t('refining_status') }}</p>
             <div class="refine-bar" aria-hidden="true"><span></span></div>
         </div>
     </div>
 
-    <div class="ticker-wrapper" aria-label="Cotações do mercado">
-        <div class="ticker-content" id="market-ticker" data-ticker-animated="true">
-            <span class="ticker-item text-slate-500">Carregando mercado...</span>
+    <div class="ticker-wrapper" aria-label="{{ t('ticker_aria') }}">
+        <div class="ticker-content" id="market-ticker" data-ticker-animated="true" data-locale="{{ number_locale }}">
+            <span class="ticker-item text-slate-500">{{ t('loading_market') }}</span>
         </div>
     </div>
 
     <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] transition-colors duration-200 sticky top-0 z-50">
         <div class="container mx-auto px-4 pt-3 pb-2">
             <div class="flex justify-between items-center gap-3">
-                <a href="/" class="text-2xl font-black tracking-tighter shrink-0">
-                    <span class="text-blue-600 dark:text-[#4ade80]">FINANÇAS</span><span class="text-gray-900 dark:text-white">NEWS</span>
+                <a href="/?lang={{ lang }}" class="text-2xl font-black tracking-tighter shrink-0">
+                    <span class="text-blue-600 dark:text-[#4ade80]">{{ t('brand_finance') }}</span><span class="text-gray-900 dark:text-white">{{ t('brand_news') }}</span>
                 </a>
 
                 <div class="flex items-center gap-2 shrink-0">
                     <form action="/" method="GET" class="relative hidden sm:block">
-                        <input type="text" name="q" value="{{ q if q else '' }}" placeholder="Pesquisar..."
+                        <input type="hidden" name="lang" value="{{ lang }}">
+                        <input type="text" name="q" value="{{ q if q else '' }}" placeholder="{{ t('search_placeholder') }}"
                                class="bg-gray-100 dark:bg-[#1e293b] border border-gray-300 dark:border-slate-700 text-gray-800 dark:text-slate-200 text-sm rounded-full px-4 py-1.5 focus:outline-none focus:border-blue-500 dark:focus:border-slate-500 placeholder-gray-500 dark:placeholder-slate-500 w-40 lg:w-48 transition-colors">
                         <button type="submit" class="absolute right-3 top-2 text-gray-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                         </button>
                     </form>
+
+                    {% include "partials/_lang_switcher.html" %}
 
                     <button id="theme-toggle" type="button" class="text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 focus:outline-none rounded-lg text-sm p-2 transition-colors">
                         <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
@@ -179,14 +186,15 @@
             </div>
 
             <div class="filter-scroll flex items-center gap-1 overflow-x-auto mt-2 pb-2 -mx-1 px-1">
-                <a href="/" class="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition {% if not categoria_ativa and not q %}bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-900{% else %}text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800{% endif %}">Últimas</a>
+                <a href="/?lang={{ lang }}" class="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition {% if not categoria_ativa and not q %}bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-900{% else %}text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800{% endif %}">{{ t('latest') }}</a>
                 {% for cat in categorias %}
-                <a href="/?categoria={{ cat | urlencode }}" class="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition {% if categoria_ativa == cat %}bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-900{% else %}text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800{% endif %}">{{ cat }}</a>
+                <a href="/?categoria={{ cat | urlencode }}&lang={{ lang }}" class="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition {% if categoria_ativa == cat %}bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-900{% else %}text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800{% endif %}">{{ tr_tag(cat) }}</a>
                 {% endfor %}
             </div>
 
             <form action="/" method="GET" class="relative sm:hidden mt-1 pb-1">
-                <input type="text" name="q" value="{{ q if q else '' }}" placeholder="Pesquisar..."
+                <input type="hidden" name="lang" value="{{ lang }}">
+                <input type="text" name="q" value="{{ q if q else '' }}" placeholder="{{ t('search_placeholder') }}"
                        class="w-full bg-gray-100 dark:bg-[#1e293b] border border-gray-300 dark:border-slate-700 text-gray-800 dark:text-slate-200 text-sm rounded-full px-4 py-1.5 focus:outline-none focus:border-blue-500 placeholder-gray-500">
                 <button type="submit" class="absolute right-3 top-2 text-gray-500 dark:text-slate-400">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
@@ -196,15 +204,20 @@
     </nav>
 
     <main class="container mx-auto px-4 py-6 md:py-8 flex-grow w-full max-w-7xl">
+        {% if lang != 'pt' %}
+        <div class="mb-4 rounded-lg border border-blue-200 dark:border-slate-700 bg-blue-50 dark:bg-slate-800/60 px-4 py-2 text-xs text-blue-800 dark:text-slate-300">
+            {{ t('content_original_notice', lang=t('content_lang_name')) }}
+        </div>
+        {% endif %}
         {% if q %}
         <div class="mb-6">
-            <h1 class="text-2xl font-bold text-gray-900 dark:text-white transition-colors">Resultados para: <span class="text-blue-600 dark:text-[#4ade80]">"{{ q }}"</span></h1>
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-white transition-colors">{{ t('results_for') }} <span class="text-blue-600 dark:text-[#4ade80]">"{{ q }}"</span></h1>
         </div>
         {% endif %}
 
         {% if request.query_params.get('newsletter') == 'ok' %}
         <div class="mb-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 text-center">
-            <p class="text-green-800 dark:text-green-300 font-semibold text-sm">✅ Inscrição registrada! Em breve você receberá nossas análises.</p>
+            <p class="text-green-800 dark:text-green-300 font-semibold text-sm">{{ t('newsletter_ok') }}</p>
         </div>
         {% endif %}
 
@@ -212,12 +225,12 @@
         <section class="mb-10">
             <div class="flex items-center justify-between mb-4">
                 <div>
-                    <p class="text-xs font-bold uppercase tracking-[0.2em] text-blue-600 dark:text-[#4ade80]">Seleção editorial</p>
+                    <p class="text-xs font-bold uppercase tracking-[0.2em] text-blue-600 dark:text-[#4ade80]">{{ t('editorial_selection') }}</p>
                     <h1 class="text-2xl md:text-3xl font-black text-gray-900 dark:text-white mt-1">
-                        {% if categoria_ativa %}Destaques em {{ categoria_ativa }}{% else %}Destaques do mercado{% endif %}
+                        {% if categoria_ativa %}{{ t('highlights_in', tag=tr_tag(categoria_ativa)) }}{% else %}{{ t('highlights_market') }}{% endif %}
                     </h1>
                 </div>
-                <span class="hidden sm:block text-xs text-gray-500 dark:text-slate-500">Análises com dados e contexto</span>
+                <span class="hidden sm:block text-xs text-gray-500 dark:text-slate-500">{{ t('analyses_with_data') }}</span>
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
@@ -225,9 +238,9 @@
                 <article class="lg:col-span-7 relative min-h-[360px] md:min-h-[430px] rounded-2xl overflow-hidden bg-slate-900 group">
                     <img src="{{ destaque[11] or category_image(destaque[5]) }}" alt="{{ destaque[1] }}" class="absolute inset-0 w-full h-full object-cover object-center transition duration-500 group-hover:scale-105">
                     <div class="featured-gradient absolute inset-0"></div>
-                    <a href="/noticia/{{ destaque[0] }}" class="absolute inset-0 flex flex-col justify-end p-6 md:p-8">
+                    <a href="/noticia/{{ destaque[0] }}?lang={{ lang }}" class="absolute inset-0 flex flex-col justify-end p-6 md:p-8">
                         <div class="flex items-center gap-2 mb-3">
-                            <span class="bg-[#4ade80] text-slate-950 text-[11px] font-black px-2.5 py-1 rounded-full uppercase">{{ destaque[5] }}</span>
+                            <span class="bg-[#4ade80] text-slate-950 text-[11px] font-black px-2.5 py-1 rounded-full uppercase">{{ tr_tag(destaque[5]) }}</span>
                             {% if destaque[8] %}<span class="text-xs text-slate-300">{{ destaque[8] }}</span>{% endif %}
                         </div>
                         <h2 class="text-2xl md:text-4xl font-black text-white leading-tight group-hover:text-[#4ade80] transition">{{ destaque[1] }}</h2>
@@ -238,12 +251,12 @@
                 <div class="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
                     {% for n in news[1:4] %}
                     <article class="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden hover:border-blue-300 dark:hover:border-slate-600 transition">
-                        <a href="/noticia/{{ n[0] }}" class="flex h-full group">
+                        <a href="/noticia/{{ n[0] }}?lang={{ lang }}" class="flex h-full group">
                             <img src="{{ n[11] or category_image(n[5]) }}" alt="{{ n[1] }}" loading="lazy" class="w-28 sm:w-32 lg:w-40 h-full min-h-[7.5rem] object-cover object-center shrink-0">
                             <div class="p-4 flex flex-col justify-center">
-                                <span class="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-[#4ade80]">{{ n[5] }}</span>
+                                <span class="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-[#4ade80]">{{ tr_tag(n[5]) }}</span>
                                 <h3 class="mt-1 text-base md:text-lg font-bold leading-snug text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition line-clamp-3">{{ n[1] }}</h3>
-                                <span class="mt-2 text-xs text-gray-500 dark:text-slate-500">{% if n[8] %}{{ n[8] }}{% else %}Finanças News{% endif %}</span>
+                                <span class="mt-2 text-xs text-gray-500 dark:text-slate-500">{% if n[8] %}{{ n[8] }}{% else %}{{ t('site_name') }}{% endif %}</span>
                             </div>
                         </a>
                     </article>
@@ -259,9 +272,9 @@
                 {% if feed_news %}
                 <div class="flex items-center justify-between border-b-2 border-gray-900 dark:border-white pb-2 mb-5">
                     <h2 class="text-xl font-black text-gray-900 dark:text-white">
-                        {% if q %}Notícias encontradas{% else %}Últimas análises{% endif %}
+                        {% if q %}{{ t('news_found') }}{% else %}{{ t('latest_analyses') }}{% endif %}
                     </h2>
-                    <span class="text-xs text-gray-500 dark:text-slate-500">Mais recentes primeiro</span>
+                    <span class="text-xs text-gray-500 dark:text-slate-500">{{ t('most_recent_first') }}</span>
                 </div>
                 {% endif %}
 
@@ -272,30 +285,30 @@
                 {% if not news %}
                 <div class="bg-white dark:bg-[#1e293b] rounded-xl p-8 md:p-10 text-center border border-gray-200 dark:border-slate-800 shadow-sm transition-colors">
                     <p class="text-gray-700 dark:text-slate-300 text-lg font-semibold">
-                        Nenhuma notícia encontrada{% if categoria_ativa %} em <span class="text-blue-600 dark:text-[#4ade80]">{{ categoria_ativa }}</span>{% elif q %} para <span class="text-blue-600 dark:text-[#4ade80]">"{{ q }}"</span>{% endif %}.
+                        {{ t('no_news') }}{% if categoria_ativa %}{{ t('no_news_in') }}<span class="text-blue-600 dark:text-[#4ade80]">{{ tr_tag(categoria_ativa) }}</span>{% if lang == 'ja' %}）{% endif %}{% elif q %}{{ t('no_news_for') }}<span class="text-blue-600 dark:text-[#4ade80]">"{{ q }}"</span>{% if lang == 'ja' %}）{% endif %}{% endif %}.
                     </p>
                     {% if suggested_news %}
-                    <p class="text-gray-500 dark:text-slate-400 text-sm mt-2">Confira outras análises recentes do portal:</p>
+                    <p class="text-gray-500 dark:text-slate-400 text-sm mt-2">{{ t('see_other') }}</p>
                     {% endif %}
                 </div>
 
                 {% if suggested_news %}
                 <section class="mt-8">
                     <div class="flex items-center justify-between border-b-2 border-gray-900 dark:border-white pb-2 mb-5">
-                        <h2 class="text-xl font-black text-gray-900 dark:text-white">Outras análises para você</h2>
-                        <a href="/" class="text-xs font-semibold text-blue-600 dark:text-[#4ade80] hover:underline">Ver todas</a>
+                        <h2 class="text-xl font-black text-gray-900 dark:text-white">{{ t('other_analyses') }}</h2>
+                        <a href="/?lang={{ lang }}" class="text-xs font-semibold text-blue-600 dark:text-[#4ade80] hover:underline">{{ t('see_all') }}</a>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-0">
                         {% for n in suggested_news %}
                         <article class="relative py-5 border-b border-gray-200 dark:border-slate-800">
-                            <a href="/noticia/{{ n[0] }}" class="group flex gap-4">
+                            <a href="/noticia/{{ n[0] }}?lang={{ lang }}" class="group flex gap-4">
                                 <img src="{{ n[11] or category_image(n[5]) }}" alt="{{ n[1] }}" loading="lazy" class="w-28 h-24 md:w-32 md:h-28 rounded-lg object-cover object-center shrink-0">
                                 <div class="relative min-w-0 flex-1 pr-20 md:pr-24">
                                     <svg class="sparkline" viewBox="0 0 84 38" aria-hidden="true" data-sparkline="market"></svg>
                                     <div class="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider">
-                                        <span class="text-blue-600 dark:text-[#4ade80]">{{ n[5] }}</span>
+                                        <span class="text-blue-600 dark:text-[#4ade80]">{{ tr_tag(n[5]) }}</span>
                                         {% set sent = (n[6] | default('Neutro', true)) | lower %}
-                                        <span class="{% if 'positivo' in sent %}text-green-600{% elif 'negativo' in sent %}text-red-500{% else %}text-gray-400{% endif %}">● {{ n[6] | default('Neutro', true) }}</span>
+                                        <span class="{% if 'positiv' in sent %}text-green-600{% elif 'negativ' in sent %}text-red-500{% else %}text-gray-400{% endif %}">● {{ tr_sentiment(n[6] | default('Neutro', true)) }}</span>
                                     </div>
                                     <h3 class="mt-1 text-base md:text-lg font-bold leading-snug text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition line-clamp-3">{{ n[1] }}</h3>
                                     <p class="mt-2 text-xs text-gray-500 dark:text-slate-500 line-clamp-1">
@@ -318,9 +331,13 @@
                         data-offset="{{ next_offset }}"
                         data-categoria="{{ categoria_ativa or '' }}"
                         data-q="{{ q or '' }}"
+                        data-lang="{{ lang }}"
+                        data-loading-label="{{ t('loading') }}"
+                        data-more-label="{{ t('load_more') }}"
+                        data-retry-label="{{ t('try_again') }}"
                         class="bg-white dark:bg-[#1e293b] text-gray-900 dark:text-white px-6 py-2.5 rounded-full border border-gray-300 dark:border-slate-600 hover:border-blue-500 dark:hover:border-[#4ade80] hover:text-blue-600 dark:hover:text-[#4ade80] transition text-sm font-bold shadow-sm disabled:opacity-60 disabled:cursor-wait"
                     >
-                        Carregar mais
+                        {{ t('load_more') }}
                     </button>
                 </div>
                 {% endif %}
@@ -334,18 +351,7 @@
         </div>
     </main>
 
-    <footer class="border-t border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] text-center py-8 mt-auto transition-colors">
-        <div class="container mx-auto px-4">
-            <p class="text-sm text-gray-500 dark:text-slate-500 font-medium">
-                &copy; 2026 Finanças News. Desenvolvido por <a href="https://www.punkcodesolution.com.br/" target="_blank" rel="noopener noreferrer" class="text-gray-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-slate-100 transition font-semibold">Punk Code Solution</a>.
-            </p>
-            <div class="mt-4 space-x-4 text-xs text-gray-500 dark:text-slate-600 flex justify-center font-semibold">
-                <a href="/quem-somos" class="hover:text-blue-600 dark:hover:text-slate-300 transition">Quem Somos</a>
-                <a href="/termos" class="hover:text-blue-600 dark:hover:text-slate-300 transition">Termos de Uso</a>
-                <a href="/privacidade" class="hover:text-blue-600 dark:hover:text-slate-300 transition">Privacidade</a>
-            </div>
-        </div>
-    </footer>
+    {% include "partials/_footer.html" %}
 
     <script>
         function setInitialThemeIcons() {
@@ -439,13 +445,17 @@
                     const offset = loadMoreBtn.dataset.offset || '0';
                     const categoria = loadMoreBtn.dataset.categoria || '';
                     const q = loadMoreBtn.dataset.q || '';
+                    const lang = loadMoreBtn.dataset.lang || '';
+                    const loadingLabel = loadMoreBtn.dataset.loadingLabel || 'Loading...';
+                    const moreLabel = loadMoreBtn.dataset.moreLabel || 'Load more';
+                    const retryLabel = loadMoreBtn.dataset.retryLabel || 'Try again';
                     const params = new URLSearchParams({ offset });
                     if (categoria) params.set('categoria', categoria);
                     if (q) params.set('q', q);
+                    if (lang) params.set('lang', lang);
 
                     loadMoreBtn.disabled = true;
-                    const label = loadMoreBtn.textContent;
-                    loadMoreBtn.textContent = 'Carregando...';
+                    loadMoreBtn.textContent = loadingLabel;
 
                     try {
                         const res = await fetch(`/api/feed?${params.toString()}`);
@@ -463,14 +473,14 @@
                         if (hasMore) {
                             loadMoreBtn.dataset.offset = nextOffset;
                             loadMoreBtn.disabled = false;
-                            loadMoreBtn.textContent = label || 'Carregar mais';
+                            loadMoreBtn.textContent = moreLabel;
                         } else {
                             const wrapEl = document.getElementById('load-more-wrap');
                             if (wrapEl) wrapEl.remove();
                         }
                     } catch (_) {
                         loadMoreBtn.disabled = false;
-                        loadMoreBtn.textContent = 'Tentar novamente';
+                        loadMoreBtn.textContent = retryLabel;
                     }
                     return;
                 }

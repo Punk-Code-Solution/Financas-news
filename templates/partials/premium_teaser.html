@@ -3,10 +3,10 @@
 <div class="mt-8 relative overflow-hidden rounded-xl border border-indigo-200 dark:border-indigo-800/50 bg-indigo-50 dark:bg-indigo-900/20 p-6">
     <div class="absolute inset-0 backdrop-blur-[2px] bg-gradient-to-t from-indigo-100/80 dark:from-indigo-950/80 to-transparent pointer-events-none"></div>
     <div class="relative">
-        <span class="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-900/50 px-2 py-0.5 rounded">Em breve · Premium</span>
+        <span class="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-900/50 px-2 py-0.5 rounded">{{ t('premium_soon') }}</span>
         <h3 class="text-xl font-black text-gray-900 dark:text-white mt-3 mb-2">{{ monetization.premium_teaser.titulo }}</h3>
         <p class="text-sm text-gray-700 dark:text-slate-300 mb-4">{{ monetization.premium_teaser.descricao }}</p>
-        <p class="text-xs text-indigo-600 dark:text-indigo-300 font-semibold">Inscreva-se na newsletter para ser avisado no lançamento.</p>
+        <p class="text-xs text-indigo-600 dark:text-indigo-300 font-semibold">{{ t('premium_teaser') }}</p>
     </div>
 </div>
 {% endif %}
