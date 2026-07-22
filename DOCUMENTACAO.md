@@ -292,10 +292,13 @@ TURSO_AUTH_TOKEN=         # Token de autenticação Turso
 ```env
 GEMINI_MODELOS=gemini-3.1-flash-lite-preview,gemini-2.5-flash-lite,gemini-2.5-flash
 GEMINI_IMAGE_MODELOS=gemini-2.5-flash-image,gemini-3.1-flash-image-preview,gemini-3.1-flash-lite-image-preview
+# Produção (Render): sempre Gemini (já forçado no código quando RENDER=true).
+# Local: gemini | cursor | auto (Cursor → fallback Gemini).
 IMAGE_PROVIDER=gemini
 ARTICLE_IMAGES_DIR=/var/data/article_images
 ```
 
+> No Render, `IMAGE_PROVIDER` já está como `gemini` no `render.yaml`. Mesmo se estiver `auto` ou `cursor`, o código força Gemini porque o Cursor SDK não roda lá.
 ### Monetização (opcionais — só exibe se preenchidas)
 
 ```env
