@@ -1,13 +1,29 @@
-{# Subscribe with Google / Google News — Reader Revenue Manager (acesso aberto) #}
-<script async type="application/javascript"
-        src="https://news.google.com/swg/js/v1/swg-basic.js"></script>
+{# Subscribe with Google — carrega após idle para não bloquear LCP #}
 <script>
-  (self.SWG_BASIC = self.SWG_BASIC || []).push( basicSubscriptions => {
-    basicSubscriptions.init({
-      type: "NewsArticle",
-      isPartOfType: ["Product"],
-      isPartOfProductId: "CAowr6jMDA:openaccess",
-      clientOptions: { theme: "light", lang: "pt-BR" },
+(function () {
+  function loadSwg() {
+    if (window.__swgBasicLoaded) return;
+    window.__swgBasicLoaded = true;
+    (self.SWG_BASIC = self.SWG_BASIC || []).push(function (basicSubscriptions) {
+      basicSubscriptions.init({
+        type: "NewsArticle",
+        isPartOfType: ["Product"],
+        isPartOfProductId: "CAowr6jMDA:openaccess",
+        clientOptions: { theme: "light", lang: "pt-BR" },
+      });
     });
-  });
+    var s = document.createElement("script");
+    s.async = true;
+    s.type = "application/javascript";
+    s.src = "https://news.google.com/swg/js/v1/swg-basic.js";
+    document.head.appendChild(s);
+  }
+  if ("requestIdleCallback" in window) {
+    requestIdleCallback(loadSwg, { timeout: 4000 });
+  } else {
+    window.addEventListener("load", function () {
+      setTimeout(loadSwg, 1500);
+    });
+  }
+})();
 </script>

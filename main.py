@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 from fastapi import FastAPI, Request, Response, HTTPException, Form
 from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, RedirectResponse
+from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 import uvicorn
 from dotenv import load_dotenv
 
@@ -26,6 +26,17 @@ from i18n import COOKIE_MAX_AGE, COOKIE_NAME, build_i18n_context, resolve_lang
 
 load_dotenv()
 
+
+class CachedStaticFiles(StarletteStaticFiles):
+    """StaticFiles com Cache-Control longo para assets versionados."""
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            response.headers["Cache-Control"] = "public, max-age=604800, stale-while-revalidate=86400"
+        return response
+
+
 app = FastAPI()
 
 ARTICLE_IMAGES_DIR = os.getenv("ARTICLE_IMAGES_DIR", "static/images/articles")
@@ -33,10 +44,28 @@ os.makedirs(ARTICLE_IMAGES_DIR, exist_ok=True)
 os.makedirs("static/images/articles", exist_ok=True)
 
 if os.path.exists("static"):
-    app.mount("/static", StaticFiles(directory="static"), name="static")
+    app.mount("/static", CachedStaticFiles(directory="static"), name="static")
 if os.path.isdir(ARTICLE_IMAGES_DIR):
-    app.mount("/media/articles", StaticFiles(directory=ARTICLE_IMAGES_DIR), name="article_images")
+    app.mount("/media/articles", CachedStaticFiles(directory=ARTICLE_IMAGES_DIR), name="article_images")
 templates = Jinja2Templates(directory="templates")
+
+
+@app.middleware("http")
+async def security_and_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    if request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https":
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
+    path = request.url.path or ""
+    if path.startswith("/media/default/") and response.status_code == 200:
+        response.headers["Cache-Control"] = "public, max-age=604800, stale-while-revalidate=86400"
+    return response
+
 
 CATEGORIAS = core.VALID_TAGS
 

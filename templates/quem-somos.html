@@ -8,9 +8,7 @@
     <title>{{ t('about_meta_title') }}</title>
     <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800;900&display=swap" rel="stylesheet">
-    <link rel="alternate" hreflang="pt-BR" href="/quem-somos?lang=pt">
-    <link rel="alternate" hreflang="en" href="/quem-somos?lang=en">
-    <link rel="alternate" hreflang="ja" href="/quem-somos?lang=ja">
+    {% include "partials/_hreflang.html" %}
     {% include "partials/_styles.html" %}
     <script>
         if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {

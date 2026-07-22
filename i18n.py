@@ -1,6 +1,7 @@
 """Internacionalização (pt / en / ja) do Finanças News."""
 from __future__ import annotations
 
+import os
 from typing import Any, Callable
 from urllib.parse import urlencode
 
@@ -140,6 +141,7 @@ UI: dict[str, dict[str, str]] = {
         "terms_eyebrow": "Condições de uso",
         "terms_updated": "Última atualização: 17 de julho de 2026",
         "not_found": "Notícia não encontrada",
+        "theme_toggle": "Alternar tema claro ou escuro",
         "try_again": "Tentar novamente",
         "customize_reading": "Personalize sua leitura",
         "customize_hint": "Escolha seu perfil para destacar orientações relevantes.",
@@ -291,6 +293,7 @@ UI: dict[str, dict[str, str]] = {
         "terms_eyebrow": "Terms of use",
         "terms_updated": "Last updated: July 17, 2026",
         "not_found": "Story not found",
+        "theme_toggle": "Toggle light or dark theme",
         "try_again": "Try again",
         "customize_reading": "Personalize your reading",
         "customize_hint": "Choose your profile to highlight relevant guidance.",
@@ -442,6 +445,7 @@ UI: dict[str, dict[str, str]] = {
         "terms_eyebrow": "利用条件",
         "terms_updated": "最終更新: 2026年7月17日",
         "not_found": "記事が見つかりません",
+        "theme_toggle": "ライト／ダークテーマを切り替え",
         "try_again": "再試行",
         "customize_reading": "読み方をカスタマイズ",
         "customize_hint": "プロフィールを選ぶと、関連する指針が強調されます。",
@@ -642,11 +646,15 @@ def lang_switch_url(request: Request, target_lang: str) -> str:
 def build_i18n_context(request: Request) -> dict[str, Any]:
     lang = resolve_lang(request)
     t: Callable[..., str] = lambda key, **kwargs: translate(lang, key, **kwargs)
+    site_origin = os.getenv("SITE_ORIGIN", "https://financas-news.net.br").rstrip("/")
+    path = request.url.path or "/"
 
     return {
         "lang": lang,
         "html_lang": HTML_LANG.get(lang, "pt-BR"),
         "number_locale": LOCALE_FOR_NUMBERS.get(lang, "pt-BR"),
+        "site_origin": site_origin,
+        "canonical_path": path,
         "t": t,
         "tr_tag": lambda tag: translate_tag(lang, tag),
         "tr_sentiment": lambda s: translate_sentiment(lang, s),
