@@ -3,15 +3,19 @@ import re
 from typing import Any
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
+# Temas educativos apontam aos guias evergreen; demais seguem filtro por categoria.
 INTERNAL_KEYWORDS: dict[str, str] = {
-    "Selic": "/?categoria=Juros",
-    "IPCA": "/?categoria=Inflação",
+    "Selic": "/artigo/selic",
+    "IPCA": "/artigo/ipca",
+    "Renda fixa": "/artigo/renda-fixa",
+    "Câmbio": "/artigo/cambio",
+    "Cambio": "/artigo/cambio",
     "Bitcoin": "/?categoria=Cripto",
     "BTC": "/?categoria=Cripto",
     "Cripto": "/?categoria=Cripto",
-    "Dólar": "/?categoria=Dólar",
-    "Dolar": "/?categoria=Dólar",
-    "USD": "/?categoria=Dólar",
+    "Dólar": "/artigo/cambio",
+    "Dolar": "/artigo/cambio",
+    "USD": "/artigo/cambio",
     "Bolsa": "/?categoria=Ações",
     "B3": "/?categoria=Ações",
     "Ações": "/?categoria=Ações",
@@ -21,8 +25,7 @@ INTERNAL_KEYWORDS: dict[str, str] = {
     "Imóveis": "/?categoria=Imóveis",
     "Fintech": "/?categoria=Fintech",
     "Commodities": "/?categoria=Commodities",
-    "Renda fixa": "/?categoria=Juros",
-    "Tesouro": "/?categoria=Juros",
+    "Tesouro": "/artigo/renda-fixa",
 }
 
 SOURCE_HOST_NAMES: dict[str, str] = {
@@ -57,6 +60,7 @@ SOURCE_HOMEPAGES: dict[str, str] = {
     "NeoFeed": "https://neofeed.com.br/",
     "Valor Econômico": "https://valor.globo.com/",
     "Livecoins": "https://livecoins.com.br/",
+    "Finanças News": "https://financas-news.net.br/quem-somos",
 }
 
 DATA_SOURCE_LINKS = [
@@ -464,10 +468,10 @@ def build_related_entities(dados_mercado: dict[str, Any], tag: str) -> list[dict
         if tag in ("Cripto",) and kw in ("Bitcoin", "BTC", "Cripto"):
             entities.append({"nome": kw, "tipo": "tema", "url": url})
             seen.add(kw.lower())
-        elif tag in ("Dólar",) and kw in ("Dólar", "USD"):
+        elif tag in ("Economia", "Inflação", "Juros") and kw in ("Selic", "IPCA", "Renda fixa", "Inflação", "Juros"):
             entities.append({"nome": kw, "tipo": "tema", "url": url})
             seen.add(kw.lower())
-        elif tag in ("Economia", "Inflação", "Juros") and kw in ("Selic", "IPCA", "Inflação", "Juros"):
+        elif tag in ("Dólar",) and kw in ("Dólar", "USD", "Câmbio"):
             entities.append({"nome": kw, "tipo": "tema", "url": url})
             seen.add(kw.lower())
 

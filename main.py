@@ -15,6 +15,11 @@ from dotenv import load_dotenv
 
 import core
 from db import QueryResult, get_db, ensure_schema
+from educational_guides import (
+    ensure_educational_guides,
+    find_guide_noticia_id,
+    get_guide_by_slug,
+)
 from monetization import get_monetization_config, get_contextual_affiliate
 from article_enrichment import (
     build_article_enrichment,
@@ -45,7 +50,12 @@ class CachedStaticFiles(StarletteStaticFiles):
 async def _lifespan(_app: FastAPI):
     def _boot():
         try:
-            ensure_schema(get_db())
+            client = get_db()
+            ensure_schema(client)
+            n = ensure_educational_guides(client)
+            if n:
+                print(f"Guias educativos sincronizados: {n}")
+                _invalidate_home_cache()
         except Exception as exc:
             print(f"Aviso: schema/DB no startup: {exc}")
         try:
@@ -328,15 +338,8 @@ def api_feed(
     return response
 
 
-@app.get("/noticia/{noticia_id}", response_class=HTMLResponse)
-def ver_noticia(request: Request, noticia_id: int):
+def _render_noticia_page(request: Request, noticia_id: int, noticia: tuple | list):
     client = get_db()
-    result = client.execute(NEWS_SELECT + " WHERE id = ?", [noticia_id])
-
-    if not result.rows:
-        raise HTTPException(status_code=404, detail="Notícia não encontrada")
-
-    noticia = result.rows[0]
     dados_mercado = {}
     if len(noticia) > 9 and noticia[9]:
         try:
@@ -383,6 +386,40 @@ def ver_noticia(request: Request, noticia_id: int):
     )
     response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=60"
     return response
+
+
+@app.get("/noticia/{noticia_id}", response_class=HTMLResponse)
+def ver_noticia(request: Request, noticia_id: int):
+    client = get_db()
+    result = client.execute(NEWS_SELECT + " WHERE id = ?", [noticia_id])
+
+    if not result.rows:
+        raise HTTPException(status_code=404, detail="Notícia não encontrada")
+
+    return _render_noticia_page(request, noticia_id, result.rows[0])
+
+
+@app.get("/artigo/{slug}", response_class=HTMLResponse)
+def ver_artigo_educativo(request: Request, slug: str):
+    """Guias evergreen no mesmo molde de /noticia/{id}, com URL estável para hiperlinks."""
+    if not get_guide_by_slug(slug):
+        raise HTTPException(status_code=404, detail="Artigo não encontrado")
+
+    client = get_db()
+    try:
+        ensure_educational_guides(client)
+    except Exception:
+        pass
+
+    noticia_id = find_guide_noticia_id(client, slug)
+    if not noticia_id:
+        raise HTTPException(status_code=404, detail="Artigo não encontrado")
+
+    result = client.execute(NEWS_SELECT + " WHERE id = ?", [noticia_id])
+    if not result.rows:
+        raise HTTPException(status_code=404, detail="Artigo não encontrado")
+
+    return _render_noticia_page(request, noticia_id, result.rows[0])
 
 @app.post("/api/newsletter")
 async def newsletter_signup(email: str = Form(...)):
@@ -488,6 +525,8 @@ def get_robots_txt():
 
 @app.get("/sitemap.xml", response_class=Response)
 def get_sitemap():
+    from educational_guides import EDUCATIONAL_GUIDES
+
     client = get_db()
     result = client.execute('SELECT id FROM news ORDER BY id DESC LIMIT 500')
     noticias = result.rows
@@ -497,18 +536,20 @@ def get_sitemap():
         "https://financas-news.net.br/",
         "https://financas-news.net.br/quem-somos",
         "https://financas-news.net.br/privacidade",
-        "https://financas-news.net.br/termos"
+        "https://financas-news.net.br/termos",
     ]
-    
+    for guide in EDUCATIONAL_GUIDES:
+        urls.append(f"https://financas-news.net.br/artigo/{guide['slug']}")
+
     xml_content = '<?xml version="1.0" encoding="UTF-8"?>\n'
     xml_content += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-    
+
     for url in urls:
         xml_content += f'  <url><loc>{url}</loc><changefreq>daily</changefreq><priority>0.8</priority></url>\n'
-    
+
     for n in noticias:
         xml_content += f'  <url><loc>https://financas-news.net.br/noticia/{n[0]}</loc><changefreq>weekly</changefreq><priority>0.6</priority></url>\n'
-        
+
     xml_content += '</urlset>'
     return Response(content=xml_content, media_type="application/xml")
 

@@ -284,6 +284,7 @@ def run() -> int:
 
         linked = link_text_html("A Selic e o Bitcoin sobem.", [])
         check("link_text_html gera âncoras", "<a href=" in linked and "Selic" in linked)
+        check("link_text_html Selic → guia", 'href="/artigo/selic"' in linked)
         check("link_text_html sem nest", "/?categoria=<a" not in linked)
 
     print()
