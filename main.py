@@ -3,6 +3,7 @@ import json
 import threading
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from fastapi import FastAPI, Request, Response, HTTPException, Form
 from fastapi.templating import Jinja2Templates
@@ -399,6 +400,17 @@ async def termos(request: Request):
 def get_ads_txt():
     content = "google.com, pub-3623062544438213, DIRECT, f08c47fec0942fa0"
     return Response(content=content, media_type="text/plain")
+
+
+@app.get("/google57b1aa23d9e87d82.html", response_class=Response)
+def get_google_site_verification():
+    """Arquivo HTML de verificação do Google Search Console."""
+    path = Path(__file__).resolve().parent / "google57b1aa23d9e87d82.html"
+    if path.is_file():
+        content = path.read_text(encoding="utf-8")
+    else:
+        content = "google-site-verification: google57b1aa23d9e87d82.html"
+    return Response(content=content, media_type="text/html; charset=utf-8")
 
 
 @app.get("/media/default/{slug}.svg", response_class=Response)
