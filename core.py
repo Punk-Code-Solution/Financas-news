@@ -1028,7 +1028,23 @@ def _is_image_model_unavailable(exc: Exception) -> bool:
 
 
 def get_image_provider() -> str:
-    raw = os.getenv("IMAGE_PROVIDER", "auto").strip().lower()
+    """Resolve o provedor de imagem.
+
+    Em produção (Render), sempre usa Gemini — o Cursor SDK só funciona localmente.
+    Localmente, o padrão é ``auto`` (Cursor se houver chave, senão Gemini).
+    """
+    raw = os.getenv("IMAGE_PROVIDER", "").strip().lower()
+    on_render = bool(os.getenv("RENDER"))
+
+    if raw not in {"cursor", "gemini", "auto", ""}:
+        raw = ""
+
+    if on_render:
+        # Cursor não roda no Render; auto/cursor/vazio → gemini.
+        if raw in {"", "auto", "cursor"}:
+            return "gemini"
+        return raw
+
     if raw in {"cursor", "gemini", "auto"}:
         return raw
     return "auto"

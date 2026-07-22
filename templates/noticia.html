@@ -104,6 +104,9 @@
             line-height: 1.85;
             color: #1e293b;
             font-weight: 450;
+            text-align: justify;
+            text-justify: inter-word;
+            hyphens: auto;
         }
         .dark .analise-completa .analise-p { color: #e2e8f0; }
         .analise-flow { overflow: hidden; }
@@ -179,17 +182,19 @@
         <div class="ticker-content" id="market-ticker"><span class="text-slate-500">{{ t('quotes_realtime') }}</span></div>
     </div>
 
-    <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] transition-colors duration-200 pt-4 pb-4 sticky top-0 z-50">
-        <div class="container mx-auto px-4 flex justify-between items-center">
-            <a href="/?lang={{ lang }}" class="text-2xl font-black tracking-tighter">
+    <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] transition-colors duration-200 pt-3 pb-3 sticky top-0 z-50">
+        <div class="container mx-auto px-4 flex flex-wrap items-center gap-x-2 gap-y-2">
+            <a href="/?lang={{ lang }}" class="text-xl sm:text-2xl font-black tracking-tighter shrink-0">
                 <span class="text-blue-600 dark:text-[#4ade80]">{{ t('brand_finance') }}</span><span class="text-gray-900 dark:text-white">{{ t('brand_news') }}</span>
             </a>
-            <div class="flex items-center gap-4">
+            <div class="order-3 w-full flex justify-end sm:order-2 sm:w-auto sm:ml-auto">
                 {% include "partials/_lang_switcher.html" %}
+            </div>
+            <div class="order-2 ml-auto flex items-center gap-2 shrink-0 sm:order-3 sm:ml-0">
                 <a href="/?lang={{ lang }}" class="text-sm font-semibold text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white flex items-center transition-colors">
                     &larr; <span class="ml-1">{{ t('back') }}</span>
                 </a>
-                <button id="theme-toggle" class="p-2 rounded-lg text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors">
+                <button id="theme-toggle" class="p-2 rounded-lg text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors" aria-label="Tema">
                     <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
                     <svg id="theme-toggle-light-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path></svg>
                 </button>

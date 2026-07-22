@@ -1,9 +1,9 @@
 {# Seletor de idioma — usa lang_urls do contexto i18n #}
-<div class="flex items-center gap-1" role="navigation" aria-label="{{ t('lang_label') }}">
+<div class="inline-flex items-center gap-0.5 sm:gap-1 shrink-0" role="navigation" aria-label="{{ t('lang_label') }}">
     {% for code in supported_langs %}
     <a href="{{ lang_urls[code] }}"
        hreflang="{{ code }}"
-       class="px-2 py-1 rounded-md text-[11px] font-bold tracking-wide transition
+       class="px-1.5 sm:px-2 py-1 rounded-md text-[10px] sm:text-[11px] font-bold tracking-wide transition min-w-[1.75rem] text-center
        {% if lang == code %}bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-900{% else %}text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800{% endif %}"
        {% if lang == code %}aria-current="true"{% endif %}>
         {{ t('lang_' ~ code) }}
