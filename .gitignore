@@ -7,3 +7,4 @@ tools/tailwindcss.exe
 tools/tailwindcss
 *.db
 *.env
+static/images/articles/*
