@@ -490,27 +490,91 @@ def build_related_entities(dados_mercado: dict[str, Any], tag: str) -> list[dict
 
 
 def build_market_stats(dados_mercado: dict[str, Any], tag: str = "Economia") -> dict[str, Any]:
-    cotacoes: list[dict[str, Any]] = []
-    cot_data = dados_mercado.get("cotacoes") or {}
+    """Painel consistente: Selic + IPCA + dólar + 1–2 cotações da tag, com tendência 7d/30d."""
+    import core
 
-    for label, info in cot_data.items():
-        if label in ("coletado_em", "erro_cotacoes") or not isinstance(info, dict):
+    cot_data = dados_mercado.get("cotacoes") or {}
+    bcb = dados_mercado.get("bcb") or {}
+    historico = dados_mercado.get("historico") or {}
+
+    tag_extra_quotes: dict[str, list[str]] = {
+        "Cripto": ["Bitcoin (BTC/BRL)"],
+        "Ações": ["Bitcoin (BTC/BRL)", "Euro (EUR/BRL)"],
+        "Commodities": ["Euro (EUR/BRL)", "Bitcoin (BTC/BRL)"],
+        "Dólar": ["Euro (EUR/BRL)"],
+        "Fintech": ["Bitcoin (BTC/BRL)"],
+        "Imóveis": ["Euro (EUR/BRL)"],
+        "Juros": ["Euro (EUR/BRL)"],
+        "Inflação": ["Euro (EUR/BRL)"],
+        "Política Econômica": ["Euro (EUR/BRL)"],
+        "Economia": ["Euro (EUR/BRL)"],
+    }
+
+    preferred_quote_labels = ["Dólar (USD/BRL)"]
+    for label in tag_extra_quotes.get(tag, ["Euro (EUR/BRL)"]):
+        if label not in preferred_quote_labels:
+            preferred_quote_labels.append(label)
+    preferred_quote_labels = preferred_quote_labels[:3]  # dólar + até 2 extras
+
+    def _attach_series(label: str, item: dict[str, Any]) -> dict[str, Any]:
+        series = core._find_hist_series(historico, label, label.split("(")[0].strip())
+        item["var_7d"] = core._series_delta(series, 7)
+        item["var_30d"] = core._series_delta(series, 30)
+        return item
+
+    cotacoes: list[dict[str, Any]] = []
+    seen_quotes: set[str] = set()
+    for label in preferred_quote_labels:
+        info = cot_data.get(label)
+        if not isinstance(info, dict):
             continue
         pct = _parse_pct(info.get("variacao_24h", ""))
         cotacoes.append(
-            {
-                "label": label,
-                "valor": info.get("cotacao", "n/d"),
-                "variacao": info.get("variacao_24h", "n/d"),
-                "maxima": info.get("maxima"),
-                "minima": info.get("minima"),
-                "positivo": pct is None or pct >= 0,
-                "bar": min(abs(pct or 0) * 12, 100) if pct is not None else 35,
-            }
+            _attach_series(
+                label,
+                {
+                    "label": label,
+                    "valor": info.get("cotacao", "n/d"),
+                    "variacao": info.get("variacao_24h", "n/d"),
+                    "maxima": info.get("maxima"),
+                    "minima": info.get("minima"),
+                    "positivo": pct is None or pct >= 0,
+                    "bar": min(abs(pct or 0) * 12, 100) if pct is not None else 35,
+                    "nucleo": label == "Dólar (USD/BRL)",
+                },
+            )
         )
+        seen_quotes.add(label)
 
+    # Se faltar cotação preferida, completa com o que houver (máx. 3 no total).
+    if len(cotacoes) < 2:
+        for label, info in cot_data.items():
+            if label in ("coletado_em", "erro_cotacoes") or label in seen_quotes:
+                continue
+            if not isinstance(info, dict):
+                continue
+            pct = _parse_pct(info.get("variacao_24h", ""))
+            cotacoes.append(
+                _attach_series(
+                    label,
+                    {
+                        "label": label,
+                        "valor": info.get("cotacao", "n/d"),
+                        "variacao": info.get("variacao_24h", "n/d"),
+                        "maxima": info.get("maxima"),
+                        "minima": info.get("minima"),
+                        "positivo": pct is None or pct >= 0,
+                        "bar": min(abs(pct or 0) * 12, 100) if pct is not None else 35,
+                        "nucleo": False,
+                    },
+                )
+            )
+            if len(cotacoes) >= 3:
+                break
+
+    # Núcleo BCB sempre: Selic, IPCA, Dólar comercial (ordem fixa).
+    core_hints = ("selic", "ipca", "dolar")
     indicadores: list[dict[str, Any]] = []
-    bcb = dados_mercado.get("bcb") or {}
     numeric_values = [
         n
         for info in bcb.values()
@@ -519,18 +583,52 @@ def build_market_stats(dados_mercado: dict[str, Any], tag: str = "Economia") -> 
         if n is not None
     ]
     max_val = max(numeric_values) if numeric_values else 1
+    used_bcb: set[str] = set()
+
+    for hint in core_hints:
+        match = next(
+            (
+                (label, info)
+                for label, info in bcb.items()
+                if isinstance(info, dict) and hint in core._fold_label(label)
+            ),
+            None,
+        )
+        if not match:
+            continue
+        label, info = match
+        if label in used_bcb:
+            continue
+        used_bcb.add(label)
+        num = _parse_br_number(str(info.get("valor", "")))
+        indicadores.append(
+            _attach_series(
+                label,
+                {
+                    "label": label,
+                    "valor": info.get("valor", "n/d"),
+                    "data": info.get("data", ""),
+                    "bar": int((num / max_val) * 100) if num is not None else 45,
+                    "nucleo": True,
+                },
+            )
+        )
 
     for label, info in bcb.items():
-        if not isinstance(info, dict):
+        if label in used_bcb or not isinstance(info, dict):
             continue
         num = _parse_br_number(str(info.get("valor", "")))
         indicadores.append(
-            {
-                "label": label,
-                "valor": info.get("valor", "n/d"),
-                "data": info.get("data", ""),
-                "bar": int((num / max_val) * 100) if num is not None else 45,
-            }
+            _attach_series(
+                label,
+                {
+                    "label": label,
+                    "valor": info.get("valor", "n/d"),
+                    "data": info.get("data", ""),
+                    "bar": int((num / max_val) * 100) if num is not None else 45,
+                    "nucleo": False,
+                },
+            )
         )
 
     pontos = dados_mercado.get("pontos_chave") or []
@@ -555,9 +653,6 @@ def build_market_stats(dados_mercado: dict[str, Any], tag: str = "Economia") -> 
                 },
             ]
 
-    # Artigos antigos podem ter salvo apenas números ("14.25", "4.64",
-    # "5.0975"). Relaciona-os aos indicadores coletados para não exibir
-    # valores sem contexto ao leitor.
     indicator_context = {
         "selic": {
             "nome": "Taxa Selic",
@@ -596,7 +691,6 @@ def build_market_stats(dados_mercado: dict[str, Any], tag: str = "Economia") -> 
             continue
         titulo = str(ponto.get("titulo", "")).strip()
         numeric = _parse_br_number(titulo)
-        # Só interpreta como número isolado quando não há palavras explicativas.
         if numeric is None or re.search(r"[A-Za-zÀ-ÿ]", titulo):
             continue
         match = next(
@@ -618,11 +712,18 @@ def build_market_stats(dados_mercado: dict[str, Any], tag: str = "Economia") -> 
         ponto["descricao"] = context["descricao"]
         ponto["categoria"] = context["categoria"]
 
+    coletado = (
+        cot_data.get("coletado_em")
+        or historico.get("coletado_em")
+        or dados_mercado.get("coletado_em")
+    )
+
     return {
-        "coletado_em": cot_data.get("coletado_em"),
+        "coletado_em": coletado,
         "cotacoes": cotacoes,
         "indicadores": indicadores,
         "pontos_chave": pontos,
+        "painel_nucleo": True,
     }
 
 

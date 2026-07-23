@@ -127,13 +127,15 @@ Cripto · Economia · Dólar · Ações · Juros · Inflação · Imóveis · Fi
 ### Formato de cada artigo publicado
 
 - **Título** editorial gerado pela IA
-- **Análise completa** (6 parágrafos: cenário, dados, cruzamento, opinião, projeção, guia prático)
+- **Análise completa** (6 parágrafos: cada um amarrado a pelo menos 1 número citado)
+- **Painel núcleo** — sempre Selic, IPCA 12 meses, dólar + 1–2 cotações da categoria, com data de coleta e tendência 7d/30d
 - **Panorama de mercado** (box com números citados)
 - **Impacto no bolso** (3 frases diretas)
 - **Sentimento** (Positivo / Negativo / Neutro)
-- **Imagem de capa** (quando a API de imagem responde)
+- **Imagem de capa** (quando a API de imagem responde) — OG/Twitter `summary_large_image` para Discover
 - **Link para fonte original** (transparência editorial)
 - **Data e veículo de origem**
+- **Guias núcleo** (`/artigo/selic|ipca|cambio|renda-fixa`) — conjunto fechado; números BCB sincronizados no startup
 
 ---
 
@@ -199,7 +201,7 @@ Imagens salvas em disco (`ARTICLE_IMAGES_DIR`) com URL pública `/media/articles
 | Imagem | 1 requisição | conforme cota do modelo |
 | **Total por rodada (~28 artigos)** | ~56 chamadas | monitorar no painel Google AI |
 
-> **Atenção:** a mesma `GOOGLE_API_KEY` pode ser compartilhada com outros projetos (ex.: automação de cortes). Cotas somam no mesmo projeto Google.
+> **Atenção:** cotas somam por projeto Google Cloud / AI Studio. Use `GOOGLE_API_KEY_2` (outro projeto/conta) para fallback de imagem quando a chave 1 esgotar.
 
 ---
 
@@ -293,7 +295,9 @@ Armazena e-mails capturados localmente quando a newsletter está ativa.
 ### Obrigatórias (produção)
 
 ```env
-GOOGLE_API_KEY=           # ou GEMINI_API_KEY
+GOOGLE_API_KEY=           # ou GEMINI_API_KEY (chave 1)
+GOOGLE_API_KEY_2=         # opcional: segunda chave se a 1ª esgotar cota de imagem
+# GOOGLE_API_KEYS=key1,key2   # alternativa: lista de chaves
 TURSO_DATABASE_URL=       # URL libsql:// do Turso
 TURSO_AUTH_TOKEN=         # Token de autenticação Turso
 ```

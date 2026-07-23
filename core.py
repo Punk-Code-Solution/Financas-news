@@ -112,10 +112,13 @@ DEFAULT_GEMINI_IMAGE_MODELOS = [
 ]
 
 _exhausted_models: set[str] = set()
-# Cota de imagem: limpo a cada varredura (a cota diária reseta; o processo fica dias no ar).
-_exhausted_image_models: set[str] = set()
+# Cota de imagem por chave API (id curto → modelos esgotados nesta varredura).
+_exhausted_image_models_by_key: dict[str, set[str]] = {}
 # Modelos de imagem removidos permanentemente (404/descontinuados) até reiniciar.
 _unavailable_image_models: set[str] = set()
+# Cache de clients Gemini por fingerprint da chave.
+_genai_clients_by_key: dict[str, Any] = {}
+_genai_clients_lock = threading.Lock()
 
 
 def _configure_ssl_certs() -> None:
@@ -129,30 +132,94 @@ def _configure_ssl_certs() -> None:
         pass
 
 
-def _create_genai_client():
-    _configure_ssl_certs()
-    api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-    if not api_key:
+def _gemini_http_options():
+    if os.getenv("GEMINI_SSL_VERIFY", "true").lower() not in ("0", "false", "no"):
         return None
-
-    http_options = None
-    if os.getenv("GEMINI_SSL_VERIFY", "true").lower() in ("0", "false", "no"):
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        http_options = types.HttpOptions(
-            client_args={"verify": ctx},
-            async_client_args={"verify": ctx},
-        )
-
-    return genai.Client(api_key=api_key.strip(), http_options=http_options)
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return types.HttpOptions(
+        client_args={"verify": ctx},
+        async_client_args={"verify": ctx},
+    )
 
 
-if not (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")):
+def get_gemini_api_keys() -> list[str]:
+    """Chaves Gemini em ordem de prioridade (primária → secundária → lista).
+
+    Variáveis aceitas:
+    - GOOGLE_API_KEY / GEMINI_API_KEY (chave 1)
+    - GOOGLE_API_KEY_2 / GEMINI_API_KEY_2 (chave 2)
+    - GOOGLE_API_KEYS / GEMINI_API_KEYS (lista separada por vírgula)
+    """
+    keys: list[str] = []
+    seen: set[str] = set()
+
+    def _add(raw: str | None) -> None:
+        if not raw:
+            return
+        for part in str(raw).split(","):
+            key = part.strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            keys.append(key)
+
+    _add(os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
+    _add(os.getenv("GOOGLE_API_KEY_2") or os.getenv("GEMINI_API_KEY_2"))
+    _add(os.getenv("GOOGLE_API_KEYS") or os.getenv("GEMINI_API_KEYS"))
+    return keys
+
+
+def _api_key_id(api_key: str) -> str:
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:8]
+
+
+def _create_genai_client(api_key: str | None = None):
+    _configure_ssl_certs()
+    key = (api_key or "").strip()
+    if not key:
+        keys = get_gemini_api_keys()
+        if not keys:
+            return None
+        key = keys[0]
+
+    return genai.Client(api_key=key, http_options=_gemini_http_options())
+
+
+def get_genai_client(api_key: str | None = None):
+    """Reutiliza client por chave (evita recriar a cada imagem)."""
+    keys = get_gemini_api_keys()
+    if not keys and not api_key:
+        return None
+    key = (api_key or keys[0]).strip()
+    key_id = _api_key_id(key)
+    cached = _genai_clients_by_key.get(key_id)
+    if cached is not None:
+        return cached
+    with _genai_clients_lock:
+        cached = _genai_clients_by_key.get(key_id)
+        if cached is not None:
+            return cached
+        created = _create_genai_client(key)
+        if created is not None:
+            _genai_clients_by_key[key_id] = created
+        return created
+
+
+def _reset_image_quota_state() -> None:
+    _exhausted_image_models_by_key.clear()
+    _unavailable_image_models.clear()
+
+
+_gemini_keys = get_gemini_api_keys()
+if not _gemini_keys:
     print("ERRO CRITICO: Chave API nao encontrada no .env")
     client = None
 else:
-    client = _create_genai_client()
+    client = get_genai_client(_gemini_keys[0])
+    if len(_gemini_keys) > 1:
+        print(f"Gemini: {len(_gemini_keys)} chaves API carregadas (fallback de cota ativo).")
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -556,6 +623,10 @@ def warmup_market_caches() -> None:
     except Exception:
         pass
     try:
+        fetch_market_historical()
+    except Exception:
+        pass
+    try:
         fetch_sparkline_data(blocking=True)
     except Exception:
         pass
@@ -891,25 +962,131 @@ def resolve_article_market_data(
     return market_data
 
 
-def format_data_context(market, bcb, db_context):
-    """Monta bloco de dados para injetar no prompt da IA."""
+def _fold_label(text: str) -> str:
+    """Remove acentos para casar 'Dólar'/'dolar' e 'Inflação'/'inflacao'."""
+    import unicodedata
+
+    norm = unicodedata.normalize("NFD", str(text).lower())
+    return "".join(c for c in norm if unicodedata.category(c) != "Mn")
+
+
+def _series_delta(series: dict[str, Any] | None, approx_days: int) -> dict[str, Any] | None:
+    """Compara último ponto da série com o valor ~N dias atrás."""
+    if not isinstance(series, dict):
+        return None
+    values = series.get("values") or []
+    labels = series.get("labels") or []
+    if len(values) < 2:
+        return None
+    current = float(values[-1])
+    # Séries diárias: recua N pontos; mensais (Selic/IPCA): usa ponto anterior se N curto.
+    if len(values) > approx_days + 1:
+        idx = len(values) - 1 - approx_days
+    else:
+        idx = max(0, len(values) - 2)
+    past = float(values[idx])
+    if past == 0:
+        return None
+    change = current - past
+    pct = (change / abs(past)) * 100.0
+    return {
+        "valor_passado": past,
+        "variacao": change,
+        "variacao_pct": round(pct, 2),
+        "data_passada": labels[idx] if idx < len(labels) else "",
+        "positivo": change >= 0,
+        "dias": approx_days,
+    }
+
+
+def _find_hist_series(historico: dict[str, Any], *name_hints: str) -> dict[str, Any] | None:
+    """Localiza série no histórico 30d/90d por trechos do nome."""
+    if not historico:
+        return None
+    hints = [_fold_label(h) for h in name_hints if h]
+    for period in ("30d", "90d"):
+        period_data = historico.get(period) or {}
+        if not isinstance(period_data, dict):
+            continue
+        for name, series in period_data.items():
+            name_l = _fold_label(name)
+            if any(h in name_l for h in hints):
+                return series if isinstance(series, dict) else None
+    return None
+
+
+def _format_delta_line(delta: dict[str, Any] | None, suffix: str = "") -> str:
+    if not delta:
+        return "n/d"
+    pct = delta.get("variacao_pct")
+    past = delta.get("valor_passado")
+    data = delta.get("data_passada") or ""
+    sign = "+" if (pct or 0) >= 0 else ""
+    past_txt = f"{past:.4g}".replace(".", ",") if isinstance(past, float) else str(past)
+    bits = [f"{sign}{pct}% vs ~{delta.get('dias')}d", f"de {past_txt}{suffix}"]
+    if data:
+        bits.append(f"({data})")
+    return " ".join(bits)
+
+
+def format_data_context(market, bcb, db_context, historico=None, tag_hint: str = "Economia"):
+    """Monta bloco de dados para injetar no prompt da IA (painel fixo + tendência)."""
+    hist = historico or {}
     lines = [
-        "=== DADOS DE MERCADO EM TEMPO REAL (cite números específicos na análise) ===",
+        "=== PAINEL OBRIGATÓRIO (cite Selic, IPCA 12m e dólar em TODA análise) ===",
         f"Coletado em: {market.get('coletado_em', 'agora')}",
+        f"Categoria da matéria: {tag_hint}",
     ]
+
+    # Núcleo BCB
+    if bcb:
+        lines.append("\n--- Indicadores macro (BCB) ---")
+        for key, val in bcb.items():
+            if not isinstance(val, dict):
+                continue
+            label = str(key)
+            hint = "selic" if "selic" in label.lower() else (
+                "ipca" if "ipca" in label.lower() else (
+                    "dolar" if "dolar" in label.lower() or "dólar" in label.lower() else label[:12]
+                )
+            )
+            series = _find_hist_series(hist, hint, label)
+            d7 = _series_delta(series, 7)
+            d30 = _series_delta(series, 30)
+            lines.append(
+                f"- {label}: {val.get('valor')} (ref. {val.get('data')}) | "
+                f"tendência 7d: {_format_delta_line(d7)} | 30d: {_format_delta_line(d30)}"
+            )
+
+    # Cotações: dólar sempre + extras da tag
+    tag_extras = {
+        "Cripto": ["Bitcoin (BTC/BRL)"],
+        "Ações": ["Bitcoin (BTC/BRL)", "Euro (EUR/BRL)"],
+        "Commodities": ["Euro (EUR/BRL)", "Bitcoin (BTC/BRL)"],
+        "Dólar": ["Euro (EUR/BRL)"],
+        "Fintech": ["Bitcoin (BTC/BRL)"],
+    }
+    preferred_quotes = ["Dólar (USD/BRL)"] + tag_extras.get(tag_hint, ["Euro (EUR/BRL)"])[:1]
+    lines.append("\n--- Cotações (AwesomeAPI) — use 1–2 relevantes à tag ---")
+    for key in preferred_quotes:
+        val = market.get(key)
+        if not isinstance(val, dict):
+            continue
+        series = _find_hist_series(hist, key, key.split("(")[0].strip())
+        d7 = _series_delta(series, 7)
+        d30 = _series_delta(series, 30)
+        lines.append(
+            f"- {key}: {val.get('cotacao')} (var. 24h: {val.get('variacao_24h')}) | "
+            f"7d: {_format_delta_line(d7)} | 30d: {_format_delta_line(d30)}"
+        )
+    # Demais cotações disponíveis (contexto extra, sem obrigar)
     for key, val in market.items():
-        if key in ("coletado_em", "erro_cotacoes"):
+        if key in ("coletado_em", "erro_cotacoes") or key in preferred_quotes:
             continue
         if isinstance(val, dict):
             lines.append(
-                f"- {key}: {val.get('cotacao')} (var. 24h: {val.get('variacao_24h')}, "
-                f"máx: {val.get('maxima')}, mín: {val.get('minima')})"
+                f"- {key}: {val.get('cotacao')} (var. 24h: {val.get('variacao_24h')}) [opcional]"
             )
-
-    if bcb:
-        lines.append("\n=== INDICADORES MACROECONÔMICOS (Banco Central do Brasil) ===")
-        for key, val in bcb.items():
-            lines.append(f"- {key}: {val.get('valor')} (ref. {val.get('data')})")
 
     lines.append("\n=== ACERVO EDITORIAL DO PORTAL (cruze tendências, evite repetir) ===")
     lines.append(db_context)
@@ -1140,61 +1317,79 @@ def _generate_article_image_cursor(prompt: str, slug: str) -> str | None:
 
 
 def _generate_article_image_gemini(prompt: str, slug: str) -> str | None:
-    if not client:
+    keys = get_gemini_api_keys()
+    if not keys:
         print("   [img/gemini] Cliente Gemini indisponivel (GOOGLE_API_KEY/GEMINI_API_KEY).")
         return None
 
-    modelos = [
-        m
-        for m in get_gemini_image_models()
-        if m not in _exhausted_image_models and m not in _unavailable_image_models
-    ]
-    if not modelos:
-        print(
-            "   [img/gemini] Nenhum modelo disponivel "
-            f"(cota: {sorted(_exhausted_image_models)} | indisponiveis: {sorted(_unavailable_image_models)})."
-        )
+    all_models = get_gemini_image_models()
+    if not all_models:
+        print("   [img/gemini] Nenhum modelo de imagem configurado.")
         return None
 
-    for model in modelos:
-        try:
-            print(f"   [img/gemini] Gerando imagem ({model})...")
-            if model.startswith("imagen"):
-                response = client.models.generate_images(
-                    model=model,
-                    prompt=prompt,
-                    config=types.GenerateImagesConfig(
-                        number_of_images=1,
-                        output_mime_type="image/jpeg",
-                        aspect_ratio="16:9",
-                    ),
-                )
-            else:
-                response = client.models.generate_content(
-                    model=model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_modalities=["IMAGE", "TEXT"],
-                        image_config=types.ImageConfig(aspect_ratio="16:9"),
-                    ),
-                )
-
-            extracted = _extract_image_from_response(response)
-            if extracted:
-                data, mime_type = extracted
-                url = _save_image_bytes(data, mime_type, slug)
-                print(f"   [img/gemini] Imagem salva: {url}")
-                return url
-            print(f"   [img/gemini] Resposta sem imagem ({model}).")
-        except Exception as e:
-            if _is_image_model_unavailable(e):
-                _unavailable_image_models.add(model)
-                print(f"   [img/gemini] Modelo indisponivel, removendo da fila: {model}")
-            elif _is_image_quota_error(e):
-                _exhausted_image_models.add(model)
-                print(f"   [img/gemini] Cota esgotada em {model} — proximo modelo.")
-            print(f"   [img/gemini] Falha ({model}): {e}")
+    for key_index, api_key in enumerate(keys, start=1):
+        key_id = _api_key_id(api_key)
+        exhausted = _exhausted_image_models_by_key.setdefault(key_id, set())
+        modelos = [
+            m
+            for m in all_models
+            if m not in exhausted and m not in _unavailable_image_models
+        ]
+        if not modelos:
+            print(
+                f"   [img/gemini] Chave {key_index}/{len(keys)} sem modelos "
+                f"(cota: {sorted(exhausted)} | indisponiveis: {sorted(_unavailable_image_models)})."
+            )
             continue
+
+        gen_client = get_genai_client(api_key)
+        if gen_client is None:
+            print(f"   [img/gemini] Falha ao criar client da chave {key_index}.")
+            continue
+
+        print(f"   [img/gemini] Tentando chave {key_index}/{len(keys)}...")
+        for model in modelos:
+            try:
+                print(f"   [img/gemini] Gerando imagem ({model}, chave {key_index})...")
+                if model.startswith("imagen"):
+                    response = gen_client.models.generate_images(
+                        model=model,
+                        prompt=prompt,
+                        config=types.GenerateImagesConfig(
+                            number_of_images=1,
+                            output_mime_type="image/jpeg",
+                            aspect_ratio="16:9",
+                        ),
+                    )
+                else:
+                    response = gen_client.models.generate_content(
+                        model=model,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            response_modalities=["IMAGE", "TEXT"],
+                            image_config=types.ImageConfig(aspect_ratio="16:9"),
+                        ),
+                    )
+
+                extracted = _extract_image_from_response(response)
+                if extracted:
+                    data, mime_type = extracted
+                    url = _save_image_bytes(data, mime_type, slug)
+                    print(f"   [img/gemini] Imagem salva: {url} (chave {key_index})")
+                    return url
+                print(f"   [img/gemini] Resposta sem imagem ({model}, chave {key_index}).")
+            except Exception as e:
+                if _is_image_model_unavailable(e):
+                    _unavailable_image_models.add(model)
+                    print(f"   [img/gemini] Modelo indisponivel, removendo da fila: {model}")
+                elif _is_image_quota_error(e):
+                    exhausted.add(model)
+                    print(
+                        f"   [img/gemini] Cota esgotada em {model} (chave {key_index}) "
+                        "— proximo modelo/chave."
+                    )
+                print(f"   [img/gemini] Falha ({model}, chave {key_index}): {e}")
+                continue
 
     return None
 
@@ -1215,7 +1410,7 @@ def generate_article_image(
     prompt = _build_image_prompt(title, tag, resumo)
     provider = get_image_provider()
     use_cursor = provider in {"cursor", "auto"} and bool(os.getenv("CURSOR_API_KEY", "").strip())
-    use_gemini = provider in {"gemini", "auto"} and client is not None
+    use_gemini = provider in {"gemini", "auto"} and bool(get_gemini_api_keys())
 
     if use_cursor:
         url = _generate_article_image_cursor(prompt, slug)
@@ -1237,8 +1432,7 @@ def generate_article_image(
 
 def backfill_missing_images(limit: int = 10) -> dict[str, Any]:
     """Gera capas para artigos que ainda nao possuem imagem_url."""
-    _exhausted_image_models.clear()
-    _unavailable_image_models.clear()
+    _reset_image_quota_state()
     client_db = get_db()
     result = client_db.execute(
         """
@@ -1341,7 +1535,11 @@ Sua missão é produzir uma ANÁLISE EDITORIAL ORIGINAL de alto valor — não u
 
 ## REGRAS INEGOCIÁVEIS
 - PROIBIDO: resumir a notícia, usar "segundo a matéria", "o texto relata", "conforme publicado".
-- OBRIGATÓRIO: citar pelo menos 3 números reais dos DADOS DE MERCADO fornecidos abaixo (cotações, variações, Selic, IPCA).
+- PROIBIDO: parágrafo só com opinião genérica sem número concreto dos DADOS DE MERCADO.
+- OBRIGATÓRIO: citar Selic, IPCA (12 meses) e dólar (pelo menos uma vez no artigo), com o valor fornecido.
+- OBRIGATÓRIO: citar pelo menos 1 cotação extra relevante à categoria (ex.: BTC em Cripto, EUR em Dólar).
+- OBRIGATÓRIO: em CADA um dos 6 parágrafos do resumo_simples, amarrar a interpretação a pelo menos 1 número citado (ex.: "com a Selic a X%...", "o dólar a R$ Y...").
+- OBRIGATÓRIO: quando houver tendência 7d/30d nos dados, usar em pelo menos 2 parágrafos (mostrar direção, não só o print do dia).
 - OBRIGATÓRIO: conectar o fato da notícia com o cenário macro brasileiro (inflação, juros, câmbio, bolsa).
 - OBRIGATÓRIO: cruzar com o ACERVO EDITORIAL — mencione se há tendência (ex.: "terceira notícia negativa sobre X esta semana").
 - OBRIGATÓRIO: dar orientação prática para o leitor comum (investidor iniciante ou chefe de família).
@@ -1359,12 +1557,12 @@ Conteúdo base (use como ponto de partida, não como texto a reescrever):
 {market_context}
 
 ## ESTRUTURA DO ARTIGO (campo resumo_simples — 6 parágrafos separados por \\n\\n)
-1. **Abertura**: O fato em uma frase forte + por que importa AGORA para o brasileiro.
-2. **Contexto com dados**: Selic, IPCA, câmbio ou cripto — números reais dos dados fornecidos.
-3. **Cruzamento de fontes**: Relacione com tendências do acervo editorial do portal.
-4. **Análise aprofundada**: Causas, atores do mercado, riscos e oportunidades. Opinião embasada.
-5. **Cenários**: O que pode acontecer em 30, 90 e 180 dias (seja específico).
-6. **Guia prático**: 2-3 ações concretas para o leitor (diversificar, cautela, oportunidade, etc.).
+1. **Abertura**: O fato em uma frase forte + por que importa AGORA — cite 1 número do painel.
+2. **Contexto com dados**: Selic + IPCA e/ou câmbio — valores e tendência 7d/30d quando disponível.
+3. **Cruzamento de fontes**: Relacione com o acervo editorial + 1 cotação/indicador.
+4. **Análise aprofundada**: Causas e riscos — cada afirmação forte amarrada a um dado citado.
+5. **Cenários**: 30/90/180 dias com âncoras numéricas (juros, inflação ou câmbio).
+6. **Guia prático**: 2-3 ações concretas ligadas aos números do cenário atual.
 
 Retorne APENAS JSON válido (sem ```json):
 {{
@@ -1587,12 +1785,11 @@ def extract_entry_content(entry) -> str:
 def fetch_and_process(max_per_feed=2):
     noticias_processadas = []
     _exhausted_models.clear()
-    _exhausted_image_models.clear()
-    # Falhas transitórias (rede/404 pontual) nao devem banir o modelo ate o fim do processo.
-    _unavailable_image_models.clear()
+    _reset_image_quota_state()
     print(f"\n--- Iniciando Varredura: {datetime.now()} ---")
     print(f"   🧠 Modelos Gemini: {', '.join(get_gemini_modelos())}")
     print(f"   🖼️ Modelos de imagem: {', '.join(get_gemini_image_models())}")
+    print(f"   🔑 Chaves Gemini: {len(get_gemini_api_keys())}")
 
     market = fetch_market_snapshot()
     bcb = fetch_bcb_snapshot()
@@ -1617,7 +1814,7 @@ def fetch_and_process(max_per_feed=2):
                 continue
 
             db_context = get_editorial_context(tag_hint=tag_hint)
-            data_context = format_data_context(market, bcb, db_context)
+            data_context = format_data_context(market, bcb, db_context, historico, tag_hint)
 
             for entry in feed.entries[:max_per_feed]:
                 print(f"   📄 Encontrada: {entry.title[:60]}...")

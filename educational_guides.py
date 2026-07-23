@@ -1,17 +1,25 @@
 """Artigos evergreen educativos (molde de notícia) para palavras-chave internas.
 
-Mantém o conjunto pequeno e estável: só os temas mais citados no site.
+Política editorial do núcleo:
+- Manter o conjunto PEQUENO (Selic, IPCA, câmbio, renda fixa).
+- Não expandir o glossário sem necessidade clara de SEO/leitura.
+- Atualizar números/contexto quando o Copom mudar a Selic ou o IPCA mudar de patamar
+  (ensure_educational_guides injeta o painel BCB vigente a cada sync).
 """
 
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 
 from db import DbClient
 
 GUIDE_LINK_PREFIX = "internal://artigo/"
 GUIDE_FONTE = "Finanças News"
+
+# Núcleo fechado — não extrapolar sem decisão editorial explícita.
+GUIDE_SLUGS = ("selic", "ipca", "cambio", "renda-fixa")
 
 # Quatro guias — não expandir sem necessidade editorial.
 EDUCATIONAL_GUIDES: list[dict[str, Any]] = [
@@ -372,7 +380,40 @@ def get_guide_by_slug(slug: str) -> dict[str, Any] | None:
     return None
 
 
-def _dados_mercado_payload(guide: dict[str, Any]) -> str:
+def _live_macro_snapshot() -> dict[str, Any]:
+    """Selic/IPCA/dólar vigentes para atualizar o box dos guias sem inflar o acervo."""
+    try:
+        import core
+
+        bcb = core.fetch_bcb_snapshot(blocking=False) or {}
+        cotacoes = core.fetch_market_snapshot(blocking=False) or {}
+        historico = core.fetch_market_historical() or {}
+        return {
+            "bcb": bcb,
+            "cotacoes": cotacoes,
+            "historico": historico,
+            "coletado_em": cotacoes.get("coletado_em")
+            or datetime.now().strftime("%d/%m/%Y %H:%M"),
+        }
+    except Exception:
+        return {}
+
+
+def _dados_mercado_payload(guide: dict[str, Any], live: dict[str, Any] | None = None) -> str:
+    live = live or {}
+    bcb = live.get("bcb") or {}
+    bits = []
+    for label, info in bcb.items():
+        if isinstance(info, dict) and info.get("valor"):
+            bits.append(f"{label}: {info.get('valor')} (ref. {info.get('data', 'n/d')})")
+    atualizacao = (
+        "Painel macro sincronizado em "
+        f"{live.get('coletado_em') or datetime.now().strftime('%d/%m/%Y %H:%M')}. "
+        "Revisar o texto do guia quando Selic ou IPCA mudarem de patamar."
+    )
+    if bits:
+        atualizacao = " · ".join(bits) + " — " + atualizacao
+
     return json.dumps(
         {
             "contexto_mercado": guide["contexto_mercado"],
@@ -380,6 +421,11 @@ def _dados_mercado_payload(guide: dict[str, Any]) -> str:
             "glossario": guide["glossario"],
             "faq": guide["faq"],
             "dados_citados": ["Selic", "IPCA", "câmbio", "renda fixa"],
+            "bcb": bcb,
+            "cotacoes": live.get("cotacoes") or {},
+            "historico": live.get("historico") or {},
+            "atualizacao": atualizacao,
+            "guia_nucleo": True,
         },
         ensure_ascii=False,
     )
@@ -389,9 +435,26 @@ def ensure_educational_guides(client: DbClient) -> int:
     """Insere ou atualiza os guias evergreen. Retorna quantos foram gravados."""
     written = 0
     published_at = "15/01/2026 09:00"
+    live = _live_macro_snapshot()
+    agora = datetime.now().strftime("%d/%m/%Y %H:%M")
     for guide in EDUCATIONAL_GUIDES:
+        if guide["slug"] not in GUIDE_SLUGS:
+            continue
         link = guide_link(guide["slug"])
-        dados = _dados_mercado_payload(guide)
+        dados = _dados_mercado_payload(guide, live)
+        contexto = guide["contexto_mercado"]
+        if live.get("bcb"):
+            nums = []
+            for label, info in (live.get("bcb") or {}).items():
+                if isinstance(info, dict) and info.get("valor"):
+                    nums.append(f"{label.split('(')[0].strip()}: {info['valor']}")
+            if nums:
+                contexto = (
+                    f"{guide['contexto_mercado']} "
+                    f"Números de referência ({live.get('coletado_em', agora)}): "
+                    + "; ".join(nums[:3])
+                    + "."
+                )
         existing = client.execute("SELECT id FROM news WHERE link = ?", [link])
         if existing.rows:
             client.execute(
@@ -410,8 +473,8 @@ def ensure_educational_guides(client: DbClient) -> int:
                     guide["sentimento"],
                     GUIDE_FONTE,
                     dados,
-                    guide["contexto_mercado"],
-                    published_at,
+                    contexto,
+                    agora,
                     1,
                     link,
                 ],
@@ -435,7 +498,7 @@ def ensure_educational_guides(client: DbClient) -> int:
                     published_at,
                     GUIDE_FONTE,
                     dados,
-                    guide["contexto_mercado"],
+                    contexto,
                     published_at,
                     None,
                     1,
