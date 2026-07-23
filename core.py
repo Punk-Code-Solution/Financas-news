@@ -117,13 +117,14 @@ DEFAULT_GEMINI_IMAGE_MODELOS = [
 ]
 
 # OpenAI Images: ao esgotar RPD de um modelo, tenta o próximo.
+# Contas novas costumam ter só GPT Image (DALL-E pode retornar "does not exist").
 DEFAULT_OPENAI_IMAGE_MODELOS = [
-    "dall-e-2",
     "gpt-image-2",
     "gpt-image-1.5",
     "gpt-image-1",
     "gpt-image-1-mini",
     "dall-e-3",
+    "dall-e-2",
 ]
 
 _exhausted_models_by_key: dict[str, set[str]] = {}
@@ -153,8 +154,17 @@ def _configure_ssl_certs() -> None:
         pass
 
 
+def _ssl_verify_enabled() -> bool:
+    """False apenas se SSL_VERIFY / OPENAI_SSL_VERIFY / GEMINI_SSL_VERIFY = false."""
+    for var in ("SSL_VERIFY", "OPENAI_SSL_VERIFY", "GEMINI_SSL_VERIFY"):
+        raw = os.getenv(var)
+        if raw is not None and str(raw).strip() != "":
+            return str(raw).strip().lower() not in ("0", "false", "no")
+    return True
+
+
 def _gemini_http_options():
-    if os.getenv("GEMINI_SSL_VERIFY", "true").lower() not in ("0", "false", "no"):
+    if _ssl_verify_enabled():
         return None
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
@@ -163,6 +173,18 @@ def _gemini_http_options():
         client_args={"verify": ctx},
         async_client_args={"verify": ctx},
     )
+
+
+def _create_openai_client(api_key: str):
+    """Client OpenAI; em Windows com MITM/antivirus, use GEMINI_SSL_VERIFY=false."""
+    from openai import OpenAI
+
+    if _ssl_verify_enabled():
+        return OpenAI(api_key=api_key)
+    import httpx
+
+    print("   [img/openai] SSL verify desativado (GEMINI_SSL_VERIFY/SSL_VERIFY=false).")
+    return OpenAI(api_key=api_key, http_client=httpx.Client(verify=False, timeout=120.0))
 
 
 def get_gemini_api_keys() -> list[str]:
@@ -1310,12 +1332,12 @@ def _openai_image_generate_kwargs(model: str, prompt: str) -> dict[str, Any]:
     """Monta kwargs compatíveis com DALL-E vs GPT Image."""
     safe_prompt = _openai_prompt_for_model(model, prompt)
     if model.startswith("dall-e-2"):
+        # Sem response_format: algumas contas/API rejects unknown_parameter.
         return {
             "model": model,
             "prompt": safe_prompt,
             "n": 1,
             "size": "1024x1024",
-            "response_format": "b64_json",
         }
     if model.startswith("dall-e-3"):
         return {
@@ -1324,7 +1346,6 @@ def _openai_image_generate_kwargs(model: str, prompt: str) -> dict[str, Any]:
             "n": 1,
             "size": "1792x1024",
             "quality": "standard",
-            "response_format": "b64_json",
         }
     # GPT Image (gpt-image-1/1.5/1-mini/2): sempre retorna b64; sem response_format.
     return {
@@ -1553,7 +1574,7 @@ def _generate_article_image_openai(prompt: str, slug: str) -> str | None:
         return None
 
     try:
-        from openai import OpenAI
+        from openai import OpenAI  # noqa: F401 — valida dependencia
     except ImportError:
         print("   [img/openai] Pacote openai nao instalado. Rode: pip install -r requirements.txt")
         return None
@@ -1573,7 +1594,7 @@ def _generate_article_image_openai(prompt: str, slug: str) -> str | None:
         return None
 
     _wait_openai_image_slot()
-    client = OpenAI(api_key=api_key)
+    client = _create_openai_client(api_key)
 
     for model in modelos:
         try:

@@ -172,7 +172,7 @@ Ordem alinhada às cotas atuais (chave 2 tem Imagen 4; Nano Banana está 0/0 nas
 3. `imagen-4.0-ultra-generate-001` — ~25/dia
 4. `gemini-3.1-flash-lite-image` / `gemini-3.1-flash-image` / `gemini-2.5-flash-image` — fallback se a chave tiver cota
 5. **OpenAI** — fila com fallback ao esgotar cota de um modelo:
-   - `dall-e-2` → `gpt-image-2` → `gpt-image-1.5` → `gpt-image-1` → `gpt-image-1-mini` → `dall-e-3`
+   - `gpt-image-2` → `gpt-image-1.5` → `gpt-image-1` → `gpt-image-1-mini` → `dall-e-3` → `dall-e-2`
    - Limite típico free: **~50 RPD por modelo**; intervalo mínimo entre chamadas: 65s
 
 > **Nota:** Imagen 4 na API Gemini está com shutdown previsto para ago/2026; enquanto a chave 2 tiver cota 25/dia, é a única fonte confiável de capa no free tier deste projeto. Com `OPENAI_API_KEY`, o backfill continua gerando capas e troca de modelo OpenAI quando a cota diária de um esgota.
@@ -308,7 +308,7 @@ GEMINI_IMAGE_MODELOS=imagen-4.0-fast-generate-001,imagen-4.0-generate-001,imagen
 # Produção (Render): gemini (+ fallback OpenAI no backfill). Local: gemini | openai | cursor | auto.
 IMAGE_PROVIDER=gemini
 OPENAI_API_KEY=
-OPENAI_IMAGE_MODELOS=dall-e-2,gpt-image-2,gpt-image-1.5,gpt-image-1,gpt-image-1-mini,dall-e-3
+OPENAI_IMAGE_MODELOS=gpt-image-2,gpt-image-1.5,gpt-image-1,gpt-image-1-mini,dall-e-3,dall-e-2
 OPENAI_IMAGE_MIN_INTERVAL=65
 ARTICLE_IMAGES_DIR=/var/data/article_images
 ```

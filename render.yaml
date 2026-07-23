@@ -27,7 +27,7 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_IMAGE_MODELOS
-        value: dall-e-2,gpt-image-2,gpt-image-1.5,gpt-image-1,gpt-image-1-mini,dall-e-3
+        value: gpt-image-2,gpt-image-1.5,gpt-image-1,gpt-image-1-mini,dall-e-3,dall-e-2
       - key: OPENAI_IMAGE_MIN_INTERVAL
         value: "65"
       - key: GOOGLE_ADSENSE_CLIENT
