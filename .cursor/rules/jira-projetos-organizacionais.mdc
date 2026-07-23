@@ -8,7 +8,7 @@ alwaysApply: true
 Site: https://punk-code-solution.atlassian.net  
 Cloud ID: `47d83d01-d30e-44d9-8cab-7b022de9051d`
 
-Este repositório mapeia para a key **FIN** (Finanças Auto / Finanças News).
+Este repositório mapeia para a key **FN** (Finanças News).
 
 Fonte canônica: `company-ops` → `config/jira-projects.yml` + `config/jira-backlog.json`.
 
@@ -20,13 +20,13 @@ Fonte canônica: `company-ops` → `config/jira-projects.yml` + `config/jira-bac
 | Igreja 4.0 | I40 | `igreja4.0` |
 | Studio & Style | STUD | `studio-style` |
 | Gamers League | GL | `cs-league` |
-| Finanças Auto | FIN | `financas-news` |
+| Finanças News | FN | `financas-news` |
 | Company Ops | OPS | `company-ops` |
 | Punk Code Landing | PUNK | `punk-code-landing-page` |
 
 ## Regras de trabalho
 
-1. Consultar e atualizar issues **FIN-*** existentes antes de criar novas.
+1. Consultar e atualizar issues **FN-*** existentes antes de criar novas.
 2. Ao avançar fases, mover no Jira via Atlassian MCP (`transitionJiraIssue`).
 3. Fluxo: **Aberta → Desenvolvimento → Teste → Concluido**.
-4. Usar o projeto **FIN** neste repositório (confirmar key no Jira se o projeto já existir com outro código).
+4. Usar o projeto **FN** neste repositório.
