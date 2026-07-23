@@ -23,6 +23,7 @@
     <meta property="og:locale" content="pt_BR" />
     <meta property="og:image" content="{{ default_og_image }}" />
     <meta name="description" content="{{ t('meta_home_description') }}" />
+    {% include "partials/_seo_brand.html" %}
     {% if q %}
     <meta name="robots" content="noindex, follow">
     {% endif %}
@@ -30,24 +31,40 @@
     <script type="application/ld+json">
     {
         "@context": "https://schema.org",
-        "@type": "WebSite",
-        "name": {{ t('site_name') | tojson }},
-        "url": {{ site_origin | tojson }},
-        "inLanguage": "pt-BR",
-        "potentialAction": {
-            "@type": "SearchAction",
-            "target": {{ (site_origin ~ '/?q={search_term_string}') | tojson }},
-            "query-input": "required name=search_term_string"
-        },
-        "publisher": {
-            "@type": "Organization",
-            "name": {{ t('site_name') | tojson }},
-            "url": {{ site_origin | tojson }},
-            "logo": {
-                "@type": "ImageObject",
-                "url": {{ (site_origin ~ '/static/favicon.svg?v=2') | tojson }}
+        "@graph": [
+            {
+                "@type": "WebSite",
+                "@id": {{ (site_origin ~ '/#website') | tojson }},
+                "name": {{ t('site_name') | tojson }},
+                "alternateName": {{ site_brand_alternate_names | tojson }},
+                "keywords": {{ site_brand_keywords_meta | tojson }},
+                "description": {{ t('meta_home_description') | tojson }},
+                "url": {{ site_origin | tojson }},
+                "inLanguage": ["pt-BR", "en", "ja"],
+                "potentialAction": {
+                    "@type": "SearchAction",
+                    "target": {{ (site_origin ~ '/?q={search_term_string}') | tojson }},
+                    "query-input": "required name=search_term_string"
+                },
+                "publisher": {"@id": {{ (site_origin ~ '/#organization') | tojson }}}
+            },
+            {
+                "@type": ["NewsMediaOrganization", "Organization"],
+                "@id": {{ (site_origin ~ '/#organization') | tojson }},
+                "name": {{ t('site_name') | tojson }},
+                "alternateName": {{ site_brand_alternate_names | tojson }},
+                "url": {{ site_origin | tojson }},
+                "logo": {
+                    "@type": "ImageObject",
+                    "url": {{ (site_origin ~ '/static/favicon.svg?v=2') | tojson }}
+                },
+                "sameAs": [
+                    "https://www.punkcodesolution.com.br/"
+                ],
+                "knowsAbout": {{ site_topic_keywords | tojson }},
+                "publishingPrinciples": {{ (site_origin ~ '/quem-somos') | tojson }}
             }
-        }
+        ]
     }
     </script>
 

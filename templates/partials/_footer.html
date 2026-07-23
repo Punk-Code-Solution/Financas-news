@@ -9,6 +9,7 @@
                     </span>
                     <span class="text-sm text-gray-500 dark:text-slate-400 group-hover:text-gray-700 dark:group-hover:text-slate-300 transition">{{ t('site_name') }}</span>
                 </a>
+                <p class="mt-3 text-xs text-gray-500 dark:text-slate-500 max-w-xs leading-relaxed">{{ footer_about_blurb }}</p>
             </div>
 
             {# Coluna 2 — conecte-se #}
@@ -43,7 +44,22 @@
             </div>
         </div>
 
+        {% if seo_topic_links %}
+        <nav class="mt-8 pt-6 border-t border-gray-100 dark:border-slate-800" aria-label="{{ t('seo_topics_title') }}">
+            <p class="text-sm font-bold text-gray-900 dark:text-white mb-3 text-center">{{ t('seo_topics_title') }}</p>
+            <ul class="flex flex-wrap justify-center gap-x-3 gap-y-2 text-sm text-gray-600 dark:text-slate-400">
+                {% for item in seo_topic_links %}
+                <li>
+                    <a href="{{ item.href }}" class="hover:text-blue-600 dark:hover:text-[#4ade80] transition">{{ item.label }}</a>
+                </li>
+                {% endfor %}
+            </ul>
+            <p class="mt-4 text-xs text-gray-500 dark:text-slate-500 text-center max-w-3xl mx-auto leading-relaxed">{{ t('seo_discover_blurb') }}</p>
+        </nav>
+        {% endif %}
+
         <div class="mt-8 pt-6 border-t border-gray-100 dark:border-slate-800 text-center text-xs text-gray-500 dark:text-slate-500">
+            <p class="mb-2">{{ footer_tagline }}</p>
             <p>
                 &copy; 2026 <span class="font-semibold text-gray-700 dark:text-slate-300">{{ t('site_name') }}</span>.
                 {{ t('footer_developed') }}

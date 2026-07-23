@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 from fastapi import FastAPI, Request, Response, HTTPException, Form
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -39,7 +40,7 @@ from article_enrichment import (
     resolve_referencias_internas,
     source_homepage,
 )
-from i18n import COOKIE_MAX_AGE, COOKIE_NAME, build_i18n_context, resolve_lang
+from i18n import COOKIE_MAX_AGE, COOKIE_NAME, SITE_TOPIC_KEYWORDS, build_i18n_context, resolve_lang
 
 load_dotenv()
 
@@ -651,10 +652,14 @@ def get_sitemap():
     today = datetime.now().date().isoformat()
     static_urls = [
         (f"{SITE_ORIGIN}/", "daily", "1.0", today),
-        (f"{SITE_ORIGIN}/quem-somos", "monthly", "0.5", today),
+        (f"{SITE_ORIGIN}/quem-somos", "monthly", "0.6", today),
         (f"{SITE_ORIGIN}/privacidade", "monthly", "0.3", today),
         (f"{SITE_ORIGIN}/termos", "monthly", "0.3", today),
     ]
+    for tag in SITE_TOPIC_KEYWORDS:
+        static_urls.append(
+            (f"{SITE_ORIGIN}/?categoria={quote(tag)}", "daily", "0.7", today)
+        )
     for guide in EDUCATIONAL_GUIDES:
         static_urls.append(
             (f"{SITE_ORIGIN}/artigo/{guide['slug']}", "weekly", "0.9", today)

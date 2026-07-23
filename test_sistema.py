@@ -268,6 +268,7 @@ def run() -> int:
         r = client.get("/sitemap.xml")
         check("Sitemap lastmod", "<lastmod>" in r.text)
         check("Sitemap guias", "/artigo/selic" in r.text)
+        check("Sitemap categorias", "categoria=" in r.text)
         if ids:
             # Guias evergreen saem do /noticia/ (redirect 301) e ficam só em /artigo/.
             sample_id = None
@@ -285,6 +286,16 @@ def run() -> int:
         r = client.get("/")
         check("Home: canonical", 'rel="canonical"' in r.text)
         check("Home: WebSite JSON-LD", "WebSite" in r.text and "SearchAction" in r.text)
+        check(
+            "Home: SEO brand keywords",
+            'name="keywords"' in r.text
+            and "financas news" in r.text
+            and "financas-news" in r.text
+            and "economia brasil" in r.text,
+        )
+        check("Home: SEO alternateName", "alternateName" in r.text and "Financas News" in r.text)
+        check("Home: NewsMediaOrganization", "NewsMediaOrganization" in r.text)
+        check("Home: temas no rodapé", "seo_topics_title" not in r.text and "Temas em destaque" in r.text)
 
         # links internos da home (sem API)
         links = sorted({m for m in re.findall(r'href="(/[^"]*)"', r.text) if not m.startswith("/api/")})

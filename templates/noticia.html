@@ -23,6 +23,7 @@
     {% if meta_desc|length > 160 %}{% set meta_desc = meta_desc[:157] ~ '…' %}{% endif %}
     <meta name="description" content="{{ meta_desc }}">
     <meta name="robots" content="max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+    {% include "partials/_seo_brand.html" %}
 
     <meta property="og:type" content="article" />
     <meta property="og:title" content="{{ noticia[1] }}" />
@@ -54,6 +55,7 @@
         "@type": "NewsArticle",
         "headline": {{ noticia[1] | tojson }},
         "description": {{ meta_desc | tojson }},
+        "keywords": {{ site_brand_keywords_meta | tojson }},
         "image": [{{ og_image_abs | tojson }}],
         "datePublished": {{ (published_iso or noticia[7] or '') | tojson }},
         "dateModified": {{ (updated_iso or published_iso or noticia[7] or '') | tojson }},
@@ -65,15 +67,19 @@
         },
         "author": {
             "@type": "Organization",
-            "name": {{ t('site_name') | tojson }}
+            "name": {{ t('site_name') | tojson }},
+            "alternateName": {{ site_brand_alternate_names | tojson }}
         },
         "publisher": {
-            "@type": "Organization",
+            "@type": ["NewsMediaOrganization", "Organization"],
             "name": {{ t('site_name') | tojson }},
+            "alternateName": {{ site_brand_alternate_names | tojson }},
+            "url": {{ site_origin | tojson }},
             "logo": {
                 "@type": "ImageObject",
                 "url": {{ (site_origin ~ '/static/favicon.svg?v=2') | tojson }}
-            }
+            },
+            "knowsAbout": {{ site_topic_keywords | tojson }}
         }
     }
     </script>

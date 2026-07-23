@@ -1,8 +1,22 @@
 <section class="mb-8">
     <h2 class="text-2xl font-bold text-blue-600 dark:text-[#4ade80] mb-4 transition-colors">Our Mission</h2>
     <p class="text-lg text-gray-700 dark:text-slate-300 mb-4 leading-relaxed transition-colors">
-        <strong class="text-gray-900 dark:text-white">Finanças News</strong> was created to save time for people who need to stay informed about the global economy and crypto markets. In a world flooded with long-form noise, we democratize access to financial news that is fast, impartial and straight to the point.
+        <strong class="text-gray-900 dark:text-white">Finanças News</strong> (also searched as <strong class="text-gray-900 dark:text-white">financas news</strong>, <strong class="text-gray-900 dark:text-white">financa news</strong> and <strong class="text-gray-900 dark:text-white">financas-news</strong>) was created to save time for people who need to stay informed about the Brazilian economy, financial markets and crypto. In a world flooded with long-form noise, we democratize access to financial news that is fast, impartial and straight to the point.
     </p>
+</section>
+
+<section class="mb-8">
+    <h2 class="text-2xl font-bold text-blue-600 dark:text-[#4ade80] mb-4 transition-colors">What you’ll find</h2>
+    <p class="text-lg text-gray-700 dark:text-slate-300 mb-4 leading-relaxed transition-colors">
+        Coverage of Brazil’s economy, USD/BRL, Selic, IPCA, inflation, interest rates, stocks, fixed income, fintech, commodities and crypto — with analysis cross-checked against official data and market quotes.
+    </p>
+    <ul class="flex flex-wrap gap-2 mb-2">
+        {% for item in seo_topic_links %}
+        <li>
+            <a href="{{ item.href }}" class="inline-block text-sm font-semibold px-3 py-1.5 rounded-full border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-slate-300 hover:border-blue-400 dark:hover:border-[#4ade80] hover:text-blue-600 dark:hover:text-[#4ade80] transition">{{ item.label }}</a>
+        </li>
+        {% endfor %}
+    </ul>
 </section>
 
 <section class="mb-8">
