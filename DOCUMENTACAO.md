@@ -53,7 +53,7 @@ O diferencial não é republicar RSS — é produzir conteúdo com **contexto ma
 3. **Dedupe por link** antes da IA (economiza cota).
 4. **Contexto editorial** — cruza com o acervo do portal.
 5. **Geração de texto** — Gemini nas chaves 1→2→3 (análise 500+ palavras / JSON).
-6. **Geração de imagem** — Imagen/Gemini nas chaves 2→3→1; lote ordena com capa primeiro.
+6. **Geração de imagem** — Gemini na varredura; fallback OpenAI/DALL-E no backfill (1/min); lote ordena com capa primeiro.
 7. **Publicação** — grava no Turso e exibe no frontend.
 
 ### Acionamento
@@ -171,8 +171,18 @@ Ordem alinhada às cotas atuais (chave 2 tem Imagen 4; Nano Banana está 0/0 nas
 2. `imagen-4.0-generate-001` — ~25/dia
 3. `imagen-4.0-ultra-generate-001` — ~25/dia
 4. `gemini-3.1-flash-lite-image` / `gemini-3.1-flash-image` / `gemini-2.5-flash-image` — fallback se a chave tiver cota
+5. **OpenAI** — fila com fallback ao esgotar cota de um modelo:
+   - `dall-e-2` → `gpt-image-2` → `gpt-image-1.5` → `gpt-image-1` → `gpt-image-1-mini` → `dall-e-3`
+   - Limite típico free: **~50 RPD por modelo**; intervalo mínimo entre chamadas: 65s
 
-> **Nota:** Imagen 4 na API Gemini está com shutdown previsto para ago/2026; enquanto a chave 2 tiver cota 25/dia, é a única fonte confiável de capa no free tier deste projeto.
+> **Nota:** Imagen 4 na API Gemini está com shutdown previsto para ago/2026; enquanto a chave 2 tiver cota 25/dia, é a única fonte confiável de capa no free tier deste projeto. Com `OPENAI_API_KEY`, o backfill continua gerando capas e troca de modelo OpenAI quando a cota diária de um esgota.
+
+### Prioridade de capas
+
+1. **Notícias novas** na varredura do robô tentam Gemini imediatamente (sem esperar OpenAI).
+2. **Backfill** (`/api/gerar-imagens` ou pós-robô) seleciona artigos **sem `imagem_url`**, `ORDER BY id DESC` (novas primeiro; antigas quando não houver novas pendentes).
+3. Sem notícias novas no robô → a própria rodada executa backfill de 1 capa.
+4. Cron recomendado: chamar `/api/gerar-imagens?limit=1` **a cada 1 minuto**.
 
 Imagens salvas em disco (`ARTICLE_IMAGES_DIR`) com URL pública `/media/articles/`.
 
@@ -295,13 +305,15 @@ TURSO_AUTH_TOKEN=         # Token de autenticação Turso
 ```env
 GEMINI_MODELOS=gemini-3.1-flash-lite-preview,gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-2.5-flash-lite,gemini-2.5-flash,gemini-3-flash,gemini-3.5-flash
 GEMINI_IMAGE_MODELOS=imagen-4.0-fast-generate-001,imagen-4.0-generate-001,imagen-4.0-ultra-generate-001,gemini-3.1-flash-lite-image,gemini-3.1-flash-image,gemini-2.5-flash-image
-# Produção (Render): sempre Gemini (já forçado no código quando RENDER=true).
-# Local: gemini | cursor | auto (Cursor → fallback Gemini).
+# Produção (Render): gemini (+ fallback OpenAI no backfill). Local: gemini | openai | cursor | auto.
 IMAGE_PROVIDER=gemini
+OPENAI_API_KEY=
+OPENAI_IMAGE_MODELOS=dall-e-2,gpt-image-2,gpt-image-1.5,gpt-image-1,gpt-image-1-mini,dall-e-3
+OPENAI_IMAGE_MIN_INTERVAL=65
 ARTICLE_IMAGES_DIR=/var/data/article_images
 ```
 
-> No Render, `IMAGE_PROVIDER` já está como `gemini` no `render.yaml`. Mesmo se estiver `auto` ou `cursor`, o código força Gemini porque o Cursor SDK não roda lá.
+> No Render, `IMAGE_PROVIDER` já está como `gemini` no `render.yaml`. Mesmo se estiver `auto` ou `cursor`, o código força Gemini porque o Cursor SDK não roda lá. Com `OPENAI_API_KEY`, o backfill usa a fila OpenAI e, ao esgotar a cota de um modelo, passa ao próximo.
 ### Monetização (opcionais — só exibe se preenchidas)
 
 ```env
@@ -338,6 +350,18 @@ https://financas-news.net.br/api/rodar-robo?token=SEU_TOKEN
 ```
 
 Variáveis úteis: `ROBOT_MAX_PER_FEED=3`, `ROBOT_MAX_ARTICLES=36`, `GOOGLE_API_KEY` / `_2` / `_3`.
+
+Se não houver notícias novas, o robô gera **1 capa** para o artigo pendente mais recente (senão, antigos sem capa).
+
+### Capas (backfill contínuo)
+
+Com `OPENAI_API_KEY` e limite de 1 imagem/minuto, agendar a cada **1 minuto**:
+
+```
+https://financas-news.net.br/api/gerar-imagens?token=SEU_TOKEN&limit=1
+```
+
+A fila prioriza `id DESC` (notícias novas sem capa primeiro).
 
 ### Limpar acervo (após mudança de prompt)
 

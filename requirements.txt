@@ -7,6 +7,7 @@ feedparser
 beautifulsoup4
 requests
 google-genai
+openai
 cursor-sdk
 certifi
 libsql-client

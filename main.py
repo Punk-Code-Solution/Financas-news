@@ -694,12 +694,13 @@ def ping():
     return {"status": "Render acordado!"}
 
 @app.get("/api/gerar-imagens")
-def gerar_imagens(token: str | None = None, limit: int = 10):
+def gerar_imagens(token: str | None = None, limit: int = 1):
+    """Gera capas pendentes (1/min no OpenAI). Prioriza noticias novas sem capa."""
     if token != "punkcode2026":
         raise HTTPException(status_code=401, detail="Nao autorizado")
 
-    limit = max(1, min(limit, 20))
-    print(f"Gerando imagens para ate {limit} artigos sem capa...")
+    limit = max(1, min(limit, 5))
+    print(f"Gerando imagens para ate {limit} artigos sem capa (prioridade: novas)...")
     resultado = core.backfill_missing_images(limit=limit)
     _invalidate_home_cache()
     return {"status": "Sucesso", **resultado}
@@ -712,10 +713,19 @@ def rodar_robo(token: str | None = None):
         
     print("🤖 Iniciando robô via API...")
     noticias_geradas = core.fetch_and_process()
-    
+
+    # Sem notícias novas: usa a rodada para gerar capa de artigos antigos sem imagem.
     if not noticias_geradas:
-        return {"status": "Aviso: Nenhuma notícia foi processada ou houve erro na IA."}
-        
+        print("Nenhuma noticia nova — gerando capa para pendentes (prioridade id DESC)...")
+        backfill = core.backfill_missing_images(limit=1)
+        _invalidate_home_cache()
+        return {
+            "status": "Sem noticias novas — backfill de capas executado.",
+            "processadas_pela_ia": 0,
+            "novas_salvas_no_banco": 0,
+            "backfill_capas": backfill,
+        }
+
     client = get_db()
     salvas = 0
     existing = existing_news_links([n.get("original_link", "") for n in noticias_geradas])
@@ -758,12 +768,16 @@ def rodar_robo(token: str | None = None):
         existing.add(link)
         salvas += 1
 
+    # Após publicar novas: tenta 1 capa pendente (novas sem capa primeiro; senão antigas).
+    print("Backfill pos-robo: 1 capa pendente (prioridade noticias novas)...")
+    backfill = core.backfill_missing_images(limit=1)
     _invalidate_home_cache()
     invalidate_sentiment_cache()
     return {
         "status": "Sucesso",
         "processadas_pela_ia": len(noticias_geradas),
-        "novas_salvas_no_banco": salvas
+        "novas_salvas_no_banco": salvas,
+        "backfill_capas": backfill,
     }
 
 

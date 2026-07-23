@@ -116,14 +116,30 @@ DEFAULT_GEMINI_IMAGE_MODELOS = [
     "gemini-3-pro-image",
 ]
 
+# OpenAI Images: ao esgotar RPD de um modelo, tenta o próximo.
+DEFAULT_OPENAI_IMAGE_MODELOS = [
+    "dall-e-2",
+    "gpt-image-2",
+    "gpt-image-1.5",
+    "gpt-image-1",
+    "gpt-image-1-mini",
+    "dall-e-3",
+]
+
 _exhausted_models_by_key: dict[str, set[str]] = {}
 # Cota de imagem por chave API (id curto → modelos esgotados nesta varredura).
 _exhausted_image_models_by_key: dict[str, set[str]] = {}
 # Modelos de imagem removidos permanentemente (404/descontinuados) até reiniciar.
 _unavailable_image_models: set[str] = set()
+# OpenAI: cota diária/RPM esgotada nesta execução; modelos sem acesso/404.
+_exhausted_openai_image_models: set[str] = set()
+_unavailable_openai_image_models: set[str] = set()
 # Cache de clients Gemini por fingerprint da chave.
 _genai_clients_by_key: dict[str, Any] = {}
 _genai_clients_lock = threading.Lock()
+# Rate limit OpenAI Images (projeto com 1 imagem/minuto).
+_openai_image_lock = threading.Lock()
+_openai_last_image_at: float = 0.0
 
 
 def _configure_ssl_certs() -> None:
@@ -239,6 +255,8 @@ def get_genai_client(api_key: str | None = None):
 def _reset_image_quota_state() -> None:
     _exhausted_image_models_by_key.clear()
     _unavailable_image_models.clear()
+    _exhausted_openai_image_models.clear()
+    _unavailable_openai_image_models.clear()
 
 
 _gemini_keys = get_gemini_api_keys()
@@ -1220,27 +1238,156 @@ def _is_image_key_access_error(exc: Exception) -> bool:
     )
 
 
+def get_openai_api_key() -> str:
+    return os.getenv("OPENAI_API_KEY", "").strip()
+
+
+def get_openai_image_models() -> list[str]:
+    """Lista de modelos OpenAI de imagem (fallback em cota/indisponibilidade)."""
+    raw = os.getenv("OPENAI_IMAGE_MODELOS", "").strip()
+    if raw:
+        return [m.strip() for m in raw.split(",") if m.strip()]
+    single = os.getenv("OPENAI_IMAGE_MODEL", "").strip()
+    if single:
+        return [single]
+    return DEFAULT_OPENAI_IMAGE_MODELOS.copy()
+
+
+def get_openai_image_model() -> str:
+    """Primeiro modelo da fila (compatível com logs/env antigos)."""
+    models = get_openai_image_models()
+    return models[0] if models else "dall-e-2"
+
+
+def get_openai_image_min_interval() -> float:
+    """Intervalo mínimo entre gerações OpenAI (padrão 65s ≈ 1 imagem/min)."""
+    raw = os.getenv("OPENAI_IMAGE_MIN_INTERVAL", "65").strip()
+    try:
+        return max(60.0, float(raw))
+    except ValueError:
+        return 65.0
+
+
+def _is_openai_image_quota_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return (
+        "rate_limit" in msg
+        or "rate limit" in msg
+        or "quota" in msg
+        or "insufficient_quota" in msg
+        or "billing" in msg
+        or "429" in msg
+        or "requests per day" in msg
+        or "rpd" in msg
+        or "images per minute" in msg
+    )
+
+
+def _is_openai_image_model_unavailable(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return (
+        "model_not_found" in msg
+        or "does not exist" in msg
+        or "not available" in msg
+        or "not supported" in msg
+        or "invalid_model" in msg
+        or "not allowed" in msg
+        or "access" in msg and "denied" in msg
+        or "404" in msg
+    )
+
+
+def _openai_prompt_for_model(model: str, prompt: str) -> str:
+    text = prompt.strip()
+    if model.startswith("dall-e-2"):
+        return text[:1000]
+    if model.startswith("dall-e-3"):
+        return text[:4000]
+    return text[:32000]
+
+
+def _openai_image_generate_kwargs(model: str, prompt: str) -> dict[str, Any]:
+    """Monta kwargs compatíveis com DALL-E vs GPT Image."""
+    safe_prompt = _openai_prompt_for_model(model, prompt)
+    if model.startswith("dall-e-2"):
+        return {
+            "model": model,
+            "prompt": safe_prompt,
+            "n": 1,
+            "size": "1024x1024",
+            "response_format": "b64_json",
+        }
+    if model.startswith("dall-e-3"):
+        return {
+            "model": model,
+            "prompt": safe_prompt,
+            "n": 1,
+            "size": "1792x1024",
+            "quality": "standard",
+            "response_format": "b64_json",
+        }
+    # GPT Image (gpt-image-1/1.5/1-mini/2): sempre retorna b64; sem response_format.
+    return {
+        "model": model,
+        "prompt": safe_prompt,
+        "n": 1,
+        "size": "1536x1024",
+        "quality": "medium",
+        "output_format": "png",
+    }
+
+
+def _extract_openai_image_bytes(response) -> bytes | None:
+    data = getattr(response, "data", None) or []
+    if not data:
+        return None
+    item = data[0]
+    b64 = getattr(item, "b64_json", None)
+    if b64:
+        return base64.b64decode(b64)
+    url = getattr(item, "url", None)
+    if url:
+        r = requests.get(url, timeout=60)
+        r.raise_for_status()
+        return r.content
+    return None
+
+
 def get_image_provider() -> str:
     """Resolve o provedor de imagem.
 
-    Em produção (Render), sempre usa Gemini — o Cursor SDK só funciona localmente.
-    Localmente, o padrão é ``auto`` (Cursor se houver chave, senão Gemini).
+    Em produção (Render), Cursor não roda — ``auto``/vazio → gemini (com fallback OpenAI).
+    Localmente, o padrão é ``auto`` (Cursor → Gemini → OpenAI).
     """
     raw = os.getenv("IMAGE_PROVIDER", "").strip().lower()
     on_render = bool(os.getenv("RENDER"))
+    allowed = {"cursor", "gemini", "openai", "auto", ""}
 
-    if raw not in {"cursor", "gemini", "auto", ""}:
+    if raw not in allowed:
         raw = ""
 
     if on_render:
-        # Cursor não roda no Render; auto/cursor/vazio → gemini.
+        # Cursor não roda no Render; auto/cursor/vazio → gemini (+ OpenAI no fallback).
         if raw in {"", "auto", "cursor"}:
             return "gemini"
         return raw
 
-    if raw in {"cursor", "gemini", "auto"}:
+    if raw in {"cursor", "gemini", "openai", "auto"}:
         return raw
     return "auto"
+
+
+def _wait_openai_image_slot() -> None:
+    """Respeita o teto de 1 imagem/minuto do projeto OpenAI."""
+    global _openai_last_image_at
+    interval = get_openai_image_min_interval()
+    with _openai_image_lock:
+        now = time.time()
+        wait = interval - (now - _openai_last_image_at)
+        if wait > 0:
+            print(f"   [img/openai] Aguardando {wait:.0f}s (limite 1 imagem/min)...")
+            time.sleep(wait)
+        _openai_last_image_at = time.time()
 
 
 def _resolve_existing_article_image(slug: str) -> str | None:
@@ -1399,14 +1546,74 @@ def _generate_article_image_gemini(prompt: str, slug: str) -> str | None:
     return None
 
 
+def _generate_article_image_openai(prompt: str, slug: str) -> str | None:
+    api_key = get_openai_api_key()
+    if not api_key:
+        print("   [img/openai] OPENAI_API_KEY nao configurada.")
+        return None
+
+    try:
+        from openai import OpenAI
+    except ImportError:
+        print("   [img/openai] Pacote openai nao instalado. Rode: pip install -r requirements.txt")
+        return None
+
+    all_models = get_openai_image_models()
+    modelos = [
+        m
+        for m in all_models
+        if m not in _exhausted_openai_image_models and m not in _unavailable_openai_image_models
+    ]
+    if not modelos:
+        print(
+            f"   [img/openai] Sem modelos "
+            f"(cota: {sorted(_exhausted_openai_image_models)} | "
+            f"indisponiveis: {sorted(_unavailable_openai_image_models)})."
+        )
+        return None
+
+    _wait_openai_image_slot()
+    client = OpenAI(api_key=api_key)
+
+    for model in modelos:
+        try:
+            print(f"   [img/openai] Gerando imagem ({model})...")
+            response = client.images.generate(**_openai_image_generate_kwargs(model, prompt))
+            raw = _extract_openai_image_bytes(response)
+            if not raw:
+                print(f"   [img/openai] Resposta sem imagem ({model}).")
+                continue
+            url = _save_image_bytes(raw, "image/png", slug)
+            print(f"   [img/openai] Imagem salva: {url} ({model})")
+            return url
+        except Exception as e:
+            if _is_openai_image_model_unavailable(e):
+                _unavailable_openai_image_models.add(model)
+                print(f"   [img/openai] Modelo indisponivel, removendo da fila: {model}")
+            elif _is_openai_image_quota_error(e):
+                _exhausted_openai_image_models.add(model)
+                print(
+                    f"   [img/openai] Sem cota/RPM em {model} — proximo modelo."
+                )
+            print(f"   [img/openai] Falha ({model}): {e}")
+            continue
+
+    return None
+
+
 def generate_article_image(
     title: str,
     tag: str,
     link: str,
     resumo: str = "",
     article_id: int | None = None,
+    use_openai: bool = True,
 ) -> str | None:
-    """Gera capa editorial; retorna URL pública ou None em caso de falha."""
+    """Gera capa editorial; retorna URL pública ou None em caso de falha.
+
+    ``use_openai=False`` evita o fallback DALL-E na varredura do robô (1 img/min).
+    Capas pendentes ficam para ``backfill_missing_images`` / cron.
+    """
     slug = _article_image_slug(link, article_id)
     existing = _resolve_existing_article_image(slug)
     if existing:
@@ -1416,6 +1623,18 @@ def generate_article_image(
     provider = get_image_provider()
     use_cursor = provider in {"cursor", "auto"} and bool(os.getenv("CURSOR_API_KEY", "").strip())
     use_gemini = provider in {"gemini", "auto"} and bool(get_gemini_api_keys())
+    openai_ok = bool(get_openai_api_key()) and use_openai and provider in {
+        "openai",
+        "gemini",
+        "auto",
+    }
+
+    if provider == "openai":
+        url = _generate_article_image_openai(prompt, slug)
+        if url:
+            return url
+        print("   [img] Imagem nao gerada — artigo seguira sem capa.")
+        return None
 
     if use_cursor:
         url = _generate_article_image_cursor(prompt, slug)
@@ -1431,12 +1650,21 @@ def generate_article_image(
         if url:
             return url
 
+    if openai_ok:
+        url = _generate_article_image_openai(prompt, slug)
+        if url:
+            return url
+
     print("   [img] Imagem nao gerada — artigo seguira sem capa.")
     return None
 
 
-def backfill_missing_images(limit: int = 10) -> dict[str, Any]:
-    """Gera capas para artigos que ainda nao possuem imagem_url."""
+def backfill_missing_images(limit: int = 1) -> dict[str, Any]:
+    """Gera capas pendentes: prioriza notícias mais novas (id DESC).
+
+    Quando não há artigos recentes sem capa, preenche as antigas na mesma fila.
+    Usa Gemini e, se necessário, OpenAI/DALL-E com rate limit de 1/min.
+    """
     _reset_image_quota_state()
     client_db = get_db()
     result = client_db.execute(
@@ -1454,9 +1682,30 @@ def backfill_missing_images(limit: int = 10) -> dict[str, Any]:
     updated: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
 
+    if not rows:
+        print("   [img] Nenhuma noticia sem capa para backfill.")
+        client_db.close()
+        return {
+            "processed": 0,
+            "updated": 0,
+            "failed": 0,
+            "items": [],
+            "errors": [],
+            "priority": "newest_first",
+        }
+
+    print(f"   [img] Backfill: ate {len(rows)} capa(s), prioridade noticias novas (id DESC).")
     for row in rows:
         article_id, titulo, tag, link, resumo = row[0], row[1], row[2], row[3] or "", row[4] or ""
-        imagem_url = generate_article_image(titulo, tag, link, resumo, article_id=article_id)
+        print(f"   [img] Capa pendente #{article_id}: {titulo[:60]}...")
+        imagem_url = generate_article_image(
+            titulo,
+            tag,
+            link,
+            resumo,
+            article_id=article_id,
+            use_openai=True,
+        )
         if imagem_url:
             client_db.execute(
                 "UPDATE news SET imagem_url = ? WHERE id = ?",
@@ -1473,6 +1722,7 @@ def backfill_missing_images(limit: int = 10) -> dict[str, Any]:
         "failed": len(failed),
         "items": updated,
         "errors": failed,
+        "priority": "newest_first",
     }
 
 
@@ -1834,6 +2084,9 @@ def fetch_and_process(max_per_feed: int | None = None, max_articles: int | None 
     print(f"\n--- Iniciando Varredura: {datetime.now()} ---")
     print(f"   🧠 Modelos Gemini: {', '.join(get_gemini_modelos())}")
     print(f"   🖼️ Modelos de imagem: {', '.join(get_gemini_image_models())}")
+    openai_models = get_openai_image_models() if get_openai_api_key() else []
+    openai_label = ", ".join(openai_models) if openai_models else "(sem OPENAI_API_KEY)"
+    print(f"   🖼️ Fallback OpenAI: {openai_label} (backfill; troca modelo em cota)")
     print(f"   🔑 Chaves Gemini: {len(get_gemini_api_keys())} (imagem prioriza 2→3→1)")
     print(f"   📰 Fontes: {len(RSS_FEEDS)} | até {max_per_feed}/feed | teto {max_articles}/rodada")
 
@@ -1917,6 +2170,7 @@ def fetch_and_process(max_per_feed: int | None = None, max_articles: int | None 
                     tag,
                     entry_link,
                     ai_data.get("resumo_simples", ""),
+                    use_openai=False,
                 )
                 if imagem_url:
                     print("   🖼️ Capa OK — prioridade Discover.")
