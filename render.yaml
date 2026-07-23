@@ -12,10 +12,16 @@ services:
         sync: false
       - key: GOOGLE_API_KEY_2
         sync: false
+      - key: GOOGLE_API_KEY_3
+        sync: false
+      - key: ROBOT_MAX_PER_FEED
+        value: "3"
+      - key: ROBOT_MAX_ARTICLES
+        value: "36"
       - key: GEMINI_MODELOS
-        value: gemini-3.1-flash-lite-preview,gemini-2.5-flash-lite,gemini-2.5-flash,gemini-2.0-flash,gemini-2.0-flash-lite
+        value: gemini-3.1-flash-lite-preview,gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-2.5-flash-lite,gemini-2.5-flash,gemini-3-flash,gemini-3.5-flash
       - key: GEMINI_IMAGE_MODELOS
-        value: gemini-3.1-flash-lite-image,gemini-3.1-flash-image,gemini-2.5-flash-image,gemini-3.1-flash-lite-image-preview,gemini-3.1-flash-image-preview,gemini-3-pro-image,gemini-3-pro-image-preview
+        value: imagen-4.0-fast-generate-001,imagen-4.0-generate-001,imagen-4.0-ultra-generate-001,gemini-3.1-flash-lite-image,gemini-3.1-flash-image,gemini-2.5-flash-image
       - key: IMAGE_PROVIDER
         value: gemini
       - key: GOOGLE_ADSENSE_CLIENT

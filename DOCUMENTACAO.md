@@ -28,7 +28,7 @@ O diferencial não é republicar RSS — é produzir conteúdo com **contexto ma
 
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Feeds RSS (14) │────▶│  Motor core.py   │────▶│  Banco Turso    │
+│  Feeds RSS (~30)│────▶│  Motor core.py   │────▶│  Banco Turso    │
 │  G1, InfoMoney… │     │  + Google Gemini │     │  (nuvem)        │
 └─────────────────┘     └────────┬─────────┘     └────────┬────────┘
                                  │                         │
@@ -49,11 +49,11 @@ O diferencial não é republicar RSS — é produzir conteúdo com **contexto ma
 ### Etapas de cada execução do robô
 
 1. **Coleta de dados de mercado** — USD, EUR, BTC (AwesomeAPI) + Selic, IPCA e dólar comercial (API BCB).
-2. **Leitura de 14 feeds RSS** — até 2 notícias por feed por execução (~28 artigos máx.).
-3. **Contexto editorial** — consulta notícias já publicadas no banco para cruzar tendências e evitar repetição.
-4. **Geração de texto** — Gemini produz análise de 500+ palavras em 6 blocos estruturados (JSON).
-5. **Geração de imagem** — capa editorial 16:9 via modelos de imagem Gemini/Imagen.
-6. **Deduplicação** — ignora matérias com o mesmo link de origem.
+2. **Leitura de ~30 feeds RSS** (BR + internacionais) — até 3 notícias/fonte, teto 36/rodada (`ROBOT_MAX_PER_FEED` / `ROBOT_MAX_ARTICLES`).
+3. **Dedupe por link** antes da IA (economiza cota).
+4. **Contexto editorial** — cruza com o acervo do portal.
+5. **Geração de texto** — Gemini nas chaves 1→2→3 (análise 500+ palavras / JSON).
+6. **Geração de imagem** — Imagen/Gemini nas chaves 2→3→1; lote ordena com capa primeiro.
 7. **Publicação** — grava no Turso e exibe no frontend.
 
 ### Acionamento
@@ -107,22 +107,9 @@ Cripto · Economia · Dólar · Ações · Juros · Inflação · Imóveis · Fi
 
 ### Fontes RSS monitoradas
 
-| Fonte | Categoria |
-|-------|-----------|
-| Livecoins | Cripto |
-| G1 Economia | Economia |
-| InfoMoney | Economia |
-| Investing.com Brasil | Ações |
-| Exame | Economia |
-| Money Times | Ações |
-| NeoFeed | Fintech |
-| Valor Econômico | Economia |
-| InfoMoney Imóveis | Imóveis |
-| Investing Commodities | Commodities |
-| G1 Política | Política Econômica |
-| InfoMoney Inflação | Inflação |
-| InfoMoney Juros | Juros |
-| Investing Forex | Dólar |
+**Brasil:** G1 Economia/Política, Valor, InfoMoney (geral/mercados/economia/investir), Exame, Money Times, NeoFeed, Investing BR/Commodities/Forex, CNN Brasil, Estadão, Folha Mercado, UOL Economia, Poder360, Agência Brasil, Livecoins, Cointelegraph Brasil.
+
+**Internacional:** BBC Business, CNBC, Reuters Business, MarketWatch, Yahoo Finance, The Guardian Business, Investing.com World, CoinDesk, Cointelegraph.
 
 ### Formato de cada artigo publicado
 
@@ -169,27 +156,23 @@ A monetização é **modular e controlada por variáveis de ambiente**. Enquanto
 
 Ordem padrão (configurável via `GEMINI_MODELOS`):
 
-1. `gemini-3.1-flash-lite-preview` — 500 req/dia (free tier)
-2. `gemini-2.5-flash-lite` — fallback
-3. `gemini-2.5-flash` — fallback
-4. `gemini-2.0-flash` — fallback
-5. `gemini-2.0-flash-lite` — fallback
+1. `gemini-3.1-flash-lite-preview` / `gemini-3.1-flash-lite` — ~500 req/dia
+2. `gemini-3.5-flash-lite` — ~500 req/dia (útil na chave 2)
+3. `gemini-2.5-flash-lite` / `gemini-2.5-flash` — fallback (~20/dia)
+4. `gemini-3-flash` / `gemini-3.5-flash` — fallback (~20/dia)
 
-O sistema **troca de modelo** quando a cota diária esgota e **só faz retry** em limite por minuto (RPM), evitando loops inúteis.
+O sistema **troca de modelo** quando a cota diária esgota e **só faz retry** em limite por minuto (RPM), evitando loops inúteis. Com `GOOGLE_API_KEY_2` / `GOOGLE_API_KEY_3`, esgota a chave atual e passa para a próxima.
 
 ### Modelos de imagem
 
-Tentativa em ordem (Nano Banana / Gemini Image):
+Ordem alinhada às cotas atuais (chave 2 tem Imagen 4; Nano Banana está 0/0 nas duas):
 
-1. `gemini-3.1-flash-lite-image` — GA, prioridade (volume/custo)
-2. `gemini-3.1-flash-image` — GA
-3. `gemini-2.5-flash-image` — GA
-4. `gemini-3.1-flash-lite-image-preview` — fallback
-5. `gemini-3.1-flash-image-preview` — fallback (deprecado)
-6. `gemini-3-pro-image` — GA (mais caro)
-7. `gemini-3-pro-image-preview` — fallback
+1. `imagen-4.0-fast-generate-001` — ~25/dia (prioridade)
+2. `imagen-4.0-generate-001` — ~25/dia
+3. `imagen-4.0-ultra-generate-001` — ~25/dia
+4. `gemini-3.1-flash-lite-image` / `gemini-3.1-flash-image` / `gemini-2.5-flash-image` — fallback se a chave tiver cota
 
-> **Nota:** Imagen 4 (`imagen-4.0-*`) foi descontinuado na API Gemini. Não usar mais em `GEMINI_IMAGE_MODELOS`.
+> **Nota:** Imagen 4 na API Gemini está com shutdown previsto para ago/2026; enquanto a chave 2 tiver cota 25/dia, é a única fonte confiável de capa no free tier deste projeto.
 
 Imagens salvas em disco (`ARTICLE_IMAGES_DIR`) com URL pública `/media/articles/`.
 
@@ -201,7 +184,7 @@ Imagens salvas em disco (`ARTICLE_IMAGES_DIR`) com URL pública `/media/articles
 | Imagem | 1 requisição | conforme cota do modelo |
 | **Total por rodada (~28 artigos)** | ~56 chamadas | monitorar no painel Google AI |
 
-> **Atenção:** cotas somam por projeto Google Cloud / AI Studio. Use `GOOGLE_API_KEY_2` (outro projeto/conta) para fallback de imagem quando a chave 1 esgotar.
+> **Atenção:** cotas somam por projeto Google Cloud / AI Studio. Use `GOOGLE_API_KEY_2` e `GOOGLE_API_KEY_3` (outros projetos/contas) para fallback de texto/imagem quando a chave anterior esgotar.
 
 ---
 
@@ -296,8 +279,11 @@ Armazena e-mails capturados localmente quando a newsletter está ativa.
 
 ```env
 GOOGLE_API_KEY=           # ou GEMINI_API_KEY (chave 1)
-GOOGLE_API_KEY_2=         # opcional: segunda chave se a 1ª esgotar cota de imagem
-# GOOGLE_API_KEYS=key1,key2   # alternativa: lista de chaves
+GOOGLE_API_KEY_2=         # opcional: segunda chave (fallback de cota)
+GOOGLE_API_KEY_3=         # opcional: terceira chave (fallback de cota)
+ROBOT_MAX_PER_FEED=3
+ROBOT_MAX_ARTICLES=36
+# GOOGLE_API_KEYS=key1,key2,key3   # alternativa: lista de chaves
 TURSO_DATABASE_URL=       # URL libsql:// do Turso
 TURSO_AUTH_TOKEN=         # Token de autenticação Turso
 ```
@@ -305,8 +291,8 @@ TURSO_AUTH_TOKEN=         # Token de autenticação Turso
 ### IA (opcionais)
 
 ```env
-GEMINI_MODELOS=gemini-3.1-flash-lite-preview,gemini-2.5-flash-lite,gemini-2.5-flash,gemini-2.0-flash,gemini-2.0-flash-lite
-GEMINI_IMAGE_MODELOS=gemini-3.1-flash-lite-image,gemini-3.1-flash-image,gemini-2.5-flash-image,gemini-3.1-flash-lite-image-preview,gemini-3.1-flash-image-preview,gemini-3-pro-image,gemini-3-pro-image-preview
+GEMINI_MODELOS=gemini-3.1-flash-lite-preview,gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-2.5-flash-lite,gemini-2.5-flash,gemini-3-flash,gemini-3.5-flash
+GEMINI_IMAGE_MODELOS=imagen-4.0-fast-generate-001,imagen-4.0-generate-001,imagen-4.0-ultra-generate-001,gemini-3.1-flash-lite-image,gemini-3.1-flash-image,gemini-2.5-flash-image
 # Produção (Render): sempre Gemini (já forçado no código quando RENDER=true).
 # Local: gemini | cursor | auto (Cursor → fallback Gemini).
 IMAGE_PROVIDER=gemini
@@ -343,11 +329,13 @@ PREMIUM_TEASER_ENABLED=false
 
 ### Publicar notícias
 
-Agendar chamada ao robô a cada 4–6 horas (cron no Render ou serviço externo como cron-job.org):
+Agendar chamada ao robô a cada 2–3 horas (cron no Render ou cron-job.org):
 
 ```
 https://financas-news.net.br/api/rodar-robo?token=SEU_TOKEN
 ```
+
+Variáveis úteis: `ROBOT_MAX_PER_FEED=3`, `ROBOT_MAX_ARTICLES=36`, `GOOGLE_API_KEY` / `_2` / `_3`.
 
 ### Limpar acervo (após mudança de prompt)
 
@@ -398,7 +386,7 @@ uvicorn main:app --reload
 |-------|-----------|
 | Google rejeitar AdSense (conteúdo IA) | Análises longas com dados reais; transparência; acervo robusto |
 | Cota Gemini esgotada | Fallback de modelos; modelos lite (500 RPD); chaves separadas por projeto |
-| Feed RSS fora do ar | 14 fontes redundantes; logs por feed |
+| Feed RSS fora do ar | ~30 fontes redundantes (BR + intl); logs por feed |
 | Conteúdo duplicado | Deduplicação por URL + contexto editorial no prompt |
 | Dependência de API Google | Arquitetura permite trocar provedor de IA |
 

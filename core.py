@@ -94,24 +94,29 @@ VALID_TAGS = [
 
 DEFAULT_GEMINI_MODELOS = [
     "gemini-3.1-flash-lite-preview",
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash-lite",
     "gemini-2.5-flash-lite",
     "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
+    "gemini-3-flash",
+    "gemini-3.5-flash",
 ]
 
-# Ordem: lite/barato primeiro; GA estável antes de preview/pro.
+# Chave 2 tem cota Imagen 4 (25/dia); Nano Banana está 0/0 nas duas chaves.
+# Imagen 4 primeiro — generate_images(); Gemini Image como fallback.
 DEFAULT_GEMINI_IMAGE_MODELOS = [
+    "imagen-4.0-fast-generate-001",
+    "imagen-4.0-generate-001",
+    "imagen-4.0-ultra-generate-001",
     "gemini-3.1-flash-lite-image",
     "gemini-3.1-flash-image",
     "gemini-2.5-flash-image",
     "gemini-3.1-flash-lite-image-preview",
     "gemini-3.1-flash-image-preview",
     "gemini-3-pro-image",
-    "gemini-3-pro-image-preview",
 ]
 
-_exhausted_models: set[str] = set()
+_exhausted_models_by_key: dict[str, set[str]] = {}
 # Cota de imagem por chave API (id curto → modelos esgotados nesta varredura).
 _exhausted_image_models_by_key: dict[str, set[str]] = {}
 # Modelos de imagem removidos permanentemente (404/descontinuados) até reiniciar.
@@ -145,11 +150,12 @@ def _gemini_http_options():
 
 
 def get_gemini_api_keys() -> list[str]:
-    """Chaves Gemini em ordem de prioridade (primária → secundária → lista).
+    """Chaves Gemini em ordem de prioridade (1 → 2 → 3 → lista).
 
     Variáveis aceitas:
     - GOOGLE_API_KEY / GEMINI_API_KEY (chave 1)
     - GOOGLE_API_KEY_2 / GEMINI_API_KEY_2 (chave 2)
+    - GOOGLE_API_KEY_3 / GEMINI_API_KEY_3 (chave 3)
     - GOOGLE_API_KEYS / GEMINI_API_KEYS (lista separada por vírgula)
     """
     keys: list[str] = []
@@ -167,8 +173,31 @@ def get_gemini_api_keys() -> list[str]:
 
     _add(os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
     _add(os.getenv("GOOGLE_API_KEY_2") or os.getenv("GEMINI_API_KEY_2"))
+    _add(os.getenv("GOOGLE_API_KEY_3") or os.getenv("GEMINI_API_KEY_3"))
     _add(os.getenv("GOOGLE_API_KEYS") or os.getenv("GEMINI_API_KEYS"))
     return keys
+
+
+def get_gemini_api_keys_for_images() -> list[str]:
+    """Para capas: prioriza chaves 2 e 3 (Imagen) e deixa a 1 por último."""
+    keys = get_gemini_api_keys()
+    if len(keys) <= 1:
+        return keys
+    return keys[1:] + keys[:1]
+
+
+def get_robot_max_per_feed() -> int:
+    try:
+        return max(1, min(int(os.getenv("ROBOT_MAX_PER_FEED", "3")), 8))
+    except ValueError:
+        return 3
+
+
+def get_robot_max_articles() -> int:
+    try:
+        return max(1, min(int(os.getenv("ROBOT_MAX_ARTICLES", "36")), 80))
+    except ValueError:
+        return 36
 
 
 def _api_key_id(api_key: str) -> str:
@@ -226,76 +255,38 @@ HEADERS = {
 }
 
 RSS_FEEDS = [
-    {
-        "url": "https://livecoins.com.br/feed/",
-        "fonte": "Livecoins",
-        "tag_hint": "Cripto",
-    },
-    {
-        "url": "https://g1.globo.com/dynamo/economia/rss2.xml",
-        "fonte": "G1 Economia",
-        "tag_hint": "Economia",
-    },
-    {
-        "url": "https://www.infomoney.com.br/feed/",
-        "fonte": "InfoMoney",
-        "tag_hint": "Economia",
-    },
-    {
-        "url": "https://br.investing.com/rss/news.rss",
-        "fonte": "Investing.com Brasil",
-        "tag_hint": "Ações",
-    },
-    {
-        "url": "https://exame.com/feed/",
-        "fonte": "Exame",
-        "tag_hint": "Economia",
-    },
-    {
-        "url": "https://www.moneytimes.com.br/feed/",
-        "fonte": "Money Times",
-        "tag_hint": "Ações",
-    },
-    {
-        "url": "https://neofeed.com.br/feed/",
-        "fonte": "NeoFeed",
-        "tag_hint": "Fintech",
-    },
-    {
-        "url": "https://pox.globo.com/rss/valor",
-        "fonte": "Valor Econômico",
-        "tag_hint": "Economia",
-    },
-    {
-        "url": "https://www.infomoney.com.br/mercados/feed/",
-        "fonte": "InfoMoney Mercados",
-        "tag_hint": "Ações",
-    },
-    {
-        "url": "https://br.investing.com/rss/news_301.rss",
-        "fonte": "Investing Commodities",
-        "tag_hint": "Commodities",
-    },
-    {
-        "url": "https://g1.globo.com/dynamo/politica/rss2.xml",
-        "fonte": "G1 Política",
-        "tag_hint": "Política Econômica",
-    },
-    {
-        "url": "https://www.infomoney.com.br/economia/feed/",
-        "fonte": "InfoMoney Economia",
-        "tag_hint": "Inflação",
-    },
-    {
-        "url": "https://www.infomoney.com.br/onde-investir/feed/",
-        "fonte": "InfoMoney Onde Investir",
-        "tag_hint": "Juros",
-    },
-    {
-        "url": "https://br.investing.com/rss/news_25.rss",
-        "fonte": "Investing Forex",
-        "tag_hint": "Dólar",
-    },
+    # --- Brasil ---
+    {"url": "https://g1.globo.com/dynamo/economia/rss2.xml", "fonte": "G1 Economia", "tag_hint": "Economia"},
+    {"url": "https://g1.globo.com/dynamo/politica/rss2.xml", "fonte": "G1 Política", "tag_hint": "Política Econômica"},
+    {"url": "https://pox.globo.com/rss/valor", "fonte": "Valor Econômico", "tag_hint": "Economia"},
+    {"url": "https://www.infomoney.com.br/feed/", "fonte": "InfoMoney", "tag_hint": "Economia"},
+    {"url": "https://www.infomoney.com.br/mercados/feed/", "fonte": "InfoMoney Mercados", "tag_hint": "Ações"},
+    {"url": "https://www.infomoney.com.br/economia/feed/", "fonte": "InfoMoney Economia", "tag_hint": "Inflação"},
+    {"url": "https://www.infomoney.com.br/onde-investir/feed/", "fonte": "InfoMoney Onde Investir", "tag_hint": "Juros"},
+    {"url": "https://exame.com/feed/", "fonte": "Exame", "tag_hint": "Economia"},
+    {"url": "https://www.moneytimes.com.br/feed/", "fonte": "Money Times", "tag_hint": "Ações"},
+    {"url": "https://neofeed.com.br/feed/", "fonte": "NeoFeed", "tag_hint": "Fintech"},
+    {"url": "https://br.investing.com/rss/news.rss", "fonte": "Investing.com Brasil", "tag_hint": "Ações"},
+    {"url": "https://br.investing.com/rss/news_301.rss", "fonte": "Investing Commodities", "tag_hint": "Commodities"},
+    {"url": "https://br.investing.com/rss/news_25.rss", "fonte": "Investing Forex", "tag_hint": "Dólar"},
+    {"url": "https://www.cnnbrasil.com.br/economia/feed/", "fonte": "CNN Brasil Economia", "tag_hint": "Economia"},
+    {"url": "https://www.estadao.com.br/rss/economia.xml", "fonte": "Estadão Economia", "tag_hint": "Economia"},
+    {"url": "https://feeds.folha.uol.com.br/mercado/rss091.xml", "fonte": "Folha Mercado", "tag_hint": "Economia"},
+    {"url": "https://rss.uol.com.br/feed/economia.xml", "fonte": "UOL Economia", "tag_hint": "Economia"},
+    {"url": "https://www.poder360.com.br/feed/", "fonte": "Poder360", "tag_hint": "Política Econômica"},
+    {"url": "https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml", "fonte": "Agência Brasil", "tag_hint": "Política Econômica"},
+    {"url": "https://livecoins.com.br/feed/", "fonte": "Livecoins", "tag_hint": "Cripto"},
+    {"url": "https://cointelegraph.com/rss/tag/brazil", "fonte": "Cointelegraph Brasil", "tag_hint": "Cripto"},
+    # --- Internacional ---
+    {"url": "https://feeds.bbci.co.uk/news/business/rss.xml", "fonte": "BBC Business", "tag_hint": "Economia"},
+    {"url": "https://www.cnbc.com/id/10001147/device/rss/rss.html", "fonte": "CNBC", "tag_hint": "Economia"},
+    {"url": "https://feeds.reuters.com/reuters/businessNews", "fonte": "Reuters Business", "tag_hint": "Economia"},
+    {"url": "https://feeds.content.dowjones.io/public/rss/mw_topstories", "fonte": "MarketWatch", "tag_hint": "Ações"},
+    {"url": "https://finance.yahoo.com/news/rssindex", "fonte": "Yahoo Finance", "tag_hint": "Ações"},
+    {"url": "https://www.theguardian.com/uk/business/rss", "fonte": "The Guardian Business", "tag_hint": "Economia"},
+    {"url": "https://www.investing.com/rss/news.rss", "fonte": "Investing.com World", "tag_hint": "Ações"},
+    {"url": "https://www.coindesk.com/arc/outboundfeeds/rss/", "fonte": "CoinDesk", "tag_hint": "Cripto"},
+    {"url": "https://cointelegraph.com/rss", "fonte": "Cointelegraph", "tag_hint": "Cripto"},
 ]
 
 BCB_SERIES = {
@@ -1206,12 +1197,26 @@ def _is_image_quota_error(exc: Exception) -> bool:
 
 
 def _is_image_model_unavailable(exc: Exception) -> bool:
+    """Modelo removido/descontinuado na API (vale para todas as chaves)."""
     msg = str(exc)
     return (
         "NOT_FOUND" in msg
         or "no longer available" in msg
         or "is not found" in msg
         or "not supported for generateContent" in msg
+        or "not supported for generateImages" in msg
+    )
+
+
+def _is_image_key_access_error(exc: Exception) -> bool:
+    """Sem cota/acesso nesta chave — tentar o mesmo modelo na próxima chave."""
+    msg = str(exc).lower()
+    return (
+        "permission_denied" in msg
+        or "not enabled" in msg
+        or "does not have access" in msg
+        or "api key not valid" in msg
+        or "consumer_invalid" in msg
     )
 
 
@@ -1317,7 +1322,7 @@ def _generate_article_image_cursor(prompt: str, slug: str) -> str | None:
 
 
 def _generate_article_image_gemini(prompt: str, slug: str) -> str | None:
-    keys = get_gemini_api_keys()
+    keys = get_gemini_api_keys_for_images()
     if not keys:
         print("   [img/gemini] Cliente Gemini indisponivel (GOOGLE_API_KEY/GEMINI_API_KEY).")
         return None
@@ -1381,11 +1386,11 @@ def _generate_article_image_gemini(prompt: str, slug: str) -> str | None:
             except Exception as e:
                 if _is_image_model_unavailable(e):
                     _unavailable_image_models.add(model)
-                    print(f"   [img/gemini] Modelo indisponivel, removendo da fila: {model}")
-                elif _is_image_quota_error(e):
+                    print(f"   [img/gemini] Modelo indisponivel na API, removendo da fila: {model}")
+                elif _is_image_quota_error(e) or _is_image_key_access_error(e):
                     exhausted.add(model)
                     print(
-                        f"   [img/gemini] Cota esgotada em {model} (chave {key_index}) "
+                        f"   [img/gemini] Sem cota/acesso em {model} (chave {key_index}) "
                         "— proximo modelo/chave."
                     )
                 print(f"   [img/gemini] Falha ({model}, chave {key_index}): {e}")
@@ -1472,13 +1477,13 @@ def backfill_missing_images(limit: int = 10) -> dict[str, Any]:
 
 
 def generate_content_with_fallback(prompt: str) -> str | None:
-    """Tenta modelos em ordem; troca em cota diária; espera só em limite por minuto."""
-    if not client:
+    """Tenta modelos e chaves em ordem; troca em cota diária; espera só em RPM."""
+    keys = get_gemini_api_keys()
+    if not keys:
         return None
 
-    modelos = [m for m in get_gemini_modelos() if m not in _exhausted_models]
-    if not modelos:
-        print("   ❌ Todos os modelos Gemini esgotaram a cota diária nesta execução.")
+    all_models = get_gemini_modelos()
+    if not all_models:
         return None
 
     config = types.GenerateContentConfig(
@@ -1486,43 +1491,71 @@ def generate_content_with_fallback(prompt: str) -> str | None:
         temperature=0.7,
     )
 
-    for model in modelos:
-        rpm_retries = 0
-        max_rpm_retries = 3
+    for key_index, api_key in enumerate(keys, start=1):
+        key_id = _api_key_id(api_key)
+        exhausted = _exhausted_models_by_key.setdefault(key_id, set())
+        modelos = [m for m in all_models if m not in exhausted]
+        if not modelos:
+            print(f"   ⚠️ Chave {key_index}/{len(keys)}: todos os modelos de texto esgotados.")
+            continue
 
-        while rpm_retries <= max_rpm_retries:
-            try:
-                print(f"   🤖 Modelo: {model}")
-                response = client.models.generate_content(
-                    model=model,
-                    contents=prompt,
-                    config=config,
-                )
-                if not response.text:
-                    return None
-                return response.text
+        gen_client = get_genai_client(api_key)
+        if gen_client is None:
+            continue
 
-            except Exception as e:
-                if _is_daily_quota_error(e):
-                    print(f"   ⚠️ Cota diária esgotada em {model} — próximo modelo.")
-                    _exhausted_models.add(model)
+        print(f"   🔑 Texto: chave {key_index}/{len(keys)}")
+        for model in modelos:
+            rpm_retries = 0
+            max_rpm_retries = 3
+
+            while rpm_retries <= max_rpm_retries:
+                try:
+                    print(f"   🤖 Modelo: {model}")
+                    response = gen_client.models.generate_content(
+                        model=model,
+                        contents=prompt,
+                        config=config,
+                    )
+                    if not response.text:
+                        return None
+                    return response.text
+
+                except Exception as e:
+                    if _is_daily_quota_error(e):
+                        print(
+                            f"   ⚠️ Cota diária esgotada em {model} "
+                            f"(chave {key_index}) — próximo modelo/chave."
+                        )
+                        exhausted.add(model)
+                        break
+
+                    if _is_rpm_quota_error(e) and rpm_retries < max_rpm_retries:
+                        delay = _extract_retry_delay(e)
+                        print(f"   ⏳ Limite por minuto em {model}, aguardando {delay:.0f}s...")
+                        time.sleep(delay)
+                        rpm_retries += 1
+                        continue
+
+                    print(f"   ❌ Erro na IA ({model}, chave {key_index}): {e}")
                     break
 
-                if _is_rpm_quota_error(e) and rpm_retries < max_rpm_retries:
-                    delay = _extract_retry_delay(e)
-                    print(f"   ⏳ Limite por minuto em {model}, aguardando {delay:.0f}s...")
-                    time.sleep(delay)
-                    rpm_retries += 1
-                    continue
-
-                print(f"   ❌ Erro na IA ({model}): {e}")
-                break
-
+    print("   ❌ Todas as chaves/modelos Gemini esgotaram a cota diária nesta execução.")
     return None
 
 
+def _all_text_models_exhausted() -> bool:
+    keys = get_gemini_api_keys()
+    models = get_gemini_modelos()
+    if not keys or not models:
+        return True
+    return all(
+        len(_exhausted_models_by_key.get(_api_key_id(k), set())) >= len(models)
+        for k in keys
+    )
+
+
 def process_news_with_ai(title, content, fonte, tag_hint, market_context):
-    if not client:
+    if not get_gemini_api_keys():
         return None
 
     print(f"   🤖 Enviando para IA: {title[:40]}...")
@@ -1782,14 +1815,28 @@ def extract_entry_content(entry) -> str:
     return str(value or "")
 
 
-def fetch_and_process(max_per_feed=2):
+def _news_link_exists(link: str) -> bool:
+    if not link:
+        return False
+    try:
+        result = get_db().execute("SELECT id FROM news WHERE link = ? LIMIT 1", [link])
+        return bool(result.rows)
+    except Exception:
+        return False
+
+
+def fetch_and_process(max_per_feed: int | None = None, max_articles: int | None = None):
+    """Varre feeds, gera análise + capa e prioriza artigos com imagem no lote."""
     noticias_processadas = []
-    _exhausted_models.clear()
+    max_per_feed = max_per_feed if max_per_feed is not None else get_robot_max_per_feed()
+    max_articles = max_articles if max_articles is not None else get_robot_max_articles()
+    _exhausted_models_by_key.clear()
     _reset_image_quota_state()
     print(f"\n--- Iniciando Varredura: {datetime.now()} ---")
     print(f"   🧠 Modelos Gemini: {', '.join(get_gemini_modelos())}")
     print(f"   🖼️ Modelos de imagem: {', '.join(get_gemini_image_models())}")
-    print(f"   🔑 Chaves Gemini: {len(get_gemini_api_keys())}")
+    print(f"   🔑 Chaves Gemini: {len(get_gemini_api_keys())} (imagem prioriza 2→3→1)")
+    print(f"   📰 Fontes: {len(RSS_FEEDS)} | até {max_per_feed}/feed | teto {max_articles}/rodada")
 
     market = fetch_market_snapshot()
     bcb = fetch_bcb_snapshot()
@@ -1797,6 +1844,10 @@ def fetch_and_process(max_per_feed=2):
     print(f"   📊 Dados de mercado coletados: {len(market)} cotações, {len(bcb)} indicadores BCB")
 
     for feed_config in RSS_FEEDS:
+        if len(noticias_processadas) >= max_articles:
+            print(f"   🛑 Teto da rodada atingido ({max_articles} artigos).")
+            break
+
         feed_url = feed_config["url"]
         fonte = feed_config["fonte"]
         tag_hint = feed_config["tag_hint"]
@@ -1817,7 +1868,22 @@ def fetch_and_process(max_per_feed=2):
             data_context = format_data_context(market, bcb, db_context, historico, tag_hint)
 
             for entry in feed.entries[:max_per_feed]:
+                if len(noticias_processadas) >= max_articles:
+                    break
+
                 print(f"   📄 Encontrada: {entry.title[:60]}...")
+
+                entry_link = str(getattr(entry, "link", "") or "")
+                try:
+                    from article_enrichment import clean_source_url
+
+                    entry_link = clean_source_url(entry_link) or entry_link
+                except Exception:
+                    pass
+
+                if _news_link_exists(entry_link):
+                    print("   ⏭️ Já publicada — pulando (economiza cota).")
+                    continue
 
                 raw_content = extract_entry_content(entry)
                 clean_text = clean_html(raw_content)
@@ -1828,47 +1894,50 @@ def fetch_and_process(max_per_feed=2):
 
                 ai_data = process_news_with_ai(entry.title, clean_text, fonte, tag_hint, data_context)
 
-                if ai_data is None and len(_exhausted_models) >= len(get_gemini_modelos()):
-                    print("   🛑 Cota diária esgotada em todos os modelos — interrompendo varredura.")
+                if ai_data is None and _all_text_models_exhausted():
+                    print("   🛑 Cota diária esgotada em todas as chaves/modelos — interrompendo varredura.")
+                    noticias_processadas.sort(key=lambda n: 0 if n.get("imagem_url") else 1)
                     return noticias_processadas
 
-                if ai_data:
-                    tag = ai_data.get("tag", tag_hint)
-                    if tag not in VALID_TAGS:
-                        tag = tag_hint if tag_hint in VALID_TAGS else "Economia"
-                        ai_data["tag"] = tag
+                if not ai_data:
+                    continue
 
-                    entry_link = str(getattr(entry, "link", "") or "")
-                    try:
-                        from article_enrichment import clean_source_url
+                tag = ai_data.get("tag", tag_hint)
+                if tag not in VALID_TAGS:
+                    tag = tag_hint if tag_hint in VALID_TAGS else "Economia"
+                    ai_data["tag"] = tag
 
-                        entry_link = clean_source_url(entry_link) or entry_link
-                    except Exception:
-                        pass
-                    imagem_url = generate_article_image(
-                        ai_data.get("titulo_viral", entry.title),
-                        tag,
-                        entry_link,
-                        ai_data.get("resumo_simples", ""),
-                    )
+                imagem_url = generate_article_image(
+                    ai_data.get("titulo_viral", entry.title),
+                    tag,
+                    entry_link,
+                    ai_data.get("resumo_simples", ""),
+                )
+                if imagem_url:
+                    print("   🖼️ Capa OK — prioridade Discover.")
+                else:
+                    print("   ⚠️ Sem capa nesta rodada — backfill pode completar depois.")
 
-                    published = datetime.now().strftime("%d/%m/%Y %H:%M")
-                    news_item = {
-                        "original_link": entry_link,
-                        "fonte": fonte,
-                        "published_at": published,
-                        "imagem_url": imagem_url,
-                        "dados_mercado": _build_dados_mercado_payload(market, bcb, ai_data, historico),
-                        "contexto_editorial": ai_data.get("contexto_mercado", ""),
-                        "versao_analise": 1,
-                        **ai_data,
-                    }
-                    noticias_processadas.append(news_item)
-                    print("   ✅ Processado com sucesso!")
+                published = datetime.now().strftime("%d/%m/%Y %H:%M")
+                news_item = {
+                    "original_link": entry_link,
+                    "fonte": fonte,
+                    "published_at": published,
+                    "imagem_url": imagem_url,
+                    "dados_mercado": _build_dados_mercado_payload(market, bcb, ai_data, historico),
+                    "contexto_editorial": ai_data.get("contexto_mercado", ""),
+                    "versao_analise": 1,
+                    **ai_data,
+                }
+                noticias_processadas.append(news_item)
+                print("   ✅ Processado com sucesso!")
 
         except Exception as e:
             print(f"   ❌ Erro Crítico: {e}")
 
+    noticias_processadas.sort(key=lambda n: 0 if n.get("imagem_url") else 1)
+    com_capa = sum(1 for n in noticias_processadas if n.get("imagem_url"))
+    print(f"   📦 Lote: {len(noticias_processadas)} artigos ({com_capa} com capa).")
     return noticias_processadas
 
 
