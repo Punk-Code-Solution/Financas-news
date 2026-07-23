@@ -457,53 +457,62 @@ def ensure_educational_guides(client: DbClient) -> int:
                 )
         existing = client.execute("SELECT id FROM news WHERE link = ?", [link])
         if existing.rows:
-            client.execute(
-                """
-                UPDATE news
-                SET titulo = ?, resumo = ?, impacto = ?, tag = ?, sentimento = ?,
-                    fonte = ?, dados_mercado = ?, contexto_editorial = ?,
-                    updated_at = ?, versao_analise = ?
-                WHERE link = ?
-                """,
-                [
-                    guide["titulo"],
-                    guide["resumo"],
-                    guide["impacto"],
-                    guide["tag"],
-                    guide["sentimento"],
-                    GUIDE_FONTE,
-                    dados,
-                    contexto,
-                    agora,
-                    1,
-                    link,
-                ],
-            )
+            try:
+                client.execute(
+                    """
+                    UPDATE news
+                    SET titulo = ?, resumo = ?, impacto = ?, tag = ?, sentimento = ?,
+                        fonte = ?, dados_mercado = ?, contexto_editorial = ?,
+                        updated_at = ?, versao_analise = ?
+                    WHERE link = ?
+                    """,
+                    [
+                        guide["titulo"],
+                        guide["resumo"],
+                        guide["impacto"],
+                        guide["tag"],
+                        guide["sentimento"],
+                        GUIDE_FONTE,
+                        dados,
+                        contexto,
+                        agora,
+                        1,
+                        link,
+                    ],
+                )
+            except Exception as exc:
+                # Triggers FTS legados no Turso podem falhar o protocolo HTTP.
+                print(f"Aviso: falha ao atualizar guia {guide['slug']}: {exc}")
+                continue
         else:
-            client.execute(
-                """
-                INSERT INTO news (
-                    titulo, resumo, impacto, link, tag, sentimento,
-                    published_at, fonte, dados_mercado, contexto_editorial,
-                    created_at, imagem_url, versao_analise
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    guide["titulo"],
-                    guide["resumo"],
-                    guide["impacto"],
-                    link,
-                    guide["tag"],
-                    guide["sentimento"],
-                    published_at,
-                    GUIDE_FONTE,
-                    dados,
-                    contexto,
-                    published_at,
-                    None,
-                    1,
-                ],
-            )
+            try:
+                client.execute(
+                    """
+                    INSERT INTO news (
+                        titulo, resumo, impacto, link, tag, sentimento,
+                        published_at, fonte, dados_mercado, contexto_editorial,
+                        created_at, imagem_url, versao_analise
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        guide["titulo"],
+                        guide["resumo"],
+                        guide["impacto"],
+                        link,
+                        guide["tag"],
+                        guide["sentimento"],
+                        published_at,
+                        GUIDE_FONTE,
+                        dados,
+                        contexto,
+                        published_at,
+                        None,
+                        1,
+                    ],
+                )
+            except Exception as exc:
+                print(f"Aviso: falha ao inserir guia {guide['slug']}: {exc}")
+                continue
         written += 1
     return written
 

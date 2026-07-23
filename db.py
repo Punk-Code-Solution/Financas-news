@@ -244,7 +244,12 @@ def ensure_schema(client: DbClient) -> None:
 
 
 def _ensure_fts(client: DbClient) -> None:
-    """Índice full-text para busca (FTS5). Fallback silencioso se indisponível."""
+    """Índice full-text para busca (FTS5).
+
+    No Turso/libSQL HTTP, triggers FTS quebram o protocolo do client
+    (KeyError: 'result' no UPDATE/INSERT). Por isso triggers só no SQLite local;
+    no remoto o índice é reconstruído sob demanda.
+    """
     global _fts_ready
     try:
         client.execute(
@@ -258,39 +263,61 @@ def _ensure_fts(client: DbClient) -> None:
             )
             """
         )
-        for sql in (
-            """
-            CREATE TRIGGER IF NOT EXISTS news_fts_ai AFTER INSERT ON news BEGIN
-                INSERT INTO news_fts(rowid, titulo, resumo)
-                VALUES (new.id, new.titulo, new.resumo);
-            END
-            """,
-            """
-            CREATE TRIGGER IF NOT EXISTS news_fts_ad AFTER DELETE ON news BEGIN
-                INSERT INTO news_fts(news_fts, rowid, titulo, resumo)
-                VALUES ('delete', old.id, old.titulo, old.resumo);
-            END
-            """,
-            """
-            CREATE TRIGGER IF NOT EXISTS news_fts_au AFTER UPDATE OF titulo, resumo ON news BEGIN
-                INSERT INTO news_fts(news_fts, rowid, titulo, resumo)
-                VALUES ('delete', old.id, old.titulo, old.resumo);
-                INSERT INTO news_fts(rowid, titulo, resumo)
-                VALUES (new.id, new.titulo, new.resumo);
-            END
-            """,
-        ):
-            client.execute(sql)
+
+        # Remove triggers legados que quebram o client HTTP do Turso.
+        for trigger in ("news_fts_ai", "news_fts_ad", "news_fts_au"):
+            try:
+                client.execute(f"DROP TRIGGER IF EXISTS {trigger}")
+            except Exception:
+                pass
+
+        if _use_local_db():
+            for sql in (
+                """
+                CREATE TRIGGER IF NOT EXISTS news_fts_ai AFTER INSERT ON news BEGIN
+                    INSERT INTO news_fts(rowid, titulo, resumo)
+                    VALUES (new.id, new.titulo, new.resumo);
+                END
+                """,
+                """
+                CREATE TRIGGER IF NOT EXISTS news_fts_ad AFTER DELETE ON news BEGIN
+                    INSERT INTO news_fts(news_fts, rowid, titulo, resumo)
+                    VALUES ('delete', old.id, old.titulo, old.resumo);
+                END
+                """,
+                """
+                CREATE TRIGGER IF NOT EXISTS news_fts_au AFTER UPDATE OF titulo, resumo ON news BEGIN
+                    INSERT INTO news_fts(news_fts, rowid, titulo, resumo)
+                    VALUES ('delete', old.id, old.titulo, old.resumo);
+                    INSERT INTO news_fts(rowid, titulo, resumo)
+                    VALUES (new.id, new.titulo, new.resumo);
+                END
+                """,
+            ):
+                client.execute(sql)
 
         count = client.execute("SELECT COUNT(*) FROM news_fts")
         fts_rows = int(count.rows[0][0]) if count.rows else 0
         news_count = client.execute("SELECT COUNT(*) FROM news")
         news_rows = int(news_count.rows[0][0]) if news_count.rows else 0
-        if news_rows and fts_rows < news_rows:
+        if news_rows and fts_rows < max(1, int(news_rows * 0.9)):
             client.execute("INSERT INTO news_fts(news_fts) VALUES('rebuild')")
         _fts_ready = True
     except Exception:
         _fts_ready = False
+
+
+def sync_news_fts(client: DbClient | None = None) -> None:
+    """Reconstrói o índice FTS quando não há triggers (Turso)."""
+    if not fts_available():
+        return
+    if _use_local_db():
+        return
+    db = client or get_db()
+    try:
+        db.execute("INSERT INTO news_fts(news_fts) VALUES('rebuild')")
+    except Exception:
+        pass
 
 
 def fts_available() -> bool:
