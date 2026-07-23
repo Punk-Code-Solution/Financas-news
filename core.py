@@ -1300,6 +1300,12 @@ def _is_openai_image_quota_error(exc: Exception) -> bool:
     )
 
 
+def _is_openai_billing_hard_limit(exc: Exception) -> bool:
+    """Limite de billing da conta — afeta todos os modelos OpenAI."""
+    msg = str(exc).lower()
+    return "billing_hard_limit" in msg or "billing hard limit" in msg
+
+
 def _is_openai_image_model_unavailable(exc: Exception) -> bool:
     msg = str(exc).lower()
     return (
@@ -1629,6 +1635,15 @@ def _generate_article_image_openai(prompt: str, slug: str) -> str | None:
             print(f"   [img/openai] Imagem salva: {url} ({model})")
             return url
         except Exception as e:
+            if _is_openai_billing_hard_limit(e):
+                for m in all_models:
+                    _exhausted_openai_image_models.add(m)
+                print(
+                    "   [img/openai] Billing hard limit atingido — "
+                    "interrompendo fila OpenAI (libere o limite no painel OpenAI)."
+                )
+                print(f"   [img/openai] Falha ({model}): {e}")
+                return None
             if _is_openai_image_model_unavailable(e):
                 _unavailable_openai_image_models.add(model)
                 print(f"   [img/openai] Modelo indisponivel, removendo da fila: {model}")
