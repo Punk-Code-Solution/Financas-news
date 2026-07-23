@@ -1162,6 +1162,11 @@ def get_article_images_dir() -> Path:
     return path
 
 
+def _article_image_slug(link: str, article_id: int | None = None) -> str:
+    key = link.strip() if link else f"article-{article_id or 0}"
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
 def get_gemini_image_models() -> list[str]:
     raw = os.getenv("GEMINI_IMAGE_MODELOS", "")
     if raw.strip():
@@ -1953,42 +1958,85 @@ def generate_article_image(
     return None
 
 
-def backfill_missing_images(limit: int = 1) -> dict[str, Any]:
+def _media_filename_from_url(imagem_url: str | None) -> str | None:
+    if not imagem_url:
+        return None
+    name = str(imagem_url).strip().rstrip("/").rsplit("/", 1)[-1]
+    if not name or name in (".", "..") or "/" in name or "\\" in name:
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", name):
+        return None
+    return name
+
+
+def _media_file_exists(imagem_url: str | None) -> bool:
+    name = _media_filename_from_url(imagem_url)
+    if not name:
+        return False
+    path = get_article_images_dir() / name
+    return path.is_file() and path.stat().st_size > 0
+
+
+def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[str, Any]:
     """Gera capas pendentes: prioriza notícias mais novas (id DESC).
 
-    Quando não há artigos recentes sem capa, preenche as antigas na mesma fila.
-    Usa Gemini e, se necessário, OpenAI/DALL-E com rate limit de 1/min.
+    Também repara registros com ``imagem_url`` apontando para arquivo ausente no disco
+    (comum quando o cron grava no Turso e o arquivo não persistiu no host).
     """
     _reset_image_quota_state()
     client_db = get_db()
+    scan = max(limit * 25, 40)
     result = client_db.execute(
         """
-        SELECT id, titulo, tag, link, resumo
+        SELECT id, titulo, tag, link, resumo, imagem_url
         FROM news
-        WHERE imagem_url IS NULL OR imagem_url = ''
         ORDER BY id DESC
         LIMIT ?
         """,
-        [limit],
+        [scan],
     )
-    rows = result.rows
+
+    rows: list[Any] = []
+    repaired_ids: list[int] = []
+    for row in result.rows:
+        article_id = int(row[0])
+        imagem_url = row[5] if len(row) > 5 else None
+        if not imagem_url or not str(imagem_url).strip():
+            rows.append(row)
+        elif repair_broken and not _media_file_exists(imagem_url):
+            print(
+                f"   [img] URL quebrada #{article_id}: {imagem_url} "
+                f"(arquivo ausente em {get_article_images_dir()}) — regenerando."
+            )
+            client_db.execute(
+                "UPDATE news SET imagem_url = NULL WHERE id = ?",
+                [article_id],
+            )
+            repaired_ids.append(article_id)
+            rows.append(row)
+        if len(rows) >= limit:
+            break
 
     updated: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
 
     if not rows:
-        print("   [img] Nenhuma noticia sem capa para backfill.")
+        print("   [img] Nenhuma noticia sem capa (nem URL quebrada) para backfill.")
         client_db.close()
         return {
             "processed": 0,
             "updated": 0,
             "failed": 0,
+            "repaired_broken": 0,
             "items": [],
             "errors": [],
             "priority": "newest_first",
         }
 
-    print(f"   [img] Backfill: ate {len(rows)} capa(s), prioridade noticias novas (id DESC).")
+    print(
+        f"   [img] Backfill: ate {len(rows)} capa(s), prioridade noticias novas "
+        f"(id DESC); reparos={len(repaired_ids)}."
+    )
     for row in rows:
         article_id, titulo, tag, link, resumo = row[0], row[1], row[2], row[3] or "", row[4] or ""
         print(f"   [img] Capa pendente #{article_id}: {titulo[:60]}...")
@@ -2000,20 +2048,23 @@ def backfill_missing_images(limit: int = 1) -> dict[str, Any]:
             article_id=article_id,
             use_openai=True,
         )
-        if imagem_url:
+        if imagem_url and _media_file_exists(imagem_url):
             client_db.execute(
                 "UPDATE news SET imagem_url = ? WHERE id = ?",
                 [imagem_url, article_id],
             )
             updated.append({"id": article_id, "imagem_url": imagem_url})
         else:
-            failed.append({"id": article_id, "titulo": titulo[:80]})
+            if imagem_url and not _media_file_exists(imagem_url):
+                print(f"   [img] Arquivo nao persistiu apos gerar ({imagem_url}) — nao atualiza DB.")
+            failed.append({"id": article_id, "titulo": (titulo or "")[:80]})
 
     client_db.close()
     return {
         "processed": len(rows),
         "updated": len(updated),
         "failed": len(failed),
+        "repaired_broken": len(repaired_ids),
         "items": updated,
         "errors": failed,
         "priority": "newest_first",
