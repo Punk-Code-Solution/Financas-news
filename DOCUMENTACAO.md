@@ -61,8 +61,11 @@ O diferencial não é republicar RSS — é produzir conteúdo com **contexto ma
 O robô é disparado via HTTP (cron externo, Render Cron Job ou chamada manual):
 
 ```
-GET /api/rodar-robo?token=SEU_TOKEN
+GET /api/rodar-robo
+Authorization: Bearer SEU_ROBO_TOKEN
 ```
+
+(Query `?token=` ainda funciona para cron; preferir header quando possível.)
 
 ---
 
@@ -277,7 +280,9 @@ Sinais on-page: `rel=canonical`, meta description, JSON-LD (`WebSite` na home, `
 
 | Rota | Função |
 |------|--------|
-| `GET /api/rodar-robo?token=` | Dispara pipeline de notícias |
+| `GET /api/rodar-robo` | Dispara pipeline (auth: Bearer / X-Robo-Token / ?token=) |
+| `GET /api/gerar-imagens` | Backfill de capas (mesma auth) |
+| `GET /api/atualizar-artigos` | Atualiza dados de mercado (mesma auth) |
 | `POST /api/newsletter` | Captura de e-mail |
 | `GET /ping` | Health check |
 
@@ -291,6 +296,7 @@ Sinais on-page: `rel=canonical`, meta description, JSON-LD (`WebSite` na home, `
 GOOGLE_API_KEY=           # ou GEMINI_API_KEY (chave 1)
 GOOGLE_API_KEY_2=         # opcional: segunda chave (fallback de cota)
 GOOGLE_API_KEY_3=         # opcional: terceira chave (fallback de cota)
+ROBO_TOKEN=               # obrigatório: /api/rodar-robo, /api/gerar-imagens, /api/atualizar-artigos
 ROBOT_MAX_PER_FEED=3
 ROBOT_MAX_ARTICLES=36
 # GOOGLE_API_KEYS=key1,key2,key3   # alternativa: lista de chaves
@@ -298,13 +304,23 @@ TURSO_DATABASE_URL=       # URL libsql:// do Turso
 TURSO_AUTH_TOKEN=         # Token de autenticação Turso
 ```
 
+### Autenticação das rotas do robô
+
+`ROBO_TOKEN` vem só do ambiente (nunca hardcoded). Ordem de leitura do segredo na request:
+
+1. `Authorization: Bearer <token>` (preferencial)
+2. `X-Robo-Token: <token>`
+3. Query `?token=` (cron; evita expor em docs públicas)
+
+Sem env → HTTP 503. Ausente/errado → HTTP 401 (comparação com `hmac.compare_digest`).
+
 ### IA (opcionais)
 
 ```env
 GEMINI_MODELOS=gemini-3.1-flash-lite-preview,gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-2.5-flash-lite,gemini-2.5-flash,gemini-3-flash,gemini-3.5-flash
 GEMINI_IMAGE_MODELOS=gemini-3.1-flash-lite-image,gemini-3.1-flash-image,gemini-2.5-flash-image,gemini-3.1-flash-image-preview,gemini-3-pro-image
-# Produção (Render): gemini (+ fallback OpenAI no backfill). Local: gemini | openai | cursor | auto.
-# Um ou vários provedores (ordem = prioridade). Ex.: gemini,openai | openai,gemini | auto
+# Produção (Render): gemini (+ Hugging Face + OpenAI no backfill). Local: gemini | huggingface | openai | cursor | auto.
+# Um ou vários provedores (ordem = prioridade). Ex.: gemini,huggingface,openai | openai,gemini | auto
 IMAGE_PROVIDER=gemini,huggingface,openai
 HF_TOKEN=
 HF_IMAGE_MODELOS=black-forest-labs/FLUX.1-schnell
@@ -314,7 +330,7 @@ OPENAI_IMAGE_MIN_INTERVAL=65
 ARTICLE_IMAGES_DIR=/var/data/article_images
 ```
 
-> No Render, use `IMAGE_PROVIDER=gemini,huggingface,openai`. Cole o valor de `HF_TOKEN` no painel (Blueprint usa `sync: false`). `auto`/`cursor` no Render ignoram Cursor. Cada provedor percorre a própria fila (`GEMINI_IMAGE_MODELOS` / `HF_IMAGE_MODELOS` / `OPENAI_IMAGE_MODELOS`).
+> No Render, use `IMAGE_PROVIDER=gemini,huggingface,openai`. Cole `HF_TOKEN` e `ROBO_TOKEN` no painel (`sync: false`). `auto`/`cursor` no Render ignoram Cursor. Cada provedor percorre a própria fila (`GEMINI_IMAGE_MODELOS` / `HF_IMAGE_MODELOS` / `OPENAI_IMAGE_MODELOS`).
 ### Monetização (opcionais — só exibe se preenchidas)
 
 ```env
@@ -347,19 +363,20 @@ PREMIUM_TEASER_ENABLED=false
 Agendar chamada ao robô a cada 2–3 horas (cron no Render ou cron-job.org):
 
 ```
-https://financas-news.net.br/api/rodar-robo?token=SEU_TOKEN
+https://financas-news.net.br/api/rodar-robo?token=SEU_ROBO_TOKEN
 ```
 
-Variáveis úteis: `ROBOT_MAX_PER_FEED=3`, `ROBOT_MAX_ARTICLES=36`, `GOOGLE_API_KEY` / `_2` / `_3`.
+Preferencial (menos vazamento em logs): header `Authorization: Bearer SEU_ROBO_TOKEN`.  
+Variáveis úteis: `ROBO_TOKEN`, `ROBOT_MAX_PER_FEED=3`, `ROBOT_MAX_ARTICLES=36`, `GOOGLE_API_KEY` / `_2` / `_3`.
 
 Se não houver notícias novas, o robô gera **1 capa** para o artigo pendente mais recente (senão, antigos sem capa).
 
 ### Capas (backfill contínuo)
 
-Com `OPENAI_API_KEY` e limite de 1 imagem/minuto, agendar a cada **1 minuto**:
+Com Hugging Face / OpenAI e limite de 1 imagem por execução, agendar a cada **30 minutos**:
 
 ```
-https://financas-news.net.br/api/gerar-imagens?token=SEU_TOKEN&limit=1
+https://financas-news.net.br/api/gerar-imagens?token=SEU_ROBO_TOKEN&limit=1
 ```
 
 A fila prioriza `id DESC` (notícias novas sem capa primeiro).
@@ -386,10 +403,10 @@ uvicorn main:app --reload
 
 ### Curto prazo (0–30 dias)
 
+- [x] Mover token do robô para variável de ambiente (`ROBO_TOKEN`)
+- [ ] Agendar robô automaticamente no Render
 - [ ] Reaplicar ao Google AdSense com acervo de 30+ análises de qualidade
 - [ ] Cadastrar programas de afiliados (Binance, Amazon)
-- [ ] Agendar robô automaticamente no Render
-- [ ] Mover token do robô para variável de ambiente (`ROBO_TOKEN`)
 
 ### Médio prazo (1–3 meses)
 

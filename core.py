@@ -1171,36 +1171,130 @@ def get_gemini_image_models() -> list[str]:
 
 
 TAG_IMAGE_VISUALS = {
-    "Cripto": "Bitcoin, cryptocurrency coins, blockchain network, digital finance",
-    "Economia": "macroeconomy, GDP charts, Brazilian economy skyline, business district",
-    "Dólar": "US dollar bills, currency exchange, forex trading screens",
-    "Ações": "stock market tickers, trading floor, rising charts, B3 style visuals",
-    "Juros": "interest rates, central bank building, yield curve charts",
-    "Inflação": "shopping prices, inflation chart, consumer goods, price tags",
-    "Imóveis": "modern apartments, real estate, city buildings, property keys",
-    "Fintech": "mobile banking app, digital payments, fintech innovation",
-    "Commodities": "oil barrels, gold bars, agricultural fields, commodity trading",
-    "Política Econômica": "government building, fiscal policy, parliament, budget documents",
+    "Cripto": "digital finance infrastructure, trading screens, global fintech offices — not coin close-ups",
+    "Economia": "macroeconomy, Brazilian business district, policy and growth visuals",
+    "Dólar": "currency exchange desk, USD/BRL trading screens, forex floor",
+    "Ações": "equity markets, ticker boards, institutional trading floor, B3-style atmosphere",
+    "Juros": "central bank architecture, yield curves on screens, monetary policy mood",
+    "Inflação": "supermarket prices, household budget pressure, cost-of-living atmosphere",
+    "Imóveis": "modern apartments, city real estate, property keys and skyline",
+    "Fintech": "mobile payments, banking app UI glow, digital wallet infrastructure",
+    "Commodities": "oil, gold, agriculture logistics — industrial commodity scenes",
+    "Política Econômica": "government buildings, fiscal documents, parliament atmosphere",
 }
 
+# Sinais no título/resumo → cena concreta (evita capa genérica de “moedas de Bitcoin”).
+_IMAGE_SCENE_CUES: list[tuple[tuple[str, ...], str]] = [
+    (
+        ("nova zelândia", "new zealand", "auckland", "wellington"),
+        "New Zealand financial district / Auckland waterfront skyline at dusk, Pacific atmosphere, "
+        "modern glass offices of a licensed financial-services firm expanding into Oceania",
+    ),
+    (
+        ("bitmex",),
+        "abandoned crypto derivatives trading floor, dark empty desks, offline monitors, "
+        "sense of an exchange shutting down — crisis, not celebration",
+    ),
+    (
+        ("colapso", "falência", "fechamento", "fim da exchange", "shut down", "collapse"),
+        "financial crisis mood: empty trading desks, red warning lights on dark screens, "
+        "deserted exchange office — no triumphant coin photos",
+    ),
+    (
+        ("compliance", "vigilância", "regulação", "regulament", "kyc", "aml"),
+        "regulatory compliance desk: KYC documents, surveillance monitor wall, "
+        "institutional audit room with soft cool lighting — professional, not speculative",
+    ),
+    (
+        ("binance",),
+        "global crypto exchange operations hub with world-map screens and compliance analysts "
+        "at desks — institutional security vibe, not gold coins",
+    ),
+    (
+        ("bitget",),
+        "fintech firm expanding abroad: passport and boarding-pass motifs beside "
+        "glowing trading terminals, international growth energy",
+    ),
+    (
+        ("japão", "japonês", "japonesa", "tokyo", "tóquio", "repatria", "iene", "yen"),
+        "Tokyo skyline and financial towers, abstract yen capital-flow visuals, "
+        "global risk and repatriation mood — macro, not crypto coins",
+    ),
+    (
+        ("selic", "copom", "banco central"),
+        "Brazilian Central Bank building mood, interest-rate decision atmosphere, formal macro policy",
+    ),
+    (
+        ("ipca", "inflação", "preço dos alimentos"),
+        "Brazilian supermarket aisle with price tags and cost-of-living tension",
+    ),
+    (
+        ("dólar", "cambio", "câmbio", "usd/brl"),
+        "currency exchange counter, USD and BRL notes blurred, forex screens",
+    ),
+    (
+        ("petróleo", "óleo", "brent", "wti"),
+        "oil barrels and energy logistics, industrial commodity scene",
+    ),
+    (
+        ("ouro", "gold"),
+        "gold bars in a vault under dramatic light — only if the story is about gold",
+    ),
+    (
+        ("imóvel", "imóveis", "apartamento", "aluguel"),
+        "modern Brazilian apartment buildings and real-estate keys",
+    ),
+    (
+        ("bitcoin", "btc"),
+        "Bitcoin as secondary motif only if essential — prefer network nodes or institutional custody vault "
+        "over piles of physical coins",
+    ),
+]
 
-def _article_image_slug(link: str, article_id: int | None = None) -> str:
-    key = link.strip() if link else f"article-{article_id or 0}"
-    return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+def _first_paragraph(text: str, max_chars: int = 320) -> str:
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    para = re.split(r"\n\s*\n", raw, maxsplit=1)[0].strip()
+    para = re.sub(r"\s+", " ", para)
+    return para[:max_chars]
+
+
+def _extract_image_scene_cues(title: str, resumo: str, tag: str) -> str:
+    blob = f"{title}\n{resumo}".lower()
+    hits: list[str] = []
+    for keys, scene in _IMAGE_SCENE_CUES:
+        if any(k in blob for k in keys):
+            hits.append(scene)
+        if len(hits) >= 2:
+            break
+    if hits:
+        return " | ".join(hits)
+    fallback = TAG_IMAGE_VISUALS.get(tag, "financial markets, economy, professional journalism")
+    return (
+        f"Invent a unique editorial scene that visually retells THIS headline "
+        f"(not a stock category wallpaper). Mood board: {fallback}."
+    )
 
 
 def _build_image_prompt(title: str, tag: str, resumo: str = "") -> str:
-    visual = TAG_IMAGE_VISUALS.get(tag, "financial markets, economy, professional journalism")
-    summary = (resumo or "").strip()[:220]
+    headline = re.sub(r"\s+", " ", (title or "").strip())[:180]
+    context = _first_paragraph(resumo, 360)
+    scene = _extract_image_scene_cues(headline, context, tag or "Economia")
     return (
-        f"Create a high-quality editorial cover photo for a Brazilian financial news website. "
-        f"Headline topic: {title[:140]}. "
-        f"Category: {tag}. "
-        f"Article context: {summary}. "
-        f"Visual elements: {visual}. "
-        f"Style: cinematic, professional photojournalism or polished digital illustration, "
-        f"dramatic lighting, rich colors, 16:9 composition. "
-        f"Strict rules: no text, no letters, no logos, no watermarks, no brand names, no faces."
+        "Create ONE editorial cover image for a Brazilian financial news site (Finanças News). "
+        "Illustrate the SPECIFIC story below — the reader must recognize the topic without reading text.\n"
+        f"Headline: {headline}\n"
+        f"Category: {tag or 'Economia'}\n"
+        f"Story context: {context or '(use the headline only)'}\n"
+        f"Required scene: {scene}\n"
+        "Composition: cinematic 16:9, photojournalism or polished illustration, dramatic lighting, "
+        "rich but restrained colors, single clear focal subject.\n"
+        "Strict rules: no text, letters, numbers, logos, watermarks, brand marks, or readable UI; "
+        "no celebrity faces; no generic gold Bitcoin coin piles or repeated crypto wallpaper "
+        "unless the headline is literally about physical coins; avoid looking like a stock template "
+        "used for every crypto article."
     )
 
 
@@ -1811,6 +1905,7 @@ def generate_article_image(
         return None
 
     print(f"   [img] Provedores na ordem: {', '.join(providers)}")
+    print(f"   [img] Prompt (trecho): {prompt[:160].replace(chr(10), ' ')}...")
 
     for provider in providers:
         if provider == "cursor":

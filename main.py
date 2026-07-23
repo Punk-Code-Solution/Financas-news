@@ -1,5 +1,6 @@
 import os
 import json
+import hmac
 import re
 import threading
 import time
@@ -694,15 +695,57 @@ def get_sitemap():
 # ROTAS DE INFRAESTRUTURA E ROBÔ
 # ==========================================
 
+def get_robo_token() -> str:
+    """Segredo das rotas /api/robô — só via ambiente (nunca hardcoded)."""
+    return (os.getenv("ROBO_TOKEN") or os.getenv("ROBOT_TOKEN") or "").strip()
+
+
+def extract_robo_token(request: Request, token: str | None = None) -> str | None:
+    """Ordem: Authorization Bearer → X-Robo-Token → query ?token= (cron)."""
+    auth = (request.headers.get("Authorization") or "").strip()
+    if auth.lower().startswith("bearer "):
+        value = auth[7:].strip()
+        if value:
+            return value
+    for header_name in ("X-Robo-Token", "X-Robot-Token"):
+        value = (request.headers.get(header_name) or "").strip()
+        if value:
+            return value
+    if token is not None and str(token).strip():
+        return str(token).strip()
+    return None
+
+
+def _tokens_match(provided: str, expected: str) -> bool:
+    if not provided or not expected:
+        return False
+    a = provided.encode("utf-8")
+    b = expected.encode("utf-8")
+    if len(a) != len(b):
+        return False
+    return hmac.compare_digest(a, b)
+
+
+def require_robo_auth(request: Request, token: str | None = None) -> None:
+    expected = get_robo_token()
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="ROBO_TOKEN nao configurado no ambiente",
+        )
+    provided = extract_robo_token(request, token)
+    if not provided or not _tokens_match(provided, expected):
+        raise HTTPException(status_code=401, detail="Nao autorizado")
+
+
 @app.get("/ping")
 def ping():
     return {"status": "Render acordado!"}
 
 @app.get("/api/gerar-imagens")
-def gerar_imagens(token: str | None = None, limit: int = 1):
+def gerar_imagens(request: Request, token: str | None = None, limit: int = 1):
     """Gera capas pendentes (1/min no OpenAI). Prioriza noticias novas sem capa."""
-    if token != "punkcode2026":
-        raise HTTPException(status_code=401, detail="Nao autorizado")
+    require_robo_auth(request, token)
 
     limit = max(1, min(limit, 5))
     print(f"Gerando imagens para ate {limit} artigos sem capa (prioridade: novas)...")
@@ -712,9 +755,8 @@ def gerar_imagens(token: str | None = None, limit: int = 1):
 
 
 @app.get("/api/rodar-robo")
-def rodar_robo(token: str | None = None):
-    if token != "punkcode2026":
-        raise HTTPException(status_code=401, detail="Não autorizado")
+def rodar_robo(request: Request, token: str | None = None):
+    require_robo_auth(request, token)
         
     print("🤖 Iniciando robô via API...")
     noticias_geradas = core.fetch_and_process()
@@ -787,9 +829,8 @@ def rodar_robo(token: str | None = None):
 
 
 @app.get("/api/atualizar-artigos")
-def atualizar_artigos(token: str | None = None, limit: int = 10):
-    if token != "punkcode2026":
-        raise HTTPException(status_code=401, detail="Não autorizado")
+def atualizar_artigos(request: Request, token: str | None = None, limit: int = 10):
+    require_robo_auth(request, token)
 
     limit = max(1, min(limit, 50))
     print(f"Atualizando dados de mercado de ate {limit} artigos...")

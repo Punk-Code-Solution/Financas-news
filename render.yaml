@@ -58,6 +58,8 @@ services:
         sync: false
       - key: TURSO_AUTH_TOKEN
         sync: false
+      - key: ROBO_TOKEN
+        sync: false
       - key: ARTICLE_IMAGES_DIR
         value: /var/data/article_images
     disk:

@@ -1,6 +1,7 @@
 """Suíte de testes do sistema Finanças News (com mocks de rede externa)."""
 from __future__ import annotations
 
+import os
 import re
 import sys
 from unittest.mock import patch
@@ -8,6 +9,9 @@ from unittest.mock import patch
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Força token de teste (sobrescreve .env) — nunca dispara produção nestes asserts.
+os.environ["ROBO_TOKEN"] = "test-robo-token-local"
 
 from fastapi.testclient import TestClient
 
@@ -261,6 +265,33 @@ def run() -> int:
         for path in ["/api/rodar-robo", "/api/gerar-imagens", "/api/atualizar-artigos"]:
             r = client.get(path)
             check(f"{path} sem token=401", r.status_code == 401, f"status={r.status_code}")
+            r = client.get(path, params={"token": "token-invalido"})
+            check(f"{path} token errado=401", r.status_code == 401, f"status={r.status_code}")
+
+        with (
+            patch.object(core, "fetch_and_process", return_value=[]),
+            patch.object(
+                core,
+                "backfill_missing_images",
+                return_value={"processed": 0, "updated": 0, "failed": 0, "items": []},
+            ),
+            patch.object(
+                core,
+                "refresh_stale_articles",
+                return_value={"processed": 0, "updated": 0, "failed": 0, "items": []},
+            ),
+        ):
+            auth = {"Authorization": f"Bearer {os.environ['ROBO_TOKEN']}"}
+            r = client.get("/api/rodar-robo", headers=auth)
+            check("Bearer /api/rodar-robo", r.status_code == 200, f"status={r.status_code}")
+            r = client.get("/api/gerar-imagens", headers=auth)
+            check("Bearer /api/gerar-imagens", r.status_code == 200, f"status={r.status_code}")
+            r = client.get("/api/atualizar-artigos", headers=auth)
+            check("Bearer /api/atualizar-artigos", r.status_code == 200, f"status={r.status_code}")
+            r = client.get("/api/gerar-imagens", params={"token": os.environ["ROBO_TOKEN"]})
+            check("Query token /api/gerar-imagens", r.status_code == 200, f"status={r.status_code}")
+            r = client.get("/api/gerar-imagens", headers={"X-Robo-Token": os.environ["ROBO_TOKEN"]})
+            check("Header X-Robo-Token", r.status_code == 200, f"status={r.status_code}")
 
         r = client.post("/api/newsletter", data={"email": "nao-email"})
         check("Newsletter email inválido", r.status_code == 400)
