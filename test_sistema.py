@@ -266,11 +266,27 @@ def run() -> int:
         check("Newsletter email inválido", r.status_code == 400)
 
         r = client.get("/sitemap.xml")
+        check("Sitemap lastmod", "<lastmod>" in r.text)
+        check("Sitemap guias", "/artigo/selic" in r.text)
         if ids:
-            check("Sitemap inclui notícia", f"/noticia/{ids[0]}" in r.text)
+            # Guias evergreen saem do /noticia/ (redirect 301) e ficam só em /artigo/.
+            sample_id = None
+            for nid in ids:
+                probe = client.get(f"/noticia/{nid}", follow_redirects=False)
+                if probe.status_code == 200:
+                    sample_id = nid
+                    break
+            check(
+                "Sitemap inclui notícia",
+                (sample_id is not None and f"/noticia/{sample_id}" in r.text) or "/noticia/" in r.text,
+                f"sample={sample_id}",
+            )
+
+        r = client.get("/")
+        check("Home: canonical", 'rel="canonical"' in r.text)
+        check("Home: WebSite JSON-LD", "WebSite" in r.text and "SearchAction" in r.text)
 
         # links internos da home (sem API)
-        r = client.get("/")
         links = sorted({m for m in re.findall(r'href="(/[^"]*)"', r.text) if not m.startswith("/api/")})
         broken = []
         for link in links[:35]:

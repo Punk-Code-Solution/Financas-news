@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -14,8 +15,18 @@ import uvicorn
 from dotenv import load_dotenv
 
 import core
-from db import QueryResult, get_db, ensure_schema
+from db import (
+    QueryResult,
+    build_fts_match_query,
+    ensure_schema,
+    existing_news_links,
+    fts_available,
+    get_db,
+    invalidate_sentiment_cache,
+)
 from educational_guides import (
+    EDUCATIONAL_GUIDES,
+    GUIDE_LINK_PREFIX,
     ensure_educational_guides,
     find_guide_noticia_id,
     get_guide_by_slug,
@@ -150,6 +161,35 @@ def category_image_url(tag: object) -> str:
 
 templates.env.globals["category_image"] = category_image_url
 
+SITE_ORIGIN = os.getenv("SITE_ORIGIN", "https://financas-news.net.br").rstrip("/")
+
+
+def _to_iso8601(value: object) -> str | None:
+    """Converte datas do portal (dd/mm/YYYY HH:MM) para ISO-8601 (SEO/schema)."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if re.match(r"^\d{4}-\d{2}-\d{2}", text):
+        return text.replace(" ", "T", 1) if " " in text and "T" not in text else text
+    for fmt in ("%d/%m/%Y %H:%M", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(text, fmt).isoformat()
+        except ValueError:
+            continue
+    return None
+
+
+def _guide_slug_from_link(link: object) -> str | None:
+    if not link:
+        return None
+    text = str(link).strip()
+    if text.startswith(GUIDE_LINK_PREFIX):
+        slug = text[len(GUIDE_LINK_PREFIX) :].strip("/")
+        return slug or None
+    return None
+
 
 # ==========================================
 # ROTAS DE PÁGINAS (FRONTEND) - ATUALIZADAS PARA FASTAPI MODERNO
@@ -182,14 +222,6 @@ def _home_cache_key(categoria: str | None, offset: int, limit: int, q: str | Non
     return f"{categoria or ''}|{offset}|{limit}|{(q or '').strip().lower()}"
 
 
-def _parse_count(row_count: object) -> int:
-    if isinstance(row_count, (int, float)):
-        return int(row_count)
-    if isinstance(row_count, str):
-        return int(row_count)
-    return 0
-
-
 def _load_home_listing(
     categoria: str | None,
     offset: int,
@@ -208,35 +240,74 @@ def _load_home_listing(
             return cached[1]
 
     client = get_db()
+    # Busca limit+1 para saber has_more sem COUNT(*) extra.
+    fetch_limit = limit + 1
+    q_clean = (q or "").strip() or None
+    result: QueryResult | None = None
 
-    result: QueryResult
-    count_res: QueryResult
-    if q:
-        busca = f"%{q}%"
-        result = client.execute(
-            NEWS_LIST_SELECT + " WHERE titulo LIKE ? OR resumo LIKE ? ORDER BY id DESC LIMIT ? OFFSET ?",
-            [busca, busca, limit, offset],
-        )
-        count_res = client.execute(
-            "SELECT COUNT(*) FROM news WHERE titulo LIKE ? OR resumo LIKE ?",
-            [busca, busca],
-        )
+    if q_clean:
+        fts_q = build_fts_match_query(q_clean) if fts_available() else None
+        if fts_q:
+            try:
+                if categoria:
+                    result = client.execute(
+                        NEWS_LIST_SELECT
+                        + """
+                        WHERE id IN (SELECT rowid FROM news_fts WHERE news_fts MATCH ?)
+                          AND tag = ?
+                        ORDER BY id DESC LIMIT ? OFFSET ?
+                        """,
+                        [fts_q, categoria, fetch_limit, offset],
+                    )
+                else:
+                    result = client.execute(
+                        NEWS_LIST_SELECT
+                        + """
+                        WHERE id IN (SELECT rowid FROM news_fts WHERE news_fts MATCH ?)
+                        ORDER BY id DESC LIMIT ? OFFSET ?
+                        """,
+                        [fts_q, fetch_limit, offset],
+                    )
+            except Exception:
+                result = None
+
+        if result is None:
+            # Fallback: tokens AND em título/resumo (mais seletivo que um único LIKE).
+            tokens = [t for t in re.findall(r"[0-9A-Za-zÀ-ÿ]{2,}", q_clean, flags=re.UNICODE)][:5]
+            if not tokens:
+                tokens = [q_clean]
+            where_parts: list[str] = []
+            params: list[Any] = []
+            for token in tokens:
+                where_parts.append("(titulo LIKE ? OR resumo LIKE ?)")
+                like = f"%{token}%"
+                params.extend([like, like])
+            where_sql = " AND ".join(where_parts)
+            if categoria:
+                where_sql = f"({where_sql}) AND tag = ?"
+                params.append(categoria)
+            params.extend([fetch_limit, offset])
+            result = client.execute(
+                NEWS_LIST_SELECT + f" WHERE {where_sql} ORDER BY id DESC LIMIT ? OFFSET ?",
+                params,
+            )
     elif categoria:
         result = client.execute(
             NEWS_LIST_SELECT + " WHERE tag = ? ORDER BY id DESC LIMIT ? OFFSET ?",
-            [categoria, limit, offset],
+            [categoria, fetch_limit, offset],
         )
-        count_res = client.execute("SELECT COUNT(*) FROM news WHERE tag = ?", [categoria])
     else:
         result = client.execute(
             NEWS_LIST_SELECT + " ORDER BY id DESC LIMIT ? OFFSET ?",
-            [limit, offset],
+            [fetch_limit, offset],
         )
-        count_res = client.execute("SELECT COUNT(*) FROM news")
 
-    news = result.rows
+    rows = list(result.rows) if result else []
+    has_more = len(rows) > limit
+    news = rows[:limit]
+
     suggested_news: list[Any] = []
-    if include_suggestions and not news and (categoria or q):
+    if include_suggestions and not news and (categoria or q_clean):
         if categoria:
             suggested_result = client.execute(
                 NEWS_LIST_SELECT + " WHERE tag != ? ORDER BY id DESC LIMIT ?",
@@ -249,9 +320,8 @@ def _load_home_listing(
             )
         suggested_news = suggested_result.rows
 
-    total_news = _parse_count(count_res.rows[0][0] if count_res.rows else 0)
     next_offset = offset + len(news)
-    has_more = next_offset < total_news
+    total_news = next_offset + (1 if has_more else 0)
 
     payload: dict[str, object] = {
         "news": news,
@@ -338,7 +408,13 @@ def api_feed(
     return response
 
 
-def _render_noticia_page(request: Request, noticia_id: int, noticia: tuple | list):
+def _render_noticia_page(
+    request: Request,
+    noticia_id: int,
+    noticia: tuple | list,
+    *,
+    canonical_path: str | None = None,
+):
     client = get_db()
     dados_mercado = {}
     if len(noticia) > 9 and noticia[9]:
@@ -370,6 +446,10 @@ def _render_noticia_page(request: Request, noticia_id: int, noticia: tuple | lis
     )
     contextual_affiliate = get_contextual_affiliate(tag)
 
+    path = canonical_path or f"/noticia/{noticia_id}"
+    published_iso = _to_iso8601(noticia[7] if len(noticia) > 7 else None)
+    updated_iso = _to_iso8601(noticia[13] if len(noticia) > 13 else None) or published_iso
+
     response = _render(
         request,
         "noticia.html",
@@ -382,6 +462,11 @@ def _render_noticia_page(request: Request, noticia_id: int, noticia: tuple | lis
             "categorias": CATEGORIAS,
             "fonte_url": fonte_url,
             "fonte_nome": fonte_nome,
+            "canonical_path": path,
+            "canonical_url": f"{SITE_ORIGIN}{path}",
+            "hreflang_full": False,
+            "published_iso": published_iso,
+            "updated_iso": updated_iso,
         },
     )
     response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=60"
@@ -396,7 +481,12 @@ def ver_noticia(request: Request, noticia_id: int):
     if not result.rows:
         raise HTTPException(status_code=404, detail="Notícia não encontrada")
 
-    return _render_noticia_page(request, noticia_id, result.rows[0])
+    noticia = result.rows[0]
+    guide_slug = _guide_slug_from_link(noticia[4] if len(noticia) > 4 else None)
+    if guide_slug and get_guide_by_slug(guide_slug):
+        return RedirectResponse(url=f"/artigo/{guide_slug}", status_code=301)
+
+    return _render_noticia_page(request, noticia_id, noticia)
 
 
 @app.get("/artigo/{slug}", response_class=HTMLResponse)
@@ -419,7 +509,12 @@ def ver_artigo_educativo(request: Request, slug: str):
     if not result.rows:
         raise HTTPException(status_code=404, detail="Artigo não encontrado")
 
-    return _render_noticia_page(request, noticia_id, result.rows[0])
+    return _render_noticia_page(
+        request,
+        noticia_id,
+        result.rows[0],
+        canonical_path=f"/artigo/{slug}",
+    )
 
 @app.post("/api/newsletter")
 async def newsletter_signup(email: str = Form(...)):
@@ -520,38 +615,75 @@ def get_default_category_image(slug: str):
 
 @app.get("/robots.txt", response_class=Response)
 def get_robots_txt():
-    content = "User-agent: *\nAllow: /\nSitemap: https://financas-news.net.br/sitemap.xml"
+    content = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Disallow: /api/\n"
+        "Disallow: /ping\n"
+        f"Sitemap: {SITE_ORIGIN}/sitemap.xml\n"
+    )
     return Response(content=content, media_type="text/plain")
+
 
 @app.get("/sitemap.xml", response_class=Response)
 def get_sitemap():
-    from educational_guides import EDUCATIONAL_GUIDES
-
     client = get_db()
-    result = client.execute('SELECT id FROM news ORDER BY id DESC LIMIT 500')
-    noticias = result.rows
-    client.close()
+    guide_ids: set[int] = set()
+    for guide in EDUCATIONAL_GUIDES:
+        try:
+            nid = find_guide_noticia_id(client, guide["slug"])
+            if nid:
+                guide_ids.add(int(nid))
+        except Exception:
+            continue
 
-    urls = [
-        "https://financas-news.net.br/",
-        "https://financas-news.net.br/quem-somos",
-        "https://financas-news.net.br/privacidade",
-        "https://financas-news.net.br/termos",
+    result = client.execute(
+        """
+        SELECT id,
+               COALESCE(NULLIF(updated_at, ''), NULLIF(published_at, ''), created_at) AS lastmod
+        FROM news
+        ORDER BY id DESC
+        LIMIT 500
+        """
+    )
+    noticias = result.rows
+
+    today = datetime.now().date().isoformat()
+    static_urls = [
+        (f"{SITE_ORIGIN}/", "daily", "1.0", today),
+        (f"{SITE_ORIGIN}/quem-somos", "monthly", "0.5", today),
+        (f"{SITE_ORIGIN}/privacidade", "monthly", "0.3", today),
+        (f"{SITE_ORIGIN}/termos", "monthly", "0.3", today),
     ]
     for guide in EDUCATIONAL_GUIDES:
-        urls.append(f"https://financas-news.net.br/artigo/{guide['slug']}")
+        static_urls.append(
+            (f"{SITE_ORIGIN}/artigo/{guide['slug']}", "weekly", "0.9", today)
+        )
 
-    xml_content = '<?xml version="1.0" encoding="UTF-8"?>\n'
-    xml_content += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+    xml_parts = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ]
+    for loc, changefreq, priority, lastmod in static_urls:
+        xml_parts.append(
+            f"  <url><loc>{loc}</loc><lastmod>{lastmod}</lastmod>"
+            f"<changefreq>{changefreq}</changefreq><priority>{priority}</priority></url>"
+        )
 
-    for url in urls:
-        xml_content += f'  <url><loc>{url}</loc><changefreq>daily</changefreq><priority>0.8</priority></url>\n'
+    for row in noticias:
+        nid = int(row[0])
+        if nid in guide_ids:
+            continue
+        lastmod = _to_iso8601(row[1] if len(row) > 1 else None)
+        lastmod_date = (lastmod or today)[:10]
+        xml_parts.append(
+            f"  <url><loc>{SITE_ORIGIN}/noticia/{nid}</loc>"
+            f"<lastmod>{lastmod_date}</lastmod>"
+            f"<changefreq>weekly</changefreq><priority>0.6</priority></url>"
+        )
 
-    for n in noticias:
-        xml_content += f'  <url><loc>https://financas-news.net.br/noticia/{n[0]}</loc><changefreq>weekly</changefreq><priority>0.6</priority></url>\n'
-
-    xml_content += '</urlset>'
-    return Response(content=xml_content, media_type="application/xml")
+    xml_parts.append("</urlset>")
+    return Response(content="\n".join(xml_parts), media_type="application/xml")
 
 # ==========================================
 # ROTAS DE INFRAESTRUTURA E ROBÔ
@@ -586,47 +718,51 @@ def rodar_robo(token: str | None = None):
         
     client = get_db()
     salvas = 0
-    
-    for n in noticias_geradas:
-        check = client.execute("SELECT id FROM news WHERE link = ?", [n["original_link"]])
-        
-        if not check.rows:
-            agora = n.get("published_at")
-            dados_raw = n.get("dados_mercado")
-            if dados_raw:
-                try:
-                    dados_obj = json.loads(dados_raw) if isinstance(dados_raw, str) else dados_raw
-                    refs = dados_obj.get("referencias_internas") or []
-                    if refs:
-                        dados_obj["referencias_internas"] = resolve_referencias_internas(client, refs)
-                        dados_raw = json.dumps(dados_obj, ensure_ascii=False)
-                except json.JSONDecodeError:
-                    pass
+    existing = existing_news_links([n.get("original_link", "") for n in noticias_geradas])
 
-            client.execute('''
-                INSERT INTO news (titulo, resumo, impacto, link, tag, sentimento, published_at, fonte, dados_mercado, contexto_editorial, created_at, imagem_url, versao_analise)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', [
-                n["titulo_viral"],
-                n["resumo_simples"],
-                n["impacto_bolso"],
-                n["original_link"],
-                n["tag"],
-                n.get("sentimento", "Neutro"),
-                agora,
-                n.get("fonte"),
-                dados_raw if dados_raw else n.get("dados_mercado"),
-                n.get("contexto_editorial", ""),
-                agora,
-                n.get("imagem_url"),
-                n.get("versao_analise", 1),
-            ])
-            salvas += 1
-            
+    for n in noticias_geradas:
+        link = n.get("original_link") or ""
+        if link in existing:
+            continue
+
+        agora = n.get("published_at")
+        dados_raw = n.get("dados_mercado")
+        if dados_raw:
+            try:
+                dados_obj = json.loads(dados_raw) if isinstance(dados_raw, str) else dados_raw
+                refs = dados_obj.get("referencias_internas") or []
+                if refs:
+                    dados_obj["referencias_internas"] = resolve_referencias_internas(client, refs)
+                    dados_raw = json.dumps(dados_obj, ensure_ascii=False)
+            except json.JSONDecodeError:
+                pass
+
+        client.execute('''
+            INSERT INTO news (titulo, resumo, impacto, link, tag, sentimento, published_at, fonte, dados_mercado, contexto_editorial, created_at, imagem_url, versao_analise)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', [
+            n["titulo_viral"],
+            n["resumo_simples"],
+            n["impacto_bolso"],
+            link,
+            n["tag"],
+            n.get("sentimento", "Neutro"),
+            agora,
+            n.get("fonte"),
+            dados_raw if dados_raw else n.get("dados_mercado"),
+            n.get("contexto_editorial", ""),
+            agora,
+            n.get("imagem_url"),
+            n.get("versao_analise", 1),
+        ])
+        existing.add(link)
+        salvas += 1
+
     _invalidate_home_cache()
+    invalidate_sentiment_cache()
     return {
-        "status": "Sucesso", 
-        "processadas_pela_ia": len(noticias_geradas), 
+        "status": "Sucesso",
+        "processadas_pela_ia": len(noticias_geradas),
         "novas_salvas_no_banco": salvas
     }
 

@@ -83,7 +83,7 @@ GET /api/rodar-robo?token=SEU_TOKEN
 financas_auto/
 ├── main.py              # App web, rotas, API do robô, SEO
 ├── core.py              # Pipeline RSS → IA → imagem
-├── db.py                # Conexão Turso, schema, contexto editorial
+├── db.py                # Conexão Turso, schema, FTS5, contexto editorial
 ├── monetization.py      # Configuração de receita (env-driven)
 ├── templates/           # Páginas HTML e partials de monetização
 ├── static/              # Favicon, CSS buildado (app.css) e assets
@@ -249,7 +249,7 @@ Armazena e-mails capturados localmente quando a newsletter está ativa.
 
 | Rota | Função |
 |------|--------|
-| `/` | Home com listagem, filtros e busca |
+| `/` | Home com listagem, filtros e busca (FTS5 em título/resumo; combina `q` + `categoria`) |
 | `/noticia/{id}` | Artigo completo |
 | `/quem-somos` | Sobre o portal |
 | `/privacidade` | Política de privacidade |
@@ -259,9 +259,11 @@ Armazena e-mails capturados localmente quando a newsletter está ativa.
 
 | Rota | Função |
 |------|--------|
-| `/sitemap.xml` | Mapa com últimas 500 notícias |
-| `/robots.txt` | Instruções para crawlers |
+| `/sitemap.xml` | Home, institucionais, guias `/artigo/*` e até 500 notícias (`lastmod`, sem duplicar guias) |
+| `/robots.txt` | Allow público; `Disallow` em `/api/` e `/ping`; aponta sitemap |
 | `/ads.txt` | Verificação Google AdSense |
+
+Sinais on-page: `rel=canonical`, meta description, JSON-LD (`WebSite` na home, `NewsArticle` + `FAQPage` nos artigos), OG/Twitter, guias no rodapé e redirect 301 de `/noticia/{id}` → `/artigo/{slug}` quando for guia evergreen.
 
 ### API interna
 

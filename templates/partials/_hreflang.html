@@ -1,5 +1,8 @@
-{# hreflang absoluto — exigência do Google/Lighthouse #}
+{# hreflang absoluto — só declarar idiomas com conteúdo real (Google). #}
+<link rel="canonical" href="{{ canonical_url }}">
 <link rel="alternate" hreflang="pt-BR" href="{{ site_origin }}{{ canonical_path }}?lang=pt">
+{% if hreflang_full %}
 <link rel="alternate" hreflang="en" href="{{ site_origin }}{{ canonical_path }}?lang=en">
 <link rel="alternate" hreflang="ja" href="{{ site_origin }}{{ canonical_path }}?lang=ja">
+{% endif %}
 <link rel="alternate" hreflang="x-default" href="{{ site_origin }}{{ canonical_path }}?lang=pt">

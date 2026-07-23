@@ -1,7 +1,9 @@
 import os
+import re
 import sqlite3
 import ssl
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -62,6 +64,11 @@ _client: Any = None
 _client_lock = threading.Lock()
 _schema_ready = False
 _schema_lock = threading.Lock()
+_fts_ready = False
+_sentiment_cache: dict[str, tuple[float, str]] = {}
+_sentiment_cache_lock = threading.Lock()
+_SENTIMENT_CACHE_TTL = 45.0
+_LINK_IN_CHUNK = 80
 
 
 def _use_local_db() -> bool:
@@ -221,17 +228,111 @@ def ensure_schema(client: DbClient) -> None:
             )
         """)
 
-        # Índices para listagens / filtros da home e relacionados.
+        # Índices para listagens / filtros da home, relacionados e dedupe.
         for sql in (
             "CREATE INDEX IF NOT EXISTS idx_news_id_desc ON news(id DESC)",
             "CREATE INDEX IF NOT EXISTS idx_news_tag_id ON news(tag, id DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_news_link ON news(link)",
         ):
             try:
                 client.execute(sql)
             except Exception:
                 pass
 
+        _ensure_fts(client)
         _schema_ready = True
+
+
+def _ensure_fts(client: DbClient) -> None:
+    """Índice full-text para busca (FTS5). Fallback silencioso se indisponível."""
+    global _fts_ready
+    try:
+        client.execute(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS news_fts USING fts5(
+                titulo,
+                resumo,
+                content='news',
+                content_rowid='id',
+                tokenize='unicode61'
+            )
+            """
+        )
+        for sql in (
+            """
+            CREATE TRIGGER IF NOT EXISTS news_fts_ai AFTER INSERT ON news BEGIN
+                INSERT INTO news_fts(rowid, titulo, resumo)
+                VALUES (new.id, new.titulo, new.resumo);
+            END
+            """,
+            """
+            CREATE TRIGGER IF NOT EXISTS news_fts_ad AFTER DELETE ON news BEGIN
+                INSERT INTO news_fts(news_fts, rowid, titulo, resumo)
+                VALUES ('delete', old.id, old.titulo, old.resumo);
+            END
+            """,
+            """
+            CREATE TRIGGER IF NOT EXISTS news_fts_au AFTER UPDATE OF titulo, resumo ON news BEGIN
+                INSERT INTO news_fts(news_fts, rowid, titulo, resumo)
+                VALUES ('delete', old.id, old.titulo, old.resumo);
+                INSERT INTO news_fts(rowid, titulo, resumo)
+                VALUES (new.id, new.titulo, new.resumo);
+            END
+            """,
+        ):
+            client.execute(sql)
+
+        count = client.execute("SELECT COUNT(*) FROM news_fts")
+        fts_rows = int(count.rows[0][0]) if count.rows else 0
+        news_count = client.execute("SELECT COUNT(*) FROM news")
+        news_rows = int(news_count.rows[0][0]) if news_count.rows else 0
+        if news_rows and fts_rows < news_rows:
+            client.execute("INSERT INTO news_fts(news_fts) VALUES('rebuild')")
+        _fts_ready = True
+    except Exception:
+        _fts_ready = False
+
+
+def fts_available() -> bool:
+    if not _schema_ready:
+        return False
+    return _fts_ready
+
+
+def build_fts_match_query(q: str) -> str | None:
+    """Monta expressão FTS5 segura a partir do texto do usuário."""
+    tokens = re.findall(r"[0-9A-Za-zÀ-ÿ]{2,}", (q or "").strip(), flags=re.UNICODE)
+    if not tokens:
+        return None
+    cleaned: list[str] = []
+    for token in tokens[:8]:
+        safe = re.sub(r"[^\w]", "", token, flags=re.UNICODE)
+        if len(safe) >= 2:
+            cleaned.append(f'"{safe}"*')
+    if not cleaned:
+        return None
+    return " OR ".join(cleaned)
+
+
+def existing_news_links(links: list[str]) -> set[str]:
+    """Retorna o subconjunto de links já publicados (1 query por lote)."""
+    cleaned = [str(link).strip() for link in links if link and str(link).strip()]
+    if not cleaned:
+        return set()
+    client = get_db()
+    found: set[str] = set()
+    for i in range(0, len(cleaned), _LINK_IN_CHUNK):
+        chunk = cleaned[i : i + _LINK_IN_CHUNK]
+        placeholders = ",".join("?" * len(chunk))
+        try:
+            result = client.execute(
+                f"SELECT link FROM news WHERE link IN ({placeholders})",
+                chunk,
+            )
+            found.update(str(row[0]) for row in result.rows if row and row[0])
+        except Exception:
+            continue
+    return found
 
 
 def get_editorial_context(tag_hint=None, limit=6):
@@ -255,21 +356,31 @@ def get_editorial_context(tag_hint=None, limit=6):
             return "Nenhuma notícia anterior no acervo do portal."
 
         lines = []
+        recent_counts: dict[str, int] = {}
         for row in rows:
             titulo, tag, sentimento, impacto = row[0], row[1], row[2] or "Neutro", row[3] or ""
             lines.append(f"- [{tag}] {titulo} (sentimento: {sentimento})")
+            recent_counts[sentimento] = recent_counts.get(sentimento, 0) + 1
 
-        sentiment_result = client_sentiment_summary(tag_hint)
+        # Usa o mesmo lote já carregado — evita 2ª round-trip ao Turso.
+        panorama = ", ".join(f"{s}: {c}" for s, c in recent_counts.items())
         return (
             "NOTÍCIAS RECENTES JÁ PUBLICADAS NO PORTAL (use para contextualizar tendências, NÃO repita):\n"
             + "\n".join(lines)
-            + f"\n\nPANORAMA DE SENTIMENTO RECENTE: {sentiment_result}"
+            + f"\n\nPANORAMA DE SENTIMENTO RECENTE: {panorama}"
         )
     except Exception as e:
         return f"Histórico do portal indisponível: {e}"
 
 
 def client_sentiment_summary(tag_hint=None):
+    cache_key = tag_hint or "__all__"
+    now = time.time()
+    with _sentiment_cache_lock:
+        cached = _sentiment_cache.get(cache_key)
+        if cached and now < cached[0]:
+            return cached[1]
+
     try:
         client = get_db()
         if tag_hint:
@@ -284,9 +395,18 @@ def client_sentiment_summary(tag_hint=None):
         rows = result.rows
 
         if not rows:
-            return "sem histórico suficiente"
+            summary = "sem histórico suficiente"
+        else:
+            parts = [f"{s or 'Neutro'}: {c}" for s, c in rows]
+            summary = ", ".join(parts)
 
-        parts = [f"{s or 'Neutro'}: {c}" for s, c in rows]
-        return ", ".join(parts)
+        with _sentiment_cache_lock:
+            _sentiment_cache[cache_key] = (now + _SENTIMENT_CACHE_TTL, summary)
+        return summary
     except Exception:
         return "indisponível"
+
+
+def invalidate_sentiment_cache() -> None:
+    with _sentiment_cache_lock:
+        _sentiment_cache.clear()

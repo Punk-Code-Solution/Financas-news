@@ -20,7 +20,7 @@ import requests
 import urllib3
 from urllib3.exceptions import InsecureRequestWarning
 
-from db import get_db, get_editorial_context
+from db import existing_news_links, get_db, get_editorial_context
 
 load_dotenv()
 
@@ -1819,8 +1819,7 @@ def _news_link_exists(link: str) -> bool:
     if not link:
         return False
     try:
-        result = get_db().execute("SELECT id FROM news WHERE link = ? LIMIT 1", [link])
-        return bool(result.rows)
+        return link in existing_news_links([link])
     except Exception:
         return False
 
@@ -1867,12 +1866,9 @@ def fetch_and_process(max_per_feed: int | None = None, max_articles: int | None 
             db_context = get_editorial_context(tag_hint=tag_hint)
             data_context = format_data_context(market, bcb, db_context, historico, tag_hint)
 
-            for entry in feed.entries[:max_per_feed]:
-                if len(noticias_processadas) >= max_articles:
-                    break
-
-                print(f"   📄 Encontrada: {entry.title[:60]}...")
-
+            entries = list(feed.entries[:max_per_feed])
+            entry_links: list[str] = []
+            for entry in entries:
                 entry_link = str(getattr(entry, "link", "") or "")
                 try:
                     from article_enrichment import clean_source_url
@@ -1880,8 +1876,17 @@ def fetch_and_process(max_per_feed: int | None = None, max_articles: int | None 
                     entry_link = clean_source_url(entry_link) or entry_link
                 except Exception:
                     pass
+                entry_links.append(entry_link)
 
-                if _news_link_exists(entry_link):
+            already_published = existing_news_links(entry_links)
+
+            for entry, entry_link in zip(entries, entry_links):
+                if len(noticias_processadas) >= max_articles:
+                    break
+
+                print(f"   📄 Encontrada: {entry.title[:60]}...")
+
+                if not entry_link or entry_link in already_published:
                     print("   ⏭️ Já publicada — pulando (economiza cota).")
                     continue
 
@@ -1930,6 +1935,7 @@ def fetch_and_process(max_per_feed: int | None = None, max_articles: int | None 
                     **ai_data,
                 }
                 noticias_processadas.append(news_item)
+                already_published.add(entry_link)
                 print("   ✅ Processado com sucesso!")
 
         except Exception as e:

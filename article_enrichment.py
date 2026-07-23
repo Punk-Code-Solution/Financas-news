@@ -1,5 +1,7 @@
 import html
 import re
+import threading
+import time
 from typing import Any
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 
@@ -27,6 +29,10 @@ INTERNAL_KEYWORDS: dict[str, str] = {
     "Commodities": "/?categoria=Commodities",
     "Tesouro": "/artigo/renda-fixa",
 }
+
+_ACERVO_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_ACERVO_CACHE_LOCK = threading.Lock()
+_ACERVO_CACHE_TTL = 45.0
 
 SOURCE_HOST_NAMES: dict[str, str] = {
     "br.cointelegraph.com": "Cointelegraph",
@@ -276,28 +282,60 @@ def json_safe_lower_blob(dados_mercado: dict[str, Any]) -> str:
 
 
 def resolve_referencias_internas(client, referencias: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Resolve referências da IA para IDs reais no banco."""
-    resolved: list[dict[str, Any]] = []
-    for ref in referencias or []:
+    """Resolve referências da IA para IDs reais no banco (1 query em lote)."""
+    pending: list[tuple[int, dict[str, Any], str]] = []
+    resolved_slots: list[dict[str, Any] | None] = [None] * len(referencias or [])
+
+    for idx, ref in enumerate(referencias or []):
         trecho = (ref.get("trecho") or "").strip()
         busca = (ref.get("titulo_busca") or ref.get("titulo") or trecho).strip()
         if not trecho:
             continue
         noticia_id = ref.get("noticia_id")
-        titulo_match = None
-        if not noticia_id and busca:
-            result = client.execute(
-                "SELECT id, titulo FROM news WHERE titulo LIKE ? ORDER BY id DESC LIMIT 1",
-                [f"%{busca[:60]}%"],
+        if noticia_id:
+            resolved_slots[idx] = {
+                "trecho": trecho,
+                "noticia_id": noticia_id,
+                "titulo": busca,
+            }
+            continue
+        if busca:
+            pending.append((idx, ref, busca))
+        else:
+            resolved_slots[idx] = {
+                "trecho": trecho,
+                "noticia_id": None,
+                "titulo": busca,
+            }
+
+    matches_by_busca: dict[str, tuple[Any, Any]] = {}
+    if pending:
+        # Uma única ida ao banco: candidatos recentes + match em memória.
+        try:
+            pool = client.execute(
+                "SELECT id, titulo FROM news ORDER BY id DESC LIMIT 250",
             )
-            if result.rows:
-                noticia_id, titulo_match = result.rows[0][0], result.rows[0][1]
-        resolved.append({
-            "trecho": trecho,
-            "noticia_id": noticia_id,
-            "titulo": titulo_match or busca,
-        })
-    return resolved
+            titles = [(row[0], str(row[1] or "")) for row in pool.rows]
+        except Exception:
+            titles = []
+
+        for idx, ref, busca in pending:
+            needle = busca[:60].casefold()
+            found = None
+            if needle and titles:
+                for nid, titulo in titles:
+                    if needle in titulo.casefold():
+                        found = (nid, titulo)
+                        break
+            matches_by_busca[busca] = found or (None, None)
+            noticia_id, titulo_match = matches_by_busca[busca]
+            resolved_slots[idx] = {
+                "trecho": (ref.get("trecho") or "").strip(),
+                "noticia_id": noticia_id,
+                "titulo": titulo_match or busca,
+            }
+
+    return [item for item in resolved_slots if item is not None]
 
 
 def _sub_outside_tags(text: str, pattern: re.Pattern[str], repl: str, count: int = 1) -> str:
@@ -800,31 +838,57 @@ def resolve_pontos_chave_links(
     resolved: list[dict[str, Any]] = []
     fallback_href = f"/?categoria={quote(default_tag)}" if default_tag else "/"
 
-    for ponto in pontos:
+    categorias = []
+    seen_cats: set[str] = set()
+    for ponto in pontos or []:
+        categoria = (ponto.get("categoria") or default_tag or "").strip()
+        if categoria and categoria not in seen_cats:
+            seen_cats.add(categoria)
+            categorias.append(categoria)
+
+    latest_by_tag: dict[str, Any] = {}
+    tag_counts: dict[str, int] = {}
+    if categorias:
+        placeholders = ",".join("?" * len(categorias))
+        try:
+            latest = client.execute(
+                f"""
+                SELECT tag, MAX(id) AS max_id
+                FROM news
+                WHERE tag IN ({placeholders}) AND id != ?
+                GROUP BY tag
+                """,
+                [*categorias, exclude_id],
+            )
+            latest_by_tag = {str(row[0]): row[1] for row in latest.rows if row and row[0]}
+        except Exception:
+            latest_by_tag = {}
+
+        missing = [c for c in categorias if c not in latest_by_tag]
+        if missing:
+            miss_ph = ",".join("?" * len(missing))
+            try:
+                counts = client.execute(
+                    f"SELECT tag, COUNT(*) FROM news WHERE tag IN ({miss_ph}) GROUP BY tag",
+                    missing,
+                )
+                tag_counts = {str(row[0]): int(row[1]) for row in counts.rows if row and row[0]}
+            except Exception:
+                tag_counts = {}
+
+    for ponto in pontos or []:
         item = dict(ponto)
         categoria = (item.get("categoria") or default_tag or "").strip()
         href = fallback_href
 
         if categoria:
-            result = client.execute(
-                """
-                SELECT id
-                FROM news
-                WHERE tag = ? AND id != ?
-                ORDER BY id DESC
-                LIMIT 1
-                """,
-                [categoria, exclude_id],
-            )
-            if result.rows:
-                href = f"/noticia/{result.rows[0][0]}"
+            nid = latest_by_tag.get(categoria)
+            if nid:
+                href = f"/noticia/{nid}"
+            elif tag_counts.get(categoria, 0) > 0 or categoria == default_tag:
+                href = f"/?categoria={quote(categoria)}"
             else:
-                count_result = client.execute(
-                    "SELECT COUNT(*) FROM news WHERE tag = ?",
-                    [categoria],
-                )
-                count = int(count_result.rows[0][0]) if count_result.rows else 0
-                href = f"/?categoria={quote(categoria)}" if count else "/"
+                href = "/"
 
         item["href"] = href
         item["cta_categoria"] = categoria or default_tag or "mercado"
@@ -834,6 +898,13 @@ def resolve_pontos_chave_links(
 
 
 def get_acervo_stats(client, tag: str) -> dict[str, Any]:
+    cache_key = tag or "__all__"
+    now = time.time()
+    with _ACERVO_CACHE_LOCK:
+        cached = _ACERVO_CACHE.get(cache_key)
+        if cached and now < cached[0]:
+            return dict(cached[1])
+
     result = client.execute(
         "SELECT sentimento, COUNT(*) FROM news WHERE tag = ? GROUP BY sentimento",
         [tag],
@@ -869,7 +940,7 @@ def get_acervo_stats(client, tag: str) -> dict[str, Any]:
         )
         tom = "Neutro"
 
-    return {
+    payload = {
         "total": total,
         "positivo": positivo,
         "negativo": negativo,
@@ -882,6 +953,9 @@ def get_acervo_stats(client, tag: str) -> dict[str, Any]:
             {"label": "Neutro", "count": neutro, "color": "#94a3b8"},
         ],
     }
+    with _ACERVO_CACHE_LOCK:
+        _ACERVO_CACHE[cache_key] = (now + _ACERVO_CACHE_TTL, payload)
+    return dict(payload)
 
 
 def build_perfil_investidor(tag: str, dados_mercado: dict[str, Any] | None = None) -> dict[str, str]:

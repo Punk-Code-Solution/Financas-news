@@ -18,27 +18,65 @@
     {% if monetization.adsense.enabled %}
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ monetization.adsense.client }}" crossorigin="anonymous"></script>
     {% endif %}
-    
+
+    {% set meta_desc = (noticia[2] or '')|replace('\n', ' ')|trim %}
+    {% if meta_desc|length > 160 %}{% set meta_desc = meta_desc[:157] ~ '…' %}{% endif %}
+    <meta name="description" content="{{ meta_desc }}">
+    <meta name="robots" content="max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+
     <meta property="og:type" content="article" />
     <meta property="og:title" content="{{ noticia[1] }}" />
-    <meta property="og:description" content="{{ (noticia[2] or '')[:180] }}" />
-    <meta property="og:url" content="{{ request.url }}" />
+    <meta property="og:description" content="{{ meta_desc }}" />
+    <meta property="og:url" content="{{ canonical_url }}" />
     <meta property="og:site_name" content="{{ t('site_name') }}" />
+    <meta property="og:locale" content="pt_BR" />
     {% set og_image = noticia[11] if noticia[11] else category_image(noticia[5]) %}
-    <meta property="og:image" content="{% if og_image.startswith('http') %}{{ og_image }}{% else %}https://financas-news.net.br{{ og_image }}{% endif %}" />
+    {% set og_image_abs = og_image if og_image.startswith('http') else (site_origin ~ og_image) %}
+    <meta property="og:image" content="{{ og_image_abs }}" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="675" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="{{ noticia[1] }}" />
-    <meta name="twitter:description" content="{{ (noticia[2] or '')[:180] }}" />
-    <meta name="twitter:image" content="{% if og_image.startswith('http') %}{{ og_image }}{% else %}https://financas-news.net.br{{ og_image }}{% endif %}" />
-    <meta name="robots" content="max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
-    {% if noticia[7] %}
+    <meta name="twitter:description" content="{{ meta_desc }}" />
+    <meta name="twitter:image" content="{{ og_image_abs }}" />
+    {% if published_iso %}
+    <meta property="article:published_time" content="{{ published_iso }}" />
+    {% elif noticia[7] %}
     <meta property="article:published_time" content="{{ noticia[7] }}" />
     {% endif %}
     {% if noticia[5] %}
     <meta property="article:section" content="{{ noticia[5] }}" />
     {% endif %}
+
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "NewsArticle",
+        "headline": {{ noticia[1] | tojson }},
+        "description": {{ meta_desc | tojson }},
+        "image": [{{ og_image_abs | tojson }}],
+        "datePublished": {{ (published_iso or noticia[7] or '') | tojson }},
+        "dateModified": {{ (updated_iso or published_iso or noticia[7] or '') | tojson }},
+        "articleSection": {{ (noticia[5] or 'Economia') | tojson }},
+        "inLanguage": "pt-BR",
+        "mainEntityOfPage": {
+            "@type": "WebPage",
+            "@id": {{ canonical_url | tojson }}
+        },
+        "author": {
+            "@type": "Organization",
+            "name": {{ t('site_name') | tojson }}
+        },
+        "publisher": {
+            "@type": "Organization",
+            "name": {{ t('site_name') | tojson }},
+            "logo": {
+                "@type": "ImageObject",
+                "url": {{ (site_origin ~ '/static/favicon.svg?v=2') | tojson }}
+            }
+        }
+    }
+    </script>
     {% if enrichment.faq %}
     <script type="application/ld+json">
     {

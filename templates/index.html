@@ -18,9 +18,38 @@
     <meta property="og:type" content="website" />
     <meta property="og:title" content="{{ t('meta_home_og_title') }}" />
     <meta property="og:description" content="{{ t('meta_home_description') }}" />
-    <meta property="og:url" content="{{ request.url }}" />
+    <meta property="og:url" content="{{ canonical_url }}" />
     <meta property="og:site_name" content="{{ t('site_name') }}" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:image" content="{{ default_og_image }}" />
     <meta name="description" content="{{ t('meta_home_description') }}" />
+    {% if q %}
+    <meta name="robots" content="noindex, follow">
+    {% endif %}
+
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": {{ t('site_name') | tojson }},
+        "url": {{ site_origin | tojson }},
+        "inLanguage": "pt-BR",
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": {{ (site_origin ~ '/?q={search_term_string}') | tojson }},
+            "query-input": "required name=search_term_string"
+        },
+        "publisher": {
+            "@type": "Organization",
+            "name": {{ t('site_name') | tojson }},
+            "url": {{ site_origin | tojson }},
+            "logo": {
+                "@type": "ImageObject",
+                "url": {{ (site_origin ~ '/static/favicon.svg?v=2') | tojson }}
+            }
+        }
+    }
+    </script>
 
     {% include "partials/_styles.html" %}
     {% include "partials/_adsense_styles.html" %}
