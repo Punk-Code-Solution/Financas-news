@@ -1684,6 +1684,21 @@ def _generate_article_image_openai(prompt: str, slug: str) -> str | None:
     return None
 
 
+def _create_hf_client(token: str):
+    """Client Hugging Face; respeita SSL_VERIFY=false no Windows/MITM."""
+    from huggingface_hub import InferenceClient, set_client_factory
+
+    if not _ssl_verify_enabled():
+        import httpx
+
+        def _insecure_client_factory():
+            return httpx.Client(verify=False, timeout=120.0)
+
+        set_client_factory(_insecure_client_factory)
+        print("   [img/hf] SSL verify desativado (GEMINI_SSL_VERIFY/SSL_VERIFY=false).")
+    return InferenceClient(token=token)
+
+
 def _is_hf_image_quota_error(exc: Exception) -> bool:
     msg = str(exc).lower()
     return (
@@ -1737,7 +1752,7 @@ def _generate_article_image_huggingface(prompt: str, slug: str) -> str | None:
         )
         return None
 
-    client = InferenceClient(token=token)
+    client = _create_hf_client(token)
 
     for model in modelos:
         try:

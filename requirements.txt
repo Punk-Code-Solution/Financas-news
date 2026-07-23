@@ -9,6 +9,7 @@ requests
 google-genai
 openai
 huggingface_hub
+Pillow
 cursor-sdk
 certifi
 libsql-client
