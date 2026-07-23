@@ -102,16 +102,11 @@ DEFAULT_GEMINI_MODELOS = [
     "gemini-3.5-flash",
 ]
 
-# Chave 2 tem cota Imagen 4 (25/dia); Nano Banana está 0/0 nas duas chaves.
-# Imagen 4 primeiro — generate_images(); Gemini Image como fallback.
+# Gemini Image (Nano Banana). Imagen 4 removido — 404 "no longer available to new users".
 DEFAULT_GEMINI_IMAGE_MODELOS = [
-    "imagen-4.0-fast-generate-001",
-    "imagen-4.0-generate-001",
-    "imagen-4.0-ultra-generate-001",
     "gemini-3.1-flash-lite-image",
     "gemini-3.1-flash-image",
     "gemini-2.5-flash-image",
-    "gemini-3.1-flash-lite-image-preview",
     "gemini-3.1-flash-image-preview",
     "gemini-3-pro-image",
 ]
@@ -1374,28 +1369,54 @@ def _extract_openai_image_bytes(response) -> bytes | None:
     return None
 
 
-def get_image_provider() -> str:
-    """Resolve o provedor de imagem.
+def get_image_providers() -> list[str]:
+    """Lista ordenada de provedores de imagem.
 
-    Em produção (Render), Cursor não roda — ``auto``/vazio → gemini (com fallback OpenAI).
-    Localmente, o padrão é ``auto`` (Cursor → Gemini → OpenAI).
+    ``IMAGE_PROVIDER`` aceita um ou vários (separados por vírgula):
+    - ``gemini,openai`` — tenta Gemini e depois OpenAI
+    - ``openai,gemini`` — OpenAI primeiro
+    - ``auto`` / vazio — Cursor (local) → Gemini → OpenAI
+
+    No Render, ``cursor`` é ignorado (SDK não roda lá).
     """
     raw = os.getenv("IMAGE_PROVIDER", "").strip().lower()
     on_render = bool(os.getenv("RENDER"))
-    allowed = {"cursor", "gemini", "openai", "auto", ""}
+    allowed = {"cursor", "gemini", "openai", "auto"}
 
-    if raw not in allowed:
-        raw = ""
+    parts = [p.strip() for p in raw.replace(";", ",").split(",") if p.strip()]
+    parts = [p for p in parts if p in allowed]
 
-    if on_render:
-        # Cursor não roda no Render; auto/cursor/vazio → gemini (+ OpenAI no fallback).
-        if raw in {"", "auto", "cursor"}:
-            return "gemini"
-        return raw
+    def _expand_auto() -> list[str]:
+        if on_render:
+            return ["gemini", "openai"]
+        return ["cursor", "gemini", "openai"]
 
-    if raw in {"cursor", "gemini", "openai", "auto"}:
-        return raw
-    return "auto"
+    if not parts or parts == ["auto"]:
+        ordered = _expand_auto()
+    else:
+        ordered = []
+        for part in parts:
+            if part == "auto":
+                ordered.extend(_expand_auto())
+            elif part == "cursor" and on_render:
+                continue
+            else:
+                ordered.append(part)
+
+    seen: set[str] = set()
+    providers: list[str] = []
+    for name in ordered:
+        if name not in seen:
+            seen.add(name)
+            providers.append(name)
+
+    return providers or _expand_auto()
+
+
+def get_image_provider() -> str:
+    """Primeiro provedor da fila (compatível com código legado)."""
+    providers = get_image_providers()
+    return providers[0] if providers else "gemini"
 
 
 def _wait_openai_image_slot() -> None:
@@ -1632,8 +1653,8 @@ def generate_article_image(
 ) -> str | None:
     """Gera capa editorial; retorna URL pública ou None em caso de falha.
 
-    ``use_openai=False`` evita o fallback DALL-E na varredura do robô (1 img/min).
-    Capas pendentes ficam para ``backfill_missing_images`` / cron.
+    Provedores vêm de ``IMAGE_PROVIDER`` (um ou vários, ex.: ``gemini,openai``).
+    ``use_openai=False`` remove OpenAI da fila (varredura do robô).
     """
     slug = _article_image_slug(link, article_id)
     existing = _resolve_existing_article_image(slug)
@@ -1641,40 +1662,47 @@ def generate_article_image(
         return existing
 
     prompt = _build_image_prompt(title, tag, resumo)
-    provider = get_image_provider()
-    use_cursor = provider in {"cursor", "auto"} and bool(os.getenv("CURSOR_API_KEY", "").strip())
-    use_gemini = provider in {"gemini", "auto"} and bool(get_gemini_api_keys())
-    openai_ok = bool(get_openai_api_key()) and use_openai and provider in {
-        "openai",
-        "gemini",
-        "auto",
-    }
+    providers = get_image_providers()
+    if not use_openai:
+        providers = [p for p in providers if p != "openai"]
 
-    if provider == "openai":
-        url = _generate_article_image_openai(prompt, slug)
-        if url:
-            return url
-        print("   [img] Imagem nao gerada — artigo seguira sem capa.")
+    if not providers:
+        print("   [img] Nenhum provedor de imagem disponivel.")
         return None
 
-    if use_cursor:
-        url = _generate_article_image_cursor(prompt, slug)
-        if url:
-            print(f"   [img] Imagem salva: {url}")
-            return url
+    print(f"   [img] Provedores na ordem: {', '.join(providers)}")
+
+    for provider in providers:
         if provider == "cursor":
-            print("   [img] Imagem nao gerada — artigo seguira sem capa.")
-            return None
+            if not os.getenv("CURSOR_API_KEY", "").strip():
+                print("   [img/cursor] CURSOR_API_KEY nao configurada — pulando.")
+                continue
+            url = _generate_article_image_cursor(prompt, slug)
+            if url:
+                print(f"   [img] Imagem salva: {url}")
+                return url
+            print("   [img/cursor] Sem capa — proximo provedor.")
+            continue
 
-    if use_gemini:
-        url = _generate_article_image_gemini(prompt, slug)
-        if url:
-            return url
+        if provider == "gemini":
+            if not get_gemini_api_keys():
+                print("   [img/gemini] Sem GOOGLE_API_KEY — pulando.")
+                continue
+            url = _generate_article_image_gemini(prompt, slug)
+            if url:
+                return url
+            print("   [img/gemini] Sem capa — proximo provedor.")
+            continue
 
-    if openai_ok:
-        url = _generate_article_image_openai(prompt, slug)
-        if url:
-            return url
+        if provider == "openai":
+            if not get_openai_api_key():
+                print("   [img/openai] OPENAI_API_KEY ausente — pulando.")
+                continue
+            url = _generate_article_image_openai(prompt, slug)
+            if url:
+                return url
+            print("   [img/openai] Sem capa — proximo provedor.")
+            continue
 
     print("   [img] Imagem nao gerada — artigo seguira sem capa.")
     return None

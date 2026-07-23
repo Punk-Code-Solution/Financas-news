@@ -165,24 +165,21 @@ O sistema **troca de modelo** quando a cota diária esgota e **só faz retry** e
 
 ### Modelos de imagem
 
-Ordem alinhada às cotas atuais (chave 2 tem Imagen 4; Nano Banana está 0/0 nas duas):
+Ordem atual (Gemini Image / Nano Banana):
 
-1. `imagen-4.0-fast-generate-001` — ~25/dia (prioridade)
-2. `imagen-4.0-generate-001` — ~25/dia
-3. `imagen-4.0-ultra-generate-001` — ~25/dia
-4. `gemini-3.1-flash-lite-image` / `gemini-3.1-flash-image` / `gemini-2.5-flash-image` — fallback se a chave tiver cota
-5. **OpenAI** — fila com fallback ao esgotar cota de um modelo:
-   - `gpt-image-2` → `gpt-image-1.5` → `gpt-image-1` → `gpt-image-1-mini` → `dall-e-3` → `dall-e-2`
-   - Limite típico free: **~50 RPD por modelo**; intervalo mínimo entre chamadas: 65s
+1. `gemini-3.1-flash-lite-image` / `gemini-3.1-flash-image` / `gemini-2.5-flash-image`
+2. `gemini-3.1-flash-image-preview` / `gemini-3-pro-image`
+3. **OpenAI** (fallback no backfill) — `gpt-image-2` → `gpt-image-1.5` → `gpt-image-1` → `gpt-image-1-mini`
 
-> **Nota:** Imagen 4 na API Gemini está com shutdown previsto para ago/2026; enquanto a chave 2 tiver cota 25/dia, é a única fonte confiável de capa no free tier deste projeto. Com `OPENAI_API_KEY`, o backfill continua gerando capas e troca de modelo OpenAI quando a cota diária de um esgota.
+> **Nota:** Imagen 4 (`imagen-4.0-*`) retorna 404 para contas novas e foi removido da fila padrão. Com `OPENAI_API_KEY` no Render, o backfill tenta OpenAI depois que o Gemini esgota.
 
 ### Prioridade de capas
 
-1. **Notícias novas** na varredura do robô tentam Gemini imediatamente (sem esperar OpenAI).
-2. **Backfill** (`/api/gerar-imagens` ou pós-robô) seleciona artigos **sem `imagem_url`**, `ORDER BY id DESC` (novas primeiro; antigas quando não houver novas pendentes).
-3. Sem notícias novas no robô → a própria rodada executa backfill de 1 capa.
-4. Cron recomendado: chamar `/api/gerar-imagens?limit=1` **a cada 1 minuto**.
+1. ``IMAGE_PROVIDER`` define a ordem dos provedores (ex.: `gemini,openai`).
+2. Em cada provedor, percorre a fila de modelos (`GEMINI_IMAGE_MODELOS` / `OPENAI_IMAGE_MODELOS`).
+3. **Notícias novas** na varredura do robô usam a fila sem OpenAI (`use_openai=False`) para não travar no rate limit.
+4. **Backfill** (`/api/gerar-imagens` ou pós-robô) usa a fila completa, `ORDER BY id DESC`.
+5. Cron recomendado: `/api/gerar-imagens?limit=1` a cada **30 minutos** (~50 RPD OpenAI).
 
 Imagens salvas em disco (`ARTICLE_IMAGES_DIR`) com URL pública `/media/articles/`.
 
@@ -304,16 +301,17 @@ TURSO_AUTH_TOKEN=         # Token de autenticação Turso
 
 ```env
 GEMINI_MODELOS=gemini-3.1-flash-lite-preview,gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-2.5-flash-lite,gemini-2.5-flash,gemini-3-flash,gemini-3.5-flash
-GEMINI_IMAGE_MODELOS=imagen-4.0-fast-generate-001,imagen-4.0-generate-001,imagen-4.0-ultra-generate-001,gemini-3.1-flash-lite-image,gemini-3.1-flash-image,gemini-2.5-flash-image
+GEMINI_IMAGE_MODELOS=gemini-3.1-flash-lite-image,gemini-3.1-flash-image,gemini-2.5-flash-image,gemini-3.1-flash-image-preview,gemini-3-pro-image
 # Produção (Render): gemini (+ fallback OpenAI no backfill). Local: gemini | openai | cursor | auto.
-IMAGE_PROVIDER=gemini
+# Um ou vários provedores (ordem = prioridade). Ex.: gemini,openai | openai,gemini | auto
+IMAGE_PROVIDER=gemini,openai
 OPENAI_API_KEY=
-OPENAI_IMAGE_MODELOS=gpt-image-2,gpt-image-1.5,gpt-image-1,gpt-image-1-mini,dall-e-3,dall-e-2
+OPENAI_IMAGE_MODELOS=gpt-image-2,gpt-image-1.5,gpt-image-1,gpt-image-1-mini
 OPENAI_IMAGE_MIN_INTERVAL=65
 ARTICLE_IMAGES_DIR=/var/data/article_images
 ```
 
-> No Render, `IMAGE_PROVIDER` já está como `gemini` no `render.yaml`. Mesmo se estiver `auto` ou `cursor`, o código força Gemini porque o Cursor SDK não roda lá. Com `OPENAI_API_KEY`, o backfill usa a fila OpenAI e, ao esgotar a cota de um modelo, passa ao próximo.
+> No Render, use `IMAGE_PROVIDER=gemini,openai` para tentar Gemini e depois OpenAI. `auto`/`cursor` no Render ignoram Cursor (SDK local). Cada provedor ainda percorre a própria fila de modelos (`GEMINI_IMAGE_MODELOS` / `OPENAI_IMAGE_MODELOS`).
 ### Monetização (opcionais — só exibe se preenchidas)
 
 ```env
