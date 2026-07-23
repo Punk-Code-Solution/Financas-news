@@ -7,6 +7,7 @@ import ssl
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 import hashlib
+import io
 import json
 from pathlib import Path
 import re
@@ -122,6 +123,11 @@ DEFAULT_OPENAI_IMAGE_MODELOS = [
     "dall-e-2",
 ]
 
+# Hugging Face Inference Providers (text-to-image).
+DEFAULT_HF_IMAGE_MODELOS = [
+    "black-forest-labs/FLUX.1-schnell",
+]
+
 _exhausted_models_by_key: dict[str, set[str]] = {}
 # Cota de imagem por chave API (id curto → modelos esgotados nesta varredura).
 _exhausted_image_models_by_key: dict[str, set[str]] = {}
@@ -130,6 +136,9 @@ _unavailable_image_models: set[str] = set()
 # OpenAI: cota diária/RPM esgotada nesta execução; modelos sem acesso/404.
 _exhausted_openai_image_models: set[str] = set()
 _unavailable_openai_image_models: set[str] = set()
+# Hugging Face: modelos esgotados / indisponíveis nesta execução.
+_exhausted_hf_image_models: set[str] = set()
+_unavailable_hf_image_models: set[str] = set()
 # Cache de clients Gemini por fingerprint da chave.
 _genai_clients_by_key: dict[str, Any] = {}
 _genai_clients_lock = threading.Lock()
@@ -274,6 +283,8 @@ def _reset_image_quota_state() -> None:
     _unavailable_image_models.clear()
     _exhausted_openai_image_models.clear()
     _unavailable_openai_image_models.clear()
+    _exhausted_hf_image_models.clear()
+    _unavailable_hf_image_models.clear()
 
 
 _gemini_keys = get_gemini_api_keys()
@@ -1259,6 +1270,17 @@ def get_openai_api_key() -> str:
     return os.getenv("OPENAI_API_KEY", "").strip()
 
 
+def get_hf_token() -> str:
+    return (os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN") or "").strip()
+
+
+def get_hf_image_models() -> list[str]:
+    raw = os.getenv("HF_IMAGE_MODELOS", "").strip()
+    if raw:
+        return [m.strip() for m in raw.split(",") if m.strip()]
+    return DEFAULT_HF_IMAGE_MODELOS.copy()
+
+
 def get_openai_image_models() -> list[str]:
     """Lista de modelos OpenAI de imagem (fallback em cota/indisponibilidade)."""
     raw = os.getenv("OPENAI_IMAGE_MODELOS", "").strip()
@@ -1379,23 +1401,25 @@ def get_image_providers() -> list[str]:
     """Lista ordenada de provedores de imagem.
 
     ``IMAGE_PROVIDER`` aceita um ou vários (separados por vírgula):
-    - ``gemini,openai`` — tenta Gemini e depois OpenAI
+    - ``gemini,huggingface,openai`` — Gemini → HF → OpenAI
     - ``openai,gemini`` — OpenAI primeiro
-    - ``auto`` / vazio — Cursor (local) → Gemini → OpenAI
+    - ``auto`` / vazio — Cursor (local) → Gemini → Hugging Face → OpenAI
 
     No Render, ``cursor`` é ignorado (SDK não roda lá).
+    Aliases: ``hf`` → ``huggingface``.
     """
     raw = os.getenv("IMAGE_PROVIDER", "").strip().lower()
     on_render = bool(os.getenv("RENDER"))
-    allowed = {"cursor", "gemini", "openai", "auto"}
+    aliases = {"hf": "huggingface"}
+    allowed = {"cursor", "gemini", "openai", "huggingface", "hf", "auto"}
 
     parts = [p.strip() for p in raw.replace(";", ",").split(",") if p.strip()]
     parts = [p for p in parts if p in allowed]
 
     def _expand_auto() -> list[str]:
         if on_render:
-            return ["gemini", "openai"]
-        return ["cursor", "gemini", "openai"]
+            return ["gemini", "huggingface", "openai"]
+        return ["cursor", "gemini", "huggingface", "openai"]
 
     if not parts or parts == ["auto"]:
         ordered = _expand_auto()
@@ -1407,14 +1431,16 @@ def get_image_providers() -> list[str]:
             elif part == "cursor" and on_render:
                 continue
             else:
-                ordered.append(part)
+                ordered.append(aliases.get(part, part))
 
     seen: set[str] = set()
     providers: list[str] = []
     for name in ordered:
-        if name not in seen:
-            seen.add(name)
-            providers.append(name)
+        canon = aliases.get(name, name)
+        if canon == "auto" or canon in seen:
+            continue
+        seen.add(canon)
+        providers.append(canon)
 
     return providers or _expand_auto()
 
@@ -1658,6 +1684,90 @@ def _generate_article_image_openai(prompt: str, slug: str) -> str | None:
     return None
 
 
+def _is_hf_image_quota_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return (
+        "rate limit" in msg
+        or "rate_limit" in msg
+        or "quota" in msg
+        or "429" in msg
+        or "too many requests" in msg
+        or "payment required" in msg
+        or "402" in msg
+    )
+
+
+def _is_hf_image_model_unavailable(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return (
+        "not found" in msg
+        or "404" in msg
+        or "does not exist" in msg
+        or "unsupported" in msg
+        or "no inference provider" in msg
+    )
+
+
+def _generate_article_image_huggingface(prompt: str, slug: str) -> str | None:
+    token = get_hf_token()
+    if not token:
+        print("   [img/hf] HF_TOKEN nao configurada.")
+        return None
+
+    try:
+        from huggingface_hub import InferenceClient
+    except ImportError:
+        print(
+            "   [img/hf] Pacote huggingface_hub nao instalado. "
+            "Rode: pip install -r requirements.txt"
+        )
+        return None
+
+    all_models = get_hf_image_models()
+    modelos = [
+        m
+        for m in all_models
+        if m not in _exhausted_hf_image_models and m not in _unavailable_hf_image_models
+    ]
+    if not modelos:
+        print(
+            f"   [img/hf] Sem modelos "
+            f"(cota: {sorted(_exhausted_hf_image_models)} | "
+            f"indisponiveis: {sorted(_unavailable_hf_image_models)})."
+        )
+        return None
+
+    client = InferenceClient(token=token)
+
+    for model in modelos:
+        try:
+            print(f"   [img/hf] Gerando imagem ({model})...")
+            image = client.text_to_image(prompt, model=model)
+            buf = io.BytesIO()
+            if hasattr(image, "save"):
+                image.save(buf, format="PNG")
+                raw = buf.getvalue()
+            elif isinstance(image, (bytes, bytearray)):
+                raw = bytes(image)
+            else:
+                print(f"   [img/hf] Resposta sem imagem ({model}): {type(image)}")
+                continue
+            url = _save_image_bytes(raw, "image/png", slug)
+            print(f"   [img/hf] Imagem salva: {url} ({model})")
+            return url
+        except Exception as e:
+            if _is_hf_image_model_unavailable(e):
+                _unavailable_hf_image_models.add(model)
+                print(f"   [img/hf] Modelo indisponivel, removendo da fila: {model}")
+            elif _is_hf_image_quota_error(e):
+                _exhausted_hf_image_models.add(model)
+                print(f"   [img/hf] Sem cota/credito em {model} — proximo modelo.")
+            print(f"   [img/hf] Falha ({model}): {e}")
+            continue
+
+    return None
+
+
 def generate_article_image(
     title: str,
     tag: str,
@@ -1717,6 +1827,16 @@ def generate_article_image(
             if url:
                 return url
             print("   [img/openai] Sem capa — proximo provedor.")
+            continue
+
+        if provider == "huggingface":
+            if not get_hf_token():
+                print("   [img/hf] HF_TOKEN ausente — pulando.")
+                continue
+            url = _generate_article_image_huggingface(prompt, slug)
+            if url:
+                return url
+            print("   [img/hf] Sem capa — proximo provedor.")
             continue
 
     print("   [img] Imagem nao gerada — artigo seguira sem capa.")
@@ -2151,6 +2271,9 @@ def fetch_and_process(max_per_feed: int | None = None, max_articles: int | None 
     openai_models = get_openai_image_models() if get_openai_api_key() else []
     openai_label = ", ".join(openai_models) if openai_models else "(sem OPENAI_API_KEY)"
     print(f"   🖼️ Fallback OpenAI: {openai_label} (backfill; troca modelo em cota)")
+    hf_models = get_hf_image_models() if get_hf_token() else []
+    hf_label = ", ".join(hf_models) if hf_models else "(sem HF_TOKEN)"
+    print(f"   🖼️ Fallback Hugging Face: {hf_label}")
     print(f"   🔑 Chaves Gemini: {len(get_gemini_api_keys())} (imagem prioriza 2→3→1)")
     print(f"   📰 Fontes: {len(RSS_FEEDS)} | até {max_per_feed}/feed | teto {max_articles}/rodada")
 

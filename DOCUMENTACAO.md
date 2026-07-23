@@ -169,14 +169,15 @@ Ordem atual (Gemini Image / Nano Banana):
 
 1. `gemini-3.1-flash-lite-image` / `gemini-3.1-flash-image` / `gemini-2.5-flash-image`
 2. `gemini-3.1-flash-image-preview` / `gemini-3-pro-image`
-3. **OpenAI** (fallback no backfill) — `gpt-image-2` → `gpt-image-1.5` → `gpt-image-1` → `gpt-image-1-mini`
+3. **Hugging Face** (fallback) — `black-forest-labs/FLUX.1-schnell` via Inference Providers (`HF_TOKEN`)
+4. **OpenAI** (fallback no backfill) — `gpt-image-2` → `gpt-image-1.5` → `gpt-image-1` → `gpt-image-1-mini`
 
-> **Nota:** Imagen 4 (`imagen-4.0-*`) retorna 404 para contas novas e foi removido da fila padrão. Com `OPENAI_API_KEY` no Render, o backfill tenta OpenAI depois que o Gemini esgota.
+> **Nota:** Imagen 4 (`imagen-4.0-*`) retorna 404 para contas novas e foi removido da fila padrão. Com `HF_TOKEN` / `OPENAI_API_KEY` no Render, o backfill tenta Hugging Face e depois OpenAI quando o Gemini esgota.
 
 ### Prioridade de capas
 
-1. ``IMAGE_PROVIDER`` define a ordem dos provedores (ex.: `gemini,openai`).
-2. Em cada provedor, percorre a fila de modelos (`GEMINI_IMAGE_MODELOS` / `OPENAI_IMAGE_MODELOS`).
+1. ``IMAGE_PROVIDER`` define a ordem dos provedores (ex.: `gemini,huggingface,openai`).
+2. Em cada provedor, percorre a fila de modelos (`GEMINI_IMAGE_MODELOS` / `HF_IMAGE_MODELOS` / `OPENAI_IMAGE_MODELOS`).
 3. **Notícias novas** na varredura do robô usam a fila sem OpenAI (`use_openai=False`) para não travar no rate limit.
 4. **Backfill** (`/api/gerar-imagens` ou pós-robô) usa a fila completa, `ORDER BY id DESC`.
 5. Cron recomendado: `/api/gerar-imagens?limit=1` a cada **30 minutos** (~50 RPD OpenAI).
@@ -304,14 +305,16 @@ GEMINI_MODELOS=gemini-3.1-flash-lite-preview,gemini-3.1-flash-lite,gemini-3.5-fl
 GEMINI_IMAGE_MODELOS=gemini-3.1-flash-lite-image,gemini-3.1-flash-image,gemini-2.5-flash-image,gemini-3.1-flash-image-preview,gemini-3-pro-image
 # Produção (Render): gemini (+ fallback OpenAI no backfill). Local: gemini | openai | cursor | auto.
 # Um ou vários provedores (ordem = prioridade). Ex.: gemini,openai | openai,gemini | auto
-IMAGE_PROVIDER=gemini,openai
+IMAGE_PROVIDER=gemini,huggingface,openai
+HF_TOKEN=
+HF_IMAGE_MODELOS=black-forest-labs/FLUX.1-schnell
 OPENAI_API_KEY=
 OPENAI_IMAGE_MODELOS=gpt-image-2,gpt-image-1.5,gpt-image-1,gpt-image-1-mini
 OPENAI_IMAGE_MIN_INTERVAL=65
 ARTICLE_IMAGES_DIR=/var/data/article_images
 ```
 
-> No Render, use `IMAGE_PROVIDER=gemini,openai` para tentar Gemini e depois OpenAI. `auto`/`cursor` no Render ignoram Cursor (SDK local). Cada provedor ainda percorre a própria fila de modelos (`GEMINI_IMAGE_MODELOS` / `OPENAI_IMAGE_MODELOS`).
+> No Render, use `IMAGE_PROVIDER=gemini,huggingface,openai`. Cole o valor de `HF_TOKEN` no painel (Blueprint usa `sync: false`). `auto`/`cursor` no Render ignoram Cursor. Cada provedor percorre a própria fila (`GEMINI_IMAGE_MODELOS` / `HF_IMAGE_MODELOS` / `OPENAI_IMAGE_MODELOS`).
 ### Monetização (opcionais — só exibe se preenchidas)
 
 ```env

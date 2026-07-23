@@ -23,7 +23,11 @@ services:
       - key: GEMINI_IMAGE_MODELOS
         value: gemini-3.1-flash-lite-image,gemini-3.1-flash-image,gemini-2.5-flash-image,gemini-3.1-flash-image-preview,gemini-3-pro-image
       - key: IMAGE_PROVIDER
-        value: gemini,openai
+        value: gemini,huggingface,openai
+      - key: HF_TOKEN
+        sync: false
+      - key: HF_IMAGE_MODELOS
+        value: black-forest-labs/FLUX.1-schnell
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_IMAGE_MODELOS
