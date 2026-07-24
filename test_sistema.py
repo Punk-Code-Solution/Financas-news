@@ -79,6 +79,7 @@ def run() -> int:
 
         r = client.get("/robots.txt")
         check("robots: Disallow busca ?q=", "Disallow: /*?q=" in r.text)
+        check("robots: Disallow paginação ?page=", "Disallow: /*?page=" in r.text)
         check("robots: Sitemap", "Sitemap: https://financas-news.net.br/sitemap.xml" in r.text)
 
         # Páginas
@@ -121,6 +122,13 @@ def run() -> int:
         check(
             "Busca: canônica limpa (sem q/lang)",
             'rel="canonical" href="https://financas-news.net.br/"' in r.text,
+        )
+
+        r = client.get("/", params={"page": "6", "categoria": "Economia"})
+        check("Paginação legada: noindex", 'name="robots" content="noindex, follow"' in r.text)
+        check(
+            "Paginação legada: canônica sem page",
+            'rel="canonical" href="https://financas-news.net.br/?categoria=Economia"' in r.text,
         )
 
         r = client.get("/static/js/market-ticker.js")

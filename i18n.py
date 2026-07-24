@@ -798,17 +798,25 @@ def absolute_url(site_origin: str, path: str, query: dict[str, str] | None = Non
 def canonical_query_params(request: Request, path: str) -> tuple[dict[str, str], bool]:
     """Query permitida na canônica + flag noindex.
 
-    - Busca (?q=): noindex; canônica limpa (sem query).
+    - Busca (?q=) ou paginação legada (?page=): noindex; canônica limpa.
     - Categoria válida só na home: mantém ?categoria= na canônica.
-    - lang/utm/newsletter: nunca entram na canônica.
+    - lang/utm/newsletter/page: nunca entram na canônica.
     """
-    q = (request.query_params.get("q") or "").strip()
-    if q:
-        return {}, True
+    params = request.query_params
+    q = (params.get("q") or "").strip()
+    page = (params.get("page") or "").strip()
+    if q or page:
+        # Paginação antiga (?page=) e busca: não indexar; consolidar sinais na URL limpa.
+        out: dict[str, str] = {}
+        if path == "/" and not q:
+            categoria = (params.get("categoria") or "").strip()
+            if categoria in SITE_TOPIC_KEYWORDS:
+                out["categoria"] = categoria
+        return out, True
 
-    out: dict[str, str] = {}
+    out = {}
     if path == "/":
-        categoria = (request.query_params.get("categoria") or "").strip()
+        categoria = (params.get("categoria") or "").strip()
         if categoria in SITE_TOPIC_KEYWORDS:
             out["categoria"] = categoria
     return out, False

@@ -648,7 +648,7 @@ def get_default_category_image(slug: str):
 
 @app.get("/robots.txt", response_class=Response)
 def get_robots_txt():
-    # /*?q= reduz crawl budget em buscas (já noindex na meta).
+    # Busca e paginação legada (?page=) não devem consumir crawl budget.
     content = (
         "User-agent: *\n"
         "Allow: /\n"
@@ -656,6 +656,8 @@ def get_robots_txt():
         "Disallow: /ping\n"
         "Disallow: /*?q=\n"
         "Disallow: /*?*q=\n"
+        "Disallow: /*?page=\n"
+        "Disallow: /*?*page=\n"
         f"Sitemap: {SITE_ORIGIN}/sitemap.xml\n"
     )
     return Response(content=content, media_type="text/plain")
@@ -673,12 +675,17 @@ def get_sitemap():
         except Exception:
             continue
 
+    # Só artigos com corpo mínimo (evita thin/legado no sitemap).
+    # Prioriza capas presentes — sinal forte para Discover/indexação.
     result = client.execute(
         """
         SELECT id,
                COALESCE(NULLIF(updated_at, ''), NULLIF(published_at, ''), created_at) AS lastmod
         FROM news
-        ORDER BY id DESC
+        WHERE LENGTH(COALESCE(resumo, '')) >= 800
+        ORDER BY
+          CASE WHEN imagem_url IS NOT NULL AND TRIM(imagem_url) != '' THEN 0 ELSE 1 END,
+          id DESC
         LIMIT 500
         """
     )
