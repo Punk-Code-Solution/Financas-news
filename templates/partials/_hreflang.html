@@ -1,8 +1,8 @@
-{# hreflang absoluto — só declarar idiomas com conteúdo real (Google). #}
+{# Canônica + hreflang: pt-BR/x-default = canonical_url (sem ?lang= divergente). #}
 <link rel="canonical" href="{{ canonical_url }}">
-<link rel="alternate" hreflang="pt-BR" href="{{ site_origin }}{{ canonical_path }}?lang=pt">
+<link rel="alternate" hreflang="pt-BR" href="{{ hreflang_urls['pt-BR'] }}">
 {% if hreflang_full %}
-<link rel="alternate" hreflang="en" href="{{ site_origin }}{{ canonical_path }}?lang=en">
-<link rel="alternate" hreflang="ja" href="{{ site_origin }}{{ canonical_path }}?lang=ja">
+<link rel="alternate" hreflang="en" href="{{ hreflang_urls['en'] }}">
+<link rel="alternate" hreflang="ja" href="{{ hreflang_urls['ja'] }}">
 {% endif %}
-<link rel="alternate" hreflang="x-default" href="{{ site_origin }}{{ canonical_path }}?lang=pt">
+<link rel="alternate" hreflang="x-default" href="{{ hreflang_urls['x-default'] }}">

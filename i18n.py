@@ -150,6 +150,10 @@ UI: dict[str, dict[str, str]] = {
         "meta_home_title": "Finanças News | Notícias Financeiras, Economia e Mercado em Tempo Real",
         "meta_home_og_title": "Finanças News | Economia, Investimentos e Cripto",
         "meta_home_description": "Finanças News (financas news / financas-news): notícias financeiras, economia Brasil, dólar, Selic, IPCA, ações, criptomoedas e análises com dados do Banco Central.",
+        "meta_category_title": "{tag} | Finanças News — Notícias e Análises",
+        "meta_category_og_title": "{tag} | Finanças News",
+        "meta_category_description": "Notícias e análises de {tag} no Finanças News: economia Brasil, mercado e indicadores oficiais com dados do Banco Central.",
+        "meta_search_title": "Busca | Finanças News",
         "meta_brand_keywords": ", ".join(SITE_BRAND_KEYWORDS),
         "seo_topics_title": "Temas em destaque",
         "seo_discover_blurb": "Encontre no Finanças News análises sobre economia brasileira, mercado financeiro, investimentos, dólar, juros, inflação, criptomoedas, fintech e commodities — atualizadas com dados oficiais.",
@@ -320,6 +324,10 @@ UI: dict[str, dict[str, str]] = {
         "meta_home_title": "Finanças News | Financial News, Markets and Economy",
         "meta_home_og_title": "Finanças News | Economy, Investing and Crypto",
         "meta_home_description": "Finanças News (financas news / financas-news): financial news, Brazilian economy, FX, rates, stocks, crypto and analysis with official market data.",
+        "meta_category_title": "{tag} | Finanças News — News and Analysis",
+        "meta_category_og_title": "{tag} | Finanças News",
+        "meta_category_description": "{tag} news and analysis on Finanças News: Brazilian economy, markets and official indicators.",
+        "meta_search_title": "Search | Finanças News",
         "meta_brand_keywords": ", ".join(SITE_BRAND_KEYWORDS),
         "seo_topics_title": "Featured topics",
         "seo_discover_blurb": "On Finanças News find analysis of the Brazilian economy, financial markets, investing, USD/BRL, interest rates, inflation, crypto, fintech and commodities — with official data.",
@@ -490,6 +498,10 @@ UI: dict[str, dict[str, str]] = {
         "meta_home_title": "Finanças News | 金融ニュース・経済・市場",
         "meta_home_og_title": "Finanças News | 経済・投資・暗号資産",
         "meta_home_description": "Finanças News（financas news / financas-news）：ブラジル経済、為替、金利、株式、暗号資産のニュースと公式データに基づく分析。",
+        "meta_category_title": "{tag} | Finanças News — ニュースと分析",
+        "meta_category_og_title": "{tag} | Finanças News",
+        "meta_category_description": "Finanças Newsの{tag}ニュースと分析：ブラジル経済、市場、公式指標。",
+        "meta_search_title": "検索 | Finanças News",
         "meta_brand_keywords": ", ".join(SITE_BRAND_KEYWORDS),
         "seo_topics_title": "注目トピック",
         "seo_discover_blurb": "Finanças Newsではブラジル経済、金融市場、投資、ドル、金利、インフレ、暗号資産、フィンテック、コモディティの分析を公式データとともに配信します。",
@@ -775,12 +787,59 @@ def lang_switch_url(request: Request, target_lang: str) -> str:
     return f"{path}?{query}" if query else f"{path}?lang={target_lang}"
 
 
+def absolute_url(site_origin: str, path: str, query: dict[str, str] | None = None) -> str:
+    """Monta URL absoluta; query vazia → sem '?'."""
+    normalized = path if path.startswith("/") else f"/{path}"
+    if not query:
+        return f"{site_origin}{normalized}"
+    return f"{site_origin}{normalized}?{urlencode(query)}"
+
+
+def canonical_query_params(request: Request, path: str) -> tuple[dict[str, str], bool]:
+    """Query permitida na canônica + flag noindex.
+
+    - Busca (?q=): noindex; canônica limpa (sem query).
+    - Categoria válida só na home: mantém ?categoria= na canônica.
+    - lang/utm/newsletter: nunca entram na canônica.
+    """
+    q = (request.query_params.get("q") or "").strip()
+    if q:
+        return {}, True
+
+    out: dict[str, str] = {}
+    if path == "/":
+        categoria = (request.query_params.get("categoria") or "").strip()
+        if categoria in SITE_TOPIC_KEYWORDS:
+            out["categoria"] = categoria
+    return out, False
+
+
+def build_hreflang_map(
+    site_origin: str,
+    path: str,
+    base_query: dict[str, str],
+    *,
+    full: bool,
+) -> dict[str, str]:
+    """pt-BR e x-default = canônica (sem ?lang=). EN/JA só se full=True."""
+    canonical = absolute_url(site_origin, path, base_query or None)
+    urls = {"pt-BR": canonical, "x-default": canonical}
+    if full:
+        for code in ("en", "ja"):
+            q = dict(base_query)
+            q["lang"] = code
+            urls[code] = absolute_url(site_origin, path, q)
+    return urls
+
+
 def build_i18n_context(request: Request) -> dict[str, Any]:
     lang = resolve_lang(request)
     t: Callable[..., str] = lambda key, **kwargs: translate(lang, key, **kwargs)
     site_origin = os.getenv("SITE_ORIGIN", "https://financas-news.net.br").rstrip("/")
     path = request.url.path or "/"
-    canonical_url = f"{site_origin}{path}"
+    base_query, robots_noindex = canonical_query_params(request, path)
+    canonical_url = absolute_url(site_origin, path, base_query or None)
+    hreflang_urls = build_hreflang_map(site_origin, path, base_query, full=True)
 
     return {
         "lang": lang,
@@ -788,7 +847,10 @@ def build_i18n_context(request: Request) -> dict[str, Any]:
         "number_locale": LOCALE_FOR_NUMBERS.get(lang, "pt-BR"),
         "site_origin": site_origin,
         "canonical_path": path,
+        "canonical_query": base_query,
         "canonical_url": canonical_url,
+        "robots_noindex": robots_noindex,
+        "hreflang_urls": hreflang_urls,
         "default_og_image": f"{site_origin}/media/default/economia.svg?v=3",
         # Artigos editoriais são PT; UI institucional pode usar variantes.
         "hreflang_full": True,

@@ -5,7 +5,13 @@
     <meta name="google-site-verification" content="yAi4Kd6_s0UEsojmb2gqVW4e-Gji25c1eDBKFqY-lzo" />
     <meta name="google-site-verification" content="ywNd8U_KpTBiW6oJGXtPLFu3QoUn-bNOjxWOnGG1Fl4" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% if categoria_ativa and not q %}
+    <title>{{ t('meta_category_title', tag=tr_tag(categoria_ativa)) }}</title>
+    {% elif q %}
+    <title>{{ t('meta_search_title') }}</title>
+    {% else %}
     <title>{{ t('meta_home_title') }}</title>
+    {% endif %}
     
     <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
     <link rel="dns-prefetch" href="https://fonts.googleapis.com">
@@ -16,15 +22,24 @@
     {% include "partials/_hreflang.html" %}
     
     <meta property="og:type" content="website" />
+    {% if categoria_ativa and not q %}
+    <meta property="og:title" content="{{ t('meta_category_og_title', tag=tr_tag(categoria_ativa)) }}" />
+    <meta property="og:description" content="{{ t('meta_category_description', tag=tr_tag(categoria_ativa)) }}" />
+    {% else %}
     <meta property="og:title" content="{{ t('meta_home_og_title') }}" />
     <meta property="og:description" content="{{ t('meta_home_description') }}" />
+    {% endif %}
     <meta property="og:url" content="{{ canonical_url }}" />
     <meta property="og:site_name" content="{{ t('site_name') }}" />
     <meta property="og:locale" content="pt_BR" />
     <meta property="og:image" content="{{ default_og_image }}" />
+    {% if categoria_ativa and not q %}
+    <meta name="description" content="{{ t('meta_category_description', tag=tr_tag(categoria_ativa)) }}" />
+    {% else %}
     <meta name="description" content="{{ t('meta_home_description') }}" />
+    {% endif %}
     {% include "partials/_seo_brand.html" %}
-    {% if q %}
+    {% if robots_noindex or q %}
     <meta name="robots" content="noindex, follow">
     {% endif %}
 
@@ -70,6 +85,7 @@
 
     {% include "partials/_styles.html" %}
     {% include "partials/_adsense_styles.html" %}
+    <script src="/static/js/image-fallback.js"></script>
     
     {% if monetization.adsense.enabled %}
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ monetization.adsense.client }}" crossorigin="anonymous"></script>
@@ -280,7 +296,7 @@
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
                 {% set destaque = news[0] %}
                 <article class="lg:col-span-7 relative min-h-[360px] md:min-h-[430px] rounded-2xl overflow-hidden bg-slate-900 group">
-                    <img src="{{ destaque[11] or category_image(destaque[5]) }}" alt="{{ destaque[1] }}" class="absolute inset-0 w-full h-full object-cover object-center transition duration-500 group-hover:scale-105">
+                    <img src="{{ article_cover(destaque[11], destaque[5]) }}" data-fallback="{{ category_image(destaque[5]) }}" alt="{{ destaque[1] }}" class="absolute inset-0 w-full h-full object-cover object-center transition duration-500 group-hover:scale-105">
                     <div class="featured-gradient absolute inset-0"></div>
                     <a href="/noticia/{{ destaque[0] }}?lang={{ lang }}" class="absolute inset-0 flex flex-col justify-end p-6 md:p-8">
                         <div class="flex items-center gap-2 mb-3">
@@ -296,7 +312,7 @@
                     {% for n in news[1:4] %}
                     <article class="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden hover:border-blue-300 dark:hover:border-slate-600 transition">
                         <a href="/noticia/{{ n[0] }}?lang={{ lang }}" class="flex h-full group">
-                            <img src="{{ n[11] or category_image(n[5]) }}" alt="{{ n[1] }}" loading="lazy" class="w-28 sm:w-32 lg:w-40 h-full min-h-[7.5rem] object-cover object-center shrink-0">
+                            <img src="{{ article_cover(n[11], n[5]) }}" data-fallback="{{ category_image(n[5]) }}" alt="{{ n[1] }}" loading="lazy" class="w-28 sm:w-32 lg:w-40 h-full min-h-[7.5rem] object-cover object-center shrink-0">
                             <div class="p-4 flex flex-col justify-center">
                                 <span class="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-[#4ade80]">{{ tr_tag(n[5]) }}</span>
                                 <h3 class="mt-1 text-base md:text-lg font-bold leading-snug text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition line-clamp-3">{{ n[1] }}</h3>
@@ -370,7 +386,7 @@
                         {% for n in suggested_news %}
                         <article class="relative py-5 border-b border-gray-200 dark:border-slate-800 min-w-0 overflow-hidden">
                             <a href="/noticia/{{ n[0] }}?lang={{ lang }}" class="group flex gap-4 min-w-0">
-                                <img src="{{ n[11] or category_image(n[5]) }}" alt="{{ n[1] }}" loading="lazy" class="w-28 h-24 md:w-32 md:h-28 rounded-lg object-cover object-center shrink-0">
+                                <img src="{{ article_cover(n[11], n[5]) }}" data-fallback="{{ category_image(n[5]) }}" alt="{{ n[1] }}" loading="lazy" class="w-28 h-24 md:w-32 md:h-28 rounded-lg object-cover object-center shrink-0">
                                 <div class="relative min-w-0 flex-1 overflow-hidden pr-20 md:pr-24">
                                     {% set sent = (n[6] | default('Neutro', true)) | lower %}
                                     <svg class="sparkline pointer-events-none" viewBox="0 0 84 38" aria-hidden="true" data-sparkline="sentiment" data-sentiment="{{ sent }}"></svg>

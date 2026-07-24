@@ -77,6 +77,10 @@ def run() -> int:
             r = client.get(path)
             check(f"GET {path}", r.status_code == 200 and needle in r.text, f"status={r.status_code}")
 
+        r = client.get("/robots.txt")
+        check("robots: Disallow busca ?q=", "Disallow: /*?q=" in r.text)
+        check("robots: Sitemap", "Sitemap: https://financas-news.net.br/sitemap.xml" in r.text)
+
         # Páginas
         for path in ["/", "/quem-somos", "/privacidade", "/termos"]:
             r = client.get(path)
@@ -92,6 +96,32 @@ def run() -> int:
         check("Home: google-site-verification meta", "google-site-verification" in r.text)
         check("Home: hreflang absoluto", 'hreflang="pt-BR"' in r.text and "https://financas-news.net.br" in r.text)
         check("Home: seletor idioma", 'hreflang="en"' in r.text and 'hreflang="ja"' in r.text)
+        # pt-BR / x-default devem coincidir com a canônica (sem ?lang=pt divergente).
+        check(
+            "Home: hreflang pt = canônica",
+            'rel="canonical" href="https://financas-news.net.br/"' in r.text
+            and 'hreflang="pt-BR" href="https://financas-news.net.br/"' in r.text
+            and 'hreflang="x-default" href="https://financas-news.net.br/"' in r.text,
+        )
+
+        r = client.get("/", params={"categoria": "Cripto"})
+        check(
+            "Categoria: canônica com ?categoria=",
+            'rel="canonical" href="https://financas-news.net.br/?categoria=Cripto"' in r.text,
+            r.text[r.text.find("canonical") : r.text.find("canonical") + 120] if "canonical" in r.text else "sem canonical",
+        )
+        check(
+            "Categoria: title único",
+            "Cripto" in r.text and "Finanças News" in r.text and "<title>" in r.text,
+        )
+        check("Categoria: indexável (sem noindex)", 'name="robots" content="noindex' not in r.text)
+
+        r = client.get("/", params={"q": "selic", "lang": "en"})
+        check("Busca: noindex", 'name="robots" content="noindex, follow"' in r.text)
+        check(
+            "Busca: canônica limpa (sem q/lang)",
+            'rel="canonical" href="https://financas-news.net.br/"' in r.text,
+        )
 
         r = client.get("/static/js/market-ticker.js")
         check("Static JS ticker", r.status_code == 200 and "AwesomeAPI" in r.text, f"status={r.status_code}")
@@ -139,6 +169,34 @@ def run() -> int:
         r = client.get("/")
         check("Header X-Content-Type-Options", r.headers.get("x-content-type-options") == "nosniff")
         check("Header X-Frame-Options", r.headers.get("x-frame-options", "").upper() == "SAMEORIGIN")
+        check(
+            "Home: image-fallback.js",
+            "/static/js/image-fallback.js" in r.text,
+            "script de fallback de capa ausente",
+        )
+        if "/noticia/" in r.text and "object-cover" in r.text:
+            check(
+                "Home: data-fallback nas capas",
+                'data-fallback="/media/default/' in r.text,
+                "atributo data-fallback ausente nos <img>",
+            )
+
+        cover_missing = main.article_cover_url("/media/articles/arquivo-inexistente-xyz.png", "Cripto")
+        check(
+            "article_cover: URL quebrada → SVG categoria",
+            cover_missing == main.category_image_url("Cripto"),
+            cover_missing,
+        )
+        cover_empty = main.article_cover_url(None, "Economia")
+        check(
+            "article_cover: sem URL → SVG categoria",
+            cover_empty == main.category_image_url("Economia"),
+            cover_empty,
+        )
+        check(
+            "Static image-fallback.js",
+            client.get("/static/js/image-fallback.js").status_code == 200,
+        )
 
         # Evita cookie lang=en/ja afetar o restante da suíte (padrão PT).
         client.cookies.clear()

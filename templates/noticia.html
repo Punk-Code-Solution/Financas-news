@@ -15,6 +15,7 @@
     {% include "partials/_styles.html" %}
     {% include "partials/_adsense_styles.html" %}
     {% include "partials/_hreflang.html" %}
+    <script src="/static/js/image-fallback.js"></script>
     {% if monetization.adsense.enabled %}
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ monetization.adsense.client }}" crossorigin="anonymous"></script>
     {% endif %}
@@ -31,7 +32,7 @@
     <meta property="og:url" content="{{ canonical_url }}" />
     <meta property="og:site_name" content="{{ t('site_name') }}" />
     <meta property="og:locale" content="pt_BR" />
-    {% set og_image = noticia[11] if noticia[11] else category_image(noticia[5]) %}
+    {% set og_image = article_cover(noticia[11], noticia[5]) %}
     {% set og_image_abs = og_image if og_image.startswith('http') else (site_origin ~ og_image) %}
     <meta property="og:image" content="{{ og_image_abs }}" />
     <meta property="og:image:width" content="1200" />
@@ -284,7 +285,7 @@
         <div class="layout-with-sidebar{% if monetization.sidebar_widgets_visible %} has-sidebar{% endif %}">
         <div class="layout-main">
         <article class="bg-white dark:bg-[#1e293b] rounded-xl shadow-sm overflow-hidden border border-gray-200 dark:border-slate-800 transition-colors">
-            <img src="{{ noticia[11] or category_image(noticia[5]) }}" alt="{{ noticia[1] }}" class="w-full h-56 md:h-72 object-cover object-center">
+            <img src="{{ article_cover(noticia[11], noticia[5]) }}" data-fallback="{{ category_image(noticia[5]) }}" alt="{{ noticia[1] }}" class="w-full h-56 md:h-72 object-cover object-center">
             <div class="p-6 md:p-12">
             <div class="flex items-center space-x-3 mb-6">
                 <span class="bg-blue-100 dark:bg-white text-blue-800 dark:text-blue-900 text-xs font-bold px-3 py-1 rounded-full uppercase">{{ tr_tag(noticia[5]) }}</span>

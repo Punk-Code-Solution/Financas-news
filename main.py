@@ -8,7 +8,6 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 from fastapi import FastAPI, Request, Response, HTTPException, Form
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -41,7 +40,16 @@ from article_enrichment import (
     resolve_referencias_internas,
     source_homepage,
 )
-from i18n import COOKIE_MAX_AGE, COOKIE_NAME, SITE_TOPIC_KEYWORDS, build_i18n_context, resolve_lang
+from i18n import (
+    COOKIE_MAX_AGE,
+    COOKIE_NAME,
+    SITE_TOPIC_KEYWORDS,
+    SUPPORTED_LANGS,
+    absolute_url,
+    build_hreflang_map,
+    build_i18n_context,
+    resolve_lang,
+)
 
 load_dotenv()
 
@@ -161,7 +169,21 @@ def category_image_url(tag: object) -> str:
     return f"/media/default/{item['slug']}.svg?v=3"
 
 
+def article_cover_url(imagem_url: object, tag: object) -> str:
+    """Capa do artigo, ou SVG padrão da categoria se a URL estiver vazia ou o arquivo não existir."""
+    url = str(imagem_url).strip() if imagem_url is not None else ""
+    if not url:
+        return category_image_url(tag)
+    # URLs remotas externas: manter; o onerror do cliente cobre falha de carga.
+    if url.startswith(("http://", "https://")) and "/media/articles/" not in url:
+        return url
+    if core._media_file_exists(url):
+        return url
+    return category_image_url(tag)
+
+
 templates.env.globals["category_image"] = category_image_url
+templates.env.globals["article_cover"] = article_cover_url
 
 SITE_ORIGIN = os.getenv("SITE_ORIGIN", "https://financas-news.net.br").rstrip("/")
 
@@ -451,6 +473,8 @@ def _render_noticia_page(
     path = canonical_path or f"/noticia/{noticia_id}"
     published_iso = _to_iso8601(noticia[7] if len(noticia) > 7 else None)
     updated_iso = _to_iso8601(noticia[13] if len(noticia) > 13 else None) or published_iso
+    article_canonical = absolute_url(SITE_ORIGIN, path)
+    article_hreflang = build_hreflang_map(SITE_ORIGIN, path, {}, full=False)
 
     response = _render(
         request,
@@ -465,8 +489,11 @@ def _render_noticia_page(
             "fonte_url": fonte_url,
             "fonte_nome": fonte_nome,
             "canonical_path": path,
-            "canonical_url": f"{SITE_ORIGIN}{path}",
+            "canonical_query": {},
+            "canonical_url": article_canonical,
+            "hreflang_urls": article_hreflang,
             "hreflang_full": False,
+            "robots_noindex": False,
             "published_iso": published_iso,
             "updated_iso": updated_iso,
         },
@@ -486,7 +513,11 @@ def ver_noticia(request: Request, noticia_id: int):
     noticia = result.rows[0]
     guide_slug = _guide_slug_from_link(noticia[4] if len(noticia) > 4 else None)
     if guide_slug and get_guide_by_slug(guide_slug):
-        return RedirectResponse(url=f"/artigo/{guide_slug}", status_code=301)
+        target = f"/artigo/{guide_slug}"
+        lang = (request.query_params.get("lang") or "").strip().lower()
+        if lang in SUPPORTED_LANGS:
+            target = f"{target}?lang={lang}"
+        return RedirectResponse(url=target, status_code=301)
 
     return _render_noticia_page(request, noticia_id, noticia)
 
@@ -617,11 +648,14 @@ def get_default_category_image(slug: str):
 
 @app.get("/robots.txt", response_class=Response)
 def get_robots_txt():
+    # /*?q= reduz crawl budget em buscas (já noindex na meta).
     content = (
         "User-agent: *\n"
         "Allow: /\n"
         "Disallow: /api/\n"
         "Disallow: /ping\n"
+        "Disallow: /*?q=\n"
+        "Disallow: /*?*q=\n"
         f"Sitemap: {SITE_ORIGIN}/sitemap.xml\n"
     )
     return Response(content=content, media_type="text/plain")
@@ -652,18 +686,18 @@ def get_sitemap():
 
     today = datetime.now().date().isoformat()
     static_urls = [
-        (f"{SITE_ORIGIN}/", "daily", "1.0", today),
-        (f"{SITE_ORIGIN}/quem-somos", "monthly", "0.6", today),
-        (f"{SITE_ORIGIN}/privacidade", "monthly", "0.3", today),
-        (f"{SITE_ORIGIN}/termos", "monthly", "0.3", today),
+        (absolute_url(SITE_ORIGIN, "/"), "daily", "1.0", today),
+        (absolute_url(SITE_ORIGIN, "/quem-somos"), "monthly", "0.6", today),
+        (absolute_url(SITE_ORIGIN, "/privacidade"), "monthly", "0.3", today),
+        (absolute_url(SITE_ORIGIN, "/termos"), "monthly", "0.3", today),
     ]
     for tag in SITE_TOPIC_KEYWORDS:
         static_urls.append(
-            (f"{SITE_ORIGIN}/?categoria={quote(tag)}", "daily", "0.7", today)
+            (absolute_url(SITE_ORIGIN, "/", {"categoria": tag}), "daily", "0.7", today)
         )
     for guide in EDUCATIONAL_GUIDES:
         static_urls.append(
-            (f"{SITE_ORIGIN}/artigo/{guide['slug']}", "weekly", "0.9", today)
+            (absolute_url(SITE_ORIGIN, f"/artigo/{guide['slug']}"), "weekly", "0.9", today)
         )
 
     xml_parts = [
@@ -683,7 +717,7 @@ def get_sitemap():
         lastmod = _to_iso8601(row[1] if len(row) > 1 else None)
         lastmod_date = (lastmod or today)[:10]
         xml_parts.append(
-            f"  <url><loc>{SITE_ORIGIN}/noticia/{nid}</loc>"
+            f"  <url><loc>{absolute_url(SITE_ORIGIN, f'/noticia/{nid}')}</loc>"
             f"<lastmod>{lastmod_date}</lastmod>"
             f"<changefreq>weekly</changefreq><priority>0.6</priority></url>"
         )
