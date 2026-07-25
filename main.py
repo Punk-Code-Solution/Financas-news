@@ -789,7 +789,7 @@ def gerar_imagens(request: Request, token: str | None = None, limit: int = 1):
     require_robo_auth(request, token)
 
     # Stock permite lotes maiores; IA ainda respeita cotas internas.
-    limit = max(1, min(limit, 15))
+    limit = max(1, min(limit, 40))
     print(f"Gerando imagens para ate {limit} artigos sem capa (prioridade: novas)...")
     resultado = core.backfill_missing_images(limit=limit)
     _invalidate_home_cache()

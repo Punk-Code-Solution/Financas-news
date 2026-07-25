@@ -120,6 +120,7 @@ def test_pexels_skips_already_used_photo_id():
         },
     ):
         core.clear_used_pexels_cache()
+        core.clear_pexels_pool()
         with patch.object(core, "_ensure_used_pexels_ids", return_value={"111"}):
             with patch("core.requests.get", return_value=search_resp):
                 url = core._generate_article_image_pexels(
@@ -130,6 +131,7 @@ def test_pexels_skips_already_used_photo_id():
                 )
     assert url and "/photos/222/" in url
     core.clear_used_pexels_cache()
+    core.clear_pexels_pool()
 
 
 def test_pexels_generate_saves_file(tmp_path: Path | None = None):
@@ -165,6 +167,7 @@ def test_pexels_generate_saves_file(tmp_path: Path | None = None):
         },
     ):
         core.clear_used_pexels_cache()
+        core.clear_pexels_pool()
         with patch.object(core, "_ensure_used_pexels_ids", return_value=set()):
             with patch("core.requests.get", side_effect=[search_resp, dl_resp]):
                 url = core._generate_article_image_pexels(
@@ -178,6 +181,7 @@ def test_pexels_generate_saves_file(tmp_path: Path | None = None):
     assert (images_dir / f"{slug}.jpg").is_file()
     (images_dir / f"{slug}.jpg").unlink(missing_ok=True)
     core.clear_used_pexels_cache()
+    core.clear_pexels_pool()
 
 
 def test_pexels_skipped_without_key():

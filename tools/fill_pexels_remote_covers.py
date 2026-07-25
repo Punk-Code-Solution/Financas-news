@@ -1,4 +1,7 @@
-"""Preenche capas faltantes com URL remota do Pexels (aparecem no Render sem upload)."""
+"""Preenche capas faltantes com URL remota do Pexels (aparecem no Render sem upload).
+
+Otimizado: pool de 80 fotos/query, workers paralelos, lotes grandes, pouca pausa.
+"""
 from __future__ import annotations
 
 import os
@@ -42,19 +45,20 @@ def main() -> int:
     print("\n=== SMOKE ===", flush=True)
     core.clear_pexels_rate_limit()
     core.clear_used_pexels_cache()
-    smoke = core.backfill_missing_images(limit=2)
+    core.clear_pexels_pool()
+    smoke = core.backfill_missing_images(limit=4)
     print(smoke, flush=True)
     if not smoke.get("updated"):
         print("Smoke falhou — abort.")
         return 2
 
-    batch = 15
-    max_batches = 400
+    batch = 40
+    max_batches = 200
     done = int(smoke.get("updated") or 0)
     fail_streak = 0
+    missing = count_missing(client)
 
     for i in range(max_batches):
-        missing = count_missing(client)
         if missing <= 0:
             break
 
@@ -65,12 +69,18 @@ def main() -> int:
 
         n = min(batch, missing)
         print(f"\n=== lote {i + 1}: {n} (restam {missing}) ===", flush=True)
+        t0 = time.time()
         result = core.backfill_missing_images(limit=n)
+        elapsed = time.time() - t0
         upd = int(result.get("updated") or 0)
         done += upd
+        # Evita COUNT a cada lote (Turso lento): estima pelo updated.
+        missing = max(0, missing - upd)
         print(
             f"updated={upd} failed={result.get('failed')} "
-            f"rate_limited={result.get('rate_limited')} acumulado={done}",
+            f"rate_limited={result.get('rate_limited')} "
+            f"em {elapsed:.1f}s ({(upd / elapsed) if elapsed else 0:.1f}/s) "
+            f"acumulado={done} restam~{missing}",
             flush=True,
         )
 
@@ -79,18 +89,22 @@ def main() -> int:
             time.sleep(55 * 60)
             core.clear_pexels_rate_limit()
             fail_streak = 0
+            missing = count_missing(client)
             continue
 
         if upd == 0:
             fail_streak += 1
+            missing = count_missing(client)
             if fail_streak >= 5:
                 print("5 lotes sem progresso — fim.")
                 break
-            time.sleep(20)
+            time.sleep(5)
         else:
             fail_streak = 0
-            # ~15 req API; ritmo ate ~180/h
-            time.sleep(12)
+            # Pool reduz req/capa; pausa curta so para nao martelar o Turso.
+            time.sleep(0.5)
+            if (i + 1) % 5 == 0:
+                missing = count_missing(client)
 
     print(f"\n=== FIM === novas={done} sem_capa={count_missing(client)}")
     return 0
