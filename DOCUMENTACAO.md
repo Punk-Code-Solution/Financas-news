@@ -388,12 +388,6 @@ https://financas-news.net.br/api/gerar-imagens?token=SEU_ROBO_TOKEN&limit=1
 
 A fila prioriza `id DESC` (notícias novas sem capa primeiro).
 
-### Limpar acervo (após mudança de prompt)
-
-```bash
-python limpar_banco.py
-```
-
 ### Rodar localmente
 
 ```bash
