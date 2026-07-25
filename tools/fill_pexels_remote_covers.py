@@ -23,14 +23,15 @@ from db import DbClient, get_db, reset_db_client, _is_transient_db_error
 
 
 def count_missing(client: DbClient) -> int:
-    return int(
-        client.execute(
-            """
-            SELECT COUNT(*) FROM news
-            WHERE imagem_url IS NULL OR TRIM(COALESCE(imagem_url, '')) = ''
-            """
-        ).rows[0][0]
-    )
+    raw = client.execute(
+        """
+        SELECT COUNT(*) FROM news
+        WHERE imagem_url IS NULL OR TRIM(COALESCE(imagem_url, '')) = ''
+        """
+    ).rows[0][0]
+    if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+        raise TypeError(f"COUNT inesperado: {type(raw)!r}")
+    return int(raw)
 
 
 def _with_db_retry(fn, *, label: str, attempts: int = 3):

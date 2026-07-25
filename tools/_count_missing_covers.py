@@ -57,7 +57,7 @@ def main() -> int:
     print("--- mais novas sem capa (ate 15) ---")
     rows = c.execute(
         """
-        SELECT id, titulo, data_publicacao
+        SELECT id, titulo, COALESCE(published_at, created_at, '')
         FROM news
         WHERE imagem_url IS NULL OR TRIM(COALESCE(imagem_url, '')) = ''
         ORDER BY id DESC

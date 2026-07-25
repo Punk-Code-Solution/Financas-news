@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 import libsql_client
+from libsql_client.sync import ClientSync
 
 
 @dataclass
@@ -173,8 +174,8 @@ def reset_db_client() -> None:
 class PooledClient:
     """Proxy que reutiliza o client remoto sem fechar a cada request."""
 
-    def __init__(self, inner: Any):
-        self._inner = inner
+    def __init__(self, inner: ClientSync):
+        self._inner: ClientSync = inner
 
     def execute(self, sql: str, args: list[Any] | None = None) -> QueryResult:
         attempts = max(1, int(os.getenv("TURSO_EXECUTE_RETRIES", "4")))
