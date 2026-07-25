@@ -2,43 +2,41 @@
    CSS + markup aqui; lógica em /static/js/market-ticker.js #}
 <style>
     .fn-ticker {
-        --fn-ticker-bg: linear-gradient(90deg, #eff6ff 0%, #ffffff 48%, #f0fdfa 100%);
-        --fn-ticker-border: #bfdbfe;
-        --fn-ticker-label: #1d4ed8;
+        --fn-ticker-bg: #f8fafc;
+        --fn-ticker-border: #cbd5e1;
+        --fn-ticker-label: #334155;
         --fn-ticker-bid: #0f172a;
-        --fn-ticker-up: #047857;
-        --fn-ticker-up-bg: #d1fae5;
-        --fn-ticker-down: #be123c;
-        --fn-ticker-down-bg: #ffe4e6;
-        --fn-ticker-code-bg: #dbeafe;
+        --fn-ticker-up: #15803d;
+        --fn-ticker-up-bg: #dcfce7;
+        --fn-ticker-down: #b91c1c;
+        --fn-ticker-down-bg: #fee2e2;
+        --fn-ticker-sep: #94a3b8;
         background: var(--fn-ticker-bg);
         border-bottom: 1px solid var(--fn-ticker-border);
-        color: var(--fn-ticker-label);
-        box-shadow: inset 0 -1px 0 rgba(37, 99, 235, 0.05);
-        font-size: 0.76rem;
-        line-height: 1.25;
-        transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+        color: var(--fn-ticker-bid);
+        font-size: 0.78rem;
+        line-height: 1.2;
     }
     .dark .fn-ticker {
-        --fn-ticker-bg: linear-gradient(90deg, #07111f 0%, #101827 48%, #071a1a 100%);
-        --fn-ticker-border: #23334d;
-        --fn-ticker-label: #7dd3fc;
+        --fn-ticker-bg: #0b1220;
+        --fn-ticker-border: #1e293b;
+        --fn-ticker-label: #94a3b8;
         --fn-ticker-bid: #f8fafc;
-        --fn-ticker-up: #6ee7b7;
-        --fn-ticker-up-bg: rgba(5, 150, 105, 0.2);
-        --fn-ticker-down: #fda4af;
-        --fn-ticker-down-bg: rgba(225, 29, 72, 0.2);
-        --fn-ticker-code-bg: rgba(14, 165, 233, 0.14);
+        --fn-ticker-up: #4ade80;
+        --fn-ticker-up-bg: rgba(74, 222, 128, 0.14);
+        --fn-ticker-down: #fb7185;
+        --fn-ticker-down-bg: rgba(251, 113, 133, 0.14);
+        --fn-ticker-sep: #475569;
     }
     .fn-ticker__viewport {
         overflow: hidden;
         white-space: nowrap;
-        padding: 0.42rem 0;
+        padding: 0.45rem 0;
     }
     .fn-ticker__track {
         display: flex;
         width: max-content;
-        animation: fn-ticker-scroll 160s linear infinite;
+        animation: fn-ticker-scroll 180s linear infinite;
         will-change: transform;
     }
     .fn-ticker__track:hover {
@@ -50,65 +48,78 @@
         flex-shrink: 0;
         align-items: center;
     }
-    .fn-ticker__item {
-        display: inline-flex;
+
+    /* Item novo */
+    .fn-ticker__item,
+    /* Compatibilidade com JS antigo em cache (class ticker-item) */
+    .fn-ticker .ticker-item {
+        display: inline-flex !important;
         align-items: center;
-        gap: 0.42rem;
-        margin-right: 1.85rem;
+        gap: 0.45rem;
+        margin: 0 1.75rem 0 0 !important;
+        padding-right: 1.75rem;
+        border-right: 1px solid var(--fn-ticker-sep);
         font-weight: 600;
-        letter-spacing: 0.015em;
-    }
-    .fn-ticker__code {
-        color: var(--fn-ticker-label);
-        background: var(--fn-ticker-code-bg);
-        border-radius: 0.25rem;
-        padding: 0.14rem 0.3rem;
-        font-size: 0.68rem;
-        font-weight: 800;
-        letter-spacing: 0.045em;
-    }
-    .fn-ticker__bid {
+        letter-spacing: 0.01em;
         color: var(--fn-ticker-bid);
-        font-weight: 700;
-        font-variant-numeric: tabular-nums;
-        transition: color 0.2s ease;
+        white-space: nowrap;
     }
-    .fn-ticker__pct {
+    .fn-ticker__code,
+    .fn-ticker .ticker-item > span:first-child,
+    .fn-ticker .ticker-item .text-slate-400 {
+        color: var(--fn-ticker-label) !important;
+        font-weight: 800 !important;
+        font-size: 0.72rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        background: transparent !important;
+        padding: 0 !important;
+    }
+    .fn-ticker__bid,
+    .fn-ticker [data-ticker-bid] {
+        color: var(--fn-ticker-bid) !important;
+        font-weight: 700 !important;
+        font-variant-numeric: tabular-nums;
+    }
+    .fn-ticker__pct,
+    .fn-ticker [data-ticker-pct] {
         border-radius: 999px;
-        font-weight: 600;
+        font-weight: 700 !important;
         font-variant-numeric: tabular-nums;
-        padding: 0.12rem 0.36rem;
+        padding: 0.1rem 0.4rem;
     }
-    .fn-ticker__pct.ticker-up {
-        color: var(--fn-ticker-up);
-        background: var(--fn-ticker-up-bg);
+    .fn-ticker__pct.ticker-up,
+    .fn-ticker .ticker-up,
+    .fn-ticker [data-ticker-pct].ticker-up {
+        color: var(--fn-ticker-up) !important;
+        background: var(--fn-ticker-up-bg) !important;
     }
-    .fn-ticker__pct.ticker-down {
-        color: var(--fn-ticker-down);
-        background: var(--fn-ticker-down-bg);
+    .fn-ticker__pct.ticker-down,
+    .fn-ticker .ticker-down,
+    .fn-ticker [data-ticker-pct].ticker-down {
+        color: var(--fn-ticker-down) !important;
+        background: var(--fn-ticker-down-bg) !important;
     }
     .fn-ticker__item.is-passing .fn-ticker__bid,
-    .fn-ticker__item.is-passing .fn-ticker__pct {
-        animation: fn-ticker-flash 0.85s ease;
-    }
-    .fn-ticker__item.is-passing.is-tick-up .fn-ticker__bid {
-        color: var(--fn-ticker-up);
-    }
-    .fn-ticker__item.is-passing.is-tick-down .fn-ticker__bid {
-        color: var(--fn-ticker-down);
-    }
+    .fn-ticker__item.is-passing .fn-ticker__pct,
     .fn-ticker__bid.is-flash,
     .fn-ticker__pct.is-flash {
-        animation: fn-ticker-flash 0.85s ease;
+        animation: fn-ticker-flash 0.8s ease;
+    }
+    .fn-ticker__item.is-passing.is-tick-up .fn-ticker__bid {
+        color: var(--fn-ticker-up) !important;
+    }
+    .fn-ticker__item.is-passing.is-tick-down .fn-ticker__bid {
+        color: var(--fn-ticker-down) !important;
     }
     @keyframes fn-ticker-scroll {
         from { transform: translateX(0); }
         to { transform: translateX(-50%); }
     }
     @keyframes fn-ticker-flash {
-        0% { opacity: 0.35; transform: translateY(2px); }
-        40% { opacity: 1; transform: translateY(0); }
-        100% { opacity: 1; transform: translateY(0); }
+        0% { opacity: 0.4; }
+        45% { opacity: 1; }
+        100% { opacity: 1; }
     }
     @media (prefers-reduced-motion: reduce) {
         .fn-ticker__track { animation: none; }
@@ -129,4 +140,4 @@
         ></div>
     </div>
 </div>
-<script src="/static/js/market-ticker.js" defer></script>
+<script src="/static/js/market-ticker.js?v=20260725b" defer></script>
