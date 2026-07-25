@@ -500,40 +500,61 @@
             btn.disabled = true;
             btn.textContent = loadingLabel;
 
+            const syncBtn = (disabled, label) => {
+                const live = document.getElementById('load-more-btn');
+                if (!live) return null;
+                live.disabled = disabled;
+                live.textContent = label;
+                return live;
+            };
+
             try {
-                const res = await fetch(`/api/feed?${params.toString()}`);
+                const controller = new AbortController();
+                const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+                const res = await fetch(`/api/feed?${params.toString()}`, {
+                    signal: controller.signal,
+                });
+                window.clearTimeout(timeoutId);
                 if (!res.ok) throw new Error('feed');
                 const html = await res.text();
+                const liveGrid = document.getElementById('news-feed-grid');
+                if (!liveGrid) return;
                 const wrap = document.createElement('div');
                 wrap.innerHTML = html;
                 const fragment = document.createDocumentFragment();
                 while (wrap.firstChild) fragment.appendChild(wrap.firstChild);
-                grid.appendChild(fragment);
-                paintSparklines(grid);
+                liveGrid.appendChild(fragment);
+                paintSparklines(liveGrid);
 
-                btn.dataset.offset = res.headers.get('X-Next-Offset') || offset;
+                const liveBtn = document.getElementById('load-more-btn');
+                if (!liveBtn) return;
+                liveBtn.dataset.offset = res.headers.get('X-Next-Offset') || offset;
                 if (res.headers.get('X-Has-More') === '1') {
-                    btn.disabled = false;
-                    btn.textContent = moreLabel;
-                    // O sentinela segue intersectando: reobservar forca um novo evento
-                    // e continua preenchendo ate ele sair da margem de disparo.
-                    const alvo = document.getElementById('load-more-wrap');
-                    if (feedObserver && alvo) {
-                        feedObserver.unobserve(alvo);
-                        feedObserver.observe(alvo);
-                    }
+                    syncBtn(false, moreLabel);
+                    // Evita reentrada imediata do IntersectionObserver (loop de "Carregando...").
+                    window.setTimeout(() => {
+                        const alvo = document.getElementById('load-more-wrap');
+                        if (feedObserver && alvo && feedAutoLoad) {
+                            feedObserver.unobserve(alvo);
+                            feedObserver.observe(alvo);
+                        }
+                    }, 250);
                 } else {
                     if (feedObserver) feedObserver.disconnect();
                     const wrapEl = document.getElementById('load-more-wrap');
                     if (wrapEl) wrapEl.remove();
                 }
             } catch (_) {
-                // Falha de rede: volta ao modo manual para o leitor tentar de novo.
                 if (auto) feedAutoLoad = false;
-                btn.disabled = false;
-                btn.textContent = retryLabel;
+                syncBtn(false, retryLabel);
             } finally {
                 feedLoading = false;
+                const live = document.getElementById('load-more-btn');
+                // Evita botão preso em "Carregando..." após navegação SPA ou abort.
+                if (live && live.disabled && (live.textContent || '').trim() === loadingLabel.trim()) {
+                    live.disabled = false;
+                    live.textContent = moreLabel;
+                }
             }
         }
 

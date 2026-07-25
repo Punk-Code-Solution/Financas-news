@@ -1,7 +1,6 @@
 /**
  * Ticker de cotações via AwesomeAPI (estilo Cointelegraph).
- * Componente isolado: atualiza cada item ao passar na viewport,
- * sem resetar a animação e sem mensagem de carregamento.
+ * Componente isolado: atualiza valores em ciclo leve, sem travar a UI.
  */
 (function () {
     'use strict';
@@ -28,14 +27,15 @@
         'https://economia.awesomeapi.com.br/last/' +
         PAIRS.map((p) => p.key.replace(/BRL$/, '-BRL')).join(',');
 
-    const POLL_INTERVAL_MS = 10000;
-    const CACHE_KEY = 'tickerData_v5';
-    const CACHE_TTL_MS = 8000;
+    const POLL_INTERVAL_MS = 12000;
+    const PASS_TICK_MS = 900;
+    const CACHE_KEY = 'tickerData_v6';
+    const CACHE_TTL_MS = 10000;
     const GROUP_COPIES = 2;
     const SET_REPEAT = 2;
-    const ITEM_UPDATE_COOLDOWN_MS = 1600;
 
     let latestQuotes = null;
+    let passIndex = 0;
 
     const resolveLocale = () => {
         const root = document.documentElement;
@@ -82,7 +82,6 @@
         const item = document.createElement('span');
         item.className = 'fn-ticker__item';
         item.setAttribute('data-ticker-key', pair.key);
-        item.dataset.lastPaint = '0';
 
         const codeEl = document.createElement('span');
         codeEl.className = 'fn-ticker__code';
@@ -125,10 +124,6 @@
         const quote = latestQuotes[key];
         if (!quote) return;
 
-        const now = Date.now();
-        const lastPaint = Number(item.dataset.lastPaint || 0);
-        if (animate && now - lastPaint < ITEM_UPDATE_COOLDOWN_MS) return;
-
         const bidEl = item.querySelector('[data-ticker-bid]');
         const pctEl = item.querySelector('[data-ticker-pct]');
         if (!bidEl || !pctEl) return;
@@ -136,25 +131,23 @@
         const bidText = formatCurrency(quote.bid);
         const pctText = `(${formatPct(quote.pctChange)})`;
         const pctClass = getColorClass(quote.pctChange);
+        const changed = bidEl.textContent !== bidText || pctEl.textContent !== pctText;
 
         bidEl.textContent = bidText;
         pctEl.className = `fn-ticker__pct ${pctClass}`;
         pctEl.textContent = pctText;
-        item.dataset.lastPaint = String(now);
 
-        if (animate) {
+        if (animate && changed) {
             flash(bidEl);
             flash(pctEl);
             item.classList.toggle('is-tick-up', pctClass === 'ticker-up');
             item.classList.toggle('is-tick-down', pctClass === 'ticker-down');
-            item.classList.remove('is-passing');
-            void item.offsetWidth;
             item.classList.add('is-passing');
             window.clearTimeout(Number(item.dataset.passTimer || 0));
             item.dataset.passTimer = String(
                 window.setTimeout(() => {
                     item.classList.remove('is-passing', 'is-tick-up', 'is-tick-down');
-                }, 850)
+                }, 700)
             );
         }
     }
@@ -165,30 +158,20 @@
         });
     }
 
-    function watchPassingItems(tickerEl) {
-        const viewport = tickerEl.closest('.fn-ticker__viewport');
-        if (!viewport) return;
-        const wasVisible = new WeakMap();
-
-        function tick() {
-            window.requestAnimationFrame(tick);
+    /** Atualiza poucos itens por vez (efeito “ao passar”) sem varrer o DOM a cada frame. */
+    function startPassTicker(tickerEl) {
+        const items = () => tickerEl.querySelectorAll('.fn-ticker__item');
+        window.setInterval(() => {
             if (document.visibilityState === 'hidden' || !latestQuotes) return;
-
-            const root = viewport.getBoundingClientRect();
-            tickerEl.querySelectorAll('.fn-ticker__item').forEach((item) => {
-                const box = item.getBoundingClientRect();
-                const visible =
-                    box.right > root.left + 4 &&
-                    box.left < root.right - 4 &&
-                    box.bottom > root.top &&
-                    box.top < root.bottom;
-                const prev = wasVisible.get(item) === true;
-                if (visible && !prev) paintItem(item, true);
-                wasVisible.set(item, visible);
-            });
-        }
-
-        window.requestAnimationFrame(tick);
+            const list = items();
+            if (!list.length) return;
+            const batch = 3;
+            for (let i = 0; i < batch; i++) {
+                const item = list[(passIndex + i) % list.length];
+                paintItem(item, true);
+            }
+            passIndex = (passIndex + batch) % list.length;
+        }, PASS_TICK_MS);
     }
 
     function readCache() {
@@ -232,25 +215,27 @@
         const tickerEl = document.getElementById('market-ticker');
         if (!tickerEl) return;
 
-        // Permite reinicializar se um JS antigo em cache já tiver marcado ready.
         if (tickerEl.dataset.tickerReady === '1' && tickerEl.querySelector('.fn-ticker__item')) {
             return;
         }
         tickerEl.dataset.tickerReady = '1';
 
         try {
-            sessionStorage.removeItem('tickerHTML');
-            sessionStorage.removeItem('tickerTime');
-            sessionStorage.removeItem('tickerData');
-            sessionStorage.removeItem('tickerData_v2');
-            sessionStorage.removeItem('tickerData_v3');
-            sessionStorage.removeItem('tickerData_v4');
+            [
+                'tickerHTML',
+                'tickerTime',
+                'tickerData',
+                'tickerData_v2',
+                'tickerData_v3',
+                'tickerData_v4',
+                'tickerData_v5',
+            ].forEach((k) => sessionStorage.removeItem(k));
         } catch (e) {
             /* ignora */
         }
 
         buildSkeleton(tickerEl);
-        watchPassingItems(tickerEl);
+        startPassTicker(tickerEl);
 
         let hasData = false;
         let fetching = false;
@@ -261,7 +246,7 @@
             try {
                 const data = await fetchQuotes(Boolean(forceNetwork));
                 latestQuotes = data;
-                if (!hasData) paintAll(tickerEl, false);
+                paintAll(tickerEl, hasData);
                 hasData = true;
             } catch (error) {
                 // Mantém placeholders / último valor.
