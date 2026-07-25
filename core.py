@@ -1317,6 +1317,239 @@ def _save_image_bytes(data: bytes, mime_type: str, slug: str) -> str | None:
     return f"/media/articles/{filename}"
 
 
+def get_pexels_api_key() -> str:
+    return (os.getenv("PEXELS_API_KEY") or os.getenv("PEXELS_KEY") or "").strip()
+
+
+# Flag setada em HTTP 429 para o backfill/script pausar (tier free ~200 req/h).
+_PEXELS_RATE_LIMITED = False
+
+
+def pexels_rate_limited() -> bool:
+    return bool(_PEXELS_RATE_LIMITED)
+
+
+def clear_pexels_rate_limit() -> None:
+    global _PEXELS_RATE_LIMITED
+    _PEXELS_RATE_LIMITED = False
+
+
+# Termos PT → consulta em inglês (Pexels indexa melhor em EN).
+# Ordem importa: temas específicos ANTES de Selic/IPCA (muitos títulos citam Selic só de passagem).
+_STOCK_TERM_QUERIES: list[tuple[tuple[str, ...], str]] = [
+    (("pet ", " pets", "plano pet", "planos pet", "veterin"), "pet dog veterinary family"),
+    (("megashow", "show ", "festival", "entretenimento", "cinema", "teatro", "pipoca", "lazer"), "concert festival entertainment crowd"),
+    (("futebol", "corinthians", "flamengo", "palmeiras", "jogador", "clube", "esport"), "soccer stadium football match"),
+    (("agroneg", "agro ", "soja", "café", "cafe", "queijo", "safra", "rural"), "agriculture farm harvest brazil"),
+    (("imóvel", "imoveis", "imóveis", "imobiliár", "aluguel", "apartamento"), "modern apartment buildings real estate"),
+    (("capital", "capitais", "câmbio capital", "controle de capital"), "capital controls finance currency"),
+    (("empreendedor", "startup", "negócio", "negocio", "pme", "mei "), "entrepreneur startup small business"),
+    (("trabalho", "carreira", "emprego", "salário", "salario", "qualidade de vida"), "office career work life balance"),
+    (("eleitoral", "eleição", "eleicao", "congresso", "governo", "política", "politica"), "government building parliament election"),
+    (("bitcoin", "btc", "cripto", "crypto", "ethereum"), "cryptocurrency trading screens"),
+    (("fintech", "nubank", "pix", "banco digital"), "fintech mobile payment smartphone"),
+    (("dólar", "dolar", "câmbio", "cambio", "usd", "forex"), "currency exchange forex trading"),
+    (("ações", "acoes", "bolsa", "ibovespa", "b3", "ibov"), "stock market trading floor"),
+    (("petróleo", "petroleo", "brent", "wti", "óleo", "oleo"), "oil industry energy commodities"),
+    (("ouro", "gold"), "gold bars vault finance"),
+    (("ipca", "inflação", "inflacao", "preço", "preco", "custo de vida"), "supermarket prices inflation cost of living"),
+    (("selic", "copom", "banco central", "taxa de juros"), "central bank building interest rates"),
+    (("juros",), "interest rates finance charts"),
+    (("economia", "econômic", "economic", "pib", "recessão", "recessao", "crescimento"), "business district skyline economy"),
+]
+
+_STOCK_TAG_QUERIES = {
+    "Cripto": "cryptocurrency trading desk screens",
+    "Economia": "brazilian business skyline economy",
+    "Dólar": "currency exchange usd forex",
+    "Ações": "stock market trading floor",
+    "Juros": "central bank interest rates",
+    "Inflação": "supermarket cost of living prices",
+    "Imóveis": "modern apartments real estate city",
+    "Fintech": "mobile banking fintech payment",
+    "Commodities": "commodity trading oil agriculture",
+    "Política Econômica": "government fiscal policy building",
+}
+
+
+def _stock_search_query(title: str, tag: str, resumo: str = "") -> str:
+    """Monta query curta em inglês para banco de fotos (Pexels).
+
+    Prioriza o título (o resumo editorial costuma citar Selic/IPCA/dólar em todo artigo
+    e poluiria a busca se viesse primeiro).
+    """
+    title_l = (title or "").lower()
+    for keys, query in _STOCK_TERM_QUERIES:
+        if any(k in title_l for k in keys):
+            return query
+
+    tag_q = _STOCK_TAG_QUERIES.get(str(tag or ""))
+    if tag_q:
+        return tag_q
+
+    resumo_l = (resumo or "").lower()
+    for keys, query in _STOCK_TERM_QUERIES:
+        if any(k in resumo_l for k in keys):
+            return query
+
+    return _STOCK_TAG_QUERIES.get("Economia", "financial news business economy")
+
+
+def _fit_cover_jpeg(raw: bytes, max_side: int = 1280) -> bytes | None:
+    """Recorta ao centro 16:9 e exporta JPEG (capa editorial)."""
+    try:
+        from PIL import Image
+    except ImportError:
+        print("   [img/pexels] Pillow nao instalado.")
+        return None
+    try:
+        img = Image.open(io.BytesIO(raw))
+        img = img.convert("RGB")
+        w, h = img.size
+        if w < 64 or h < 64:
+            return None
+        target_ratio = 16 / 9
+        current = w / h
+        if current > target_ratio:
+            new_w = int(h * target_ratio)
+            left = (w - new_w) // 2
+            img = img.crop((left, 0, left + new_w, h))
+        elif current < target_ratio:
+            new_h = int(w / target_ratio)
+            top = (h - new_h) // 2
+            img = img.crop((0, top, w, top + new_h))
+        w, h = img.size
+        if max(w, h) > max_side:
+            scale = max_side / max(w, h)
+            img = img.resize(
+                (max(1, int(w * scale)), max(1, int(h * scale))),
+                Image.Resampling.LANCZOS,
+            )
+        out = io.BytesIO()
+        img.save(out, format="JPEG", quality=85, optimize=True)
+        return out.getvalue()
+    except Exception as exc:
+        print(f"   [img/pexels] Falha ao processar imagem: {exc}")
+        return None
+
+
+def _generate_article_image_pexels(title: str, tag: str, resumo: str, slug: str) -> str | None:
+    """Busca foto editorial no Pexels (grátis) e salva localmente."""
+    api_key = get_pexels_api_key()
+    if not api_key:
+        print("   [img/pexels] PEXELS_API_KEY nao configurada.")
+        return None
+
+    query = _stock_search_query(title, tag, resumo)
+    print(f"   [img/pexels] Buscando foto: {query!r}")
+    _configure_ssl_certs()
+    verify = _ssl_verify_enabled()
+    if not verify:
+        urllib3.disable_warnings(InsecureRequestWarning)
+
+    try:
+        resp = requests.get(
+            "https://api.pexels.com/v1/search",
+            headers={"Authorization": api_key},
+            params={
+                "query": query,
+                "per_page": 15,
+                "orientation": "landscape",
+                "size": "large",
+                "page": (int(hashlib.sha256(slug.encode()).hexdigest(), 16) % 5) + 1,
+            },
+            timeout=25,
+            verify=verify,
+        )
+    except requests.exceptions.SSLError as exc:
+        # Mesmo fallback do restante do app (Windows/MITM).
+        urllib3.disable_warnings(InsecureRequestWarning)
+        try:
+            resp = requests.get(
+                "https://api.pexels.com/v1/search",
+                headers={"Authorization": api_key},
+                params={
+                    "query": query,
+                    "per_page": 15,
+                    "orientation": "landscape",
+                    "size": "large",
+                    "page": (int(hashlib.sha256(slug.encode()).hexdigest(), 16) % 5) + 1,
+                },
+                timeout=25,
+                verify=False,
+            )
+        except Exception as exc2:
+            print(f"   [img/pexels] Erro de rede na busca: {exc2}")
+            return None
+    except Exception as exc:
+        print(f"   [img/pexels] Erro de rede na busca: {exc}")
+        return None
+
+    if resp.status_code == 401:
+        print("   [img/pexels] Token invalido (401).")
+        return None
+    if resp.status_code == 429:
+        global _PEXELS_RATE_LIMITED
+        _PEXELS_RATE_LIMITED = True
+        print("   [img/pexels] Rate limit (429) — pulando.")
+        return None
+    if resp.status_code != 200:
+        print(f"   [img/pexels] HTTP {resp.status_code} na busca.")
+        return None
+
+    try:
+        photos = (resp.json() or {}).get("photos") or []
+    except Exception:
+        print("   [img/pexels] JSON invalido.")
+        return None
+    if not photos:
+        print("   [img/pexels] Nenhum resultado para a query.")
+        return None
+
+    photos_sorted = sorted(
+        photos,
+        key=lambda p: abs(
+            (float(p.get("width") or 16) / max(1.0, float(p.get("height") or 9))) - (16 / 9)
+        ),
+    )
+    # Variar escolha por slug (evita a mesma foto stock em dezenas de artigos).
+    if len(photos_sorted) > 1:
+        start = int(hashlib.sha256(slug.encode()).hexdigest(), 16) % len(photos_sorted)
+        photos_sorted = photos_sorted[start:] + photos_sorted[:start]
+
+    for photo in photos_sorted[:3]:
+        src = photo.get("src") or {}
+        url = src.get("large2x") or src.get("large") or src.get("original") or src.get("medium")
+        if not url:
+            continue
+        try:
+            img_resp = requests.get(url, timeout=40, verify=verify)
+        except requests.exceptions.SSLError:
+            urllib3.disable_warnings(InsecureRequestWarning)
+            try:
+                img_resp = requests.get(url, timeout=40, verify=False)
+            except Exception as exc:
+                print(f"   [img/pexels] Download falhou: {exc}")
+                continue
+        except Exception as exc:
+            print(f"   [img/pexels] Download falhou: {exc}")
+            continue
+        if img_resp.status_code != 200 or not img_resp.content:
+            continue
+        jpeg = _fit_cover_jpeg(img_resp.content)
+        if not jpeg:
+            continue
+        saved = _save_image_bytes(jpeg, "image/jpeg", slug)
+        if saved:
+            photographer = (photo.get("photographer") or "").strip()
+            safe_name = photographer.encode("ascii", "replace").decode("ascii") or "stock"
+            print(f"   [img/pexels] Capa OK ({safe_name}): {saved}")
+            return saved
+
+    print("   [img/pexels] Nenhuma foto utilizavel.")
+    return None
+
+
 def _extract_image_from_response(response) -> tuple[bytes, str] | None:
     candidates = getattr(response, "candidates", None) or []
     for candidate in candidates:
@@ -1500,25 +1733,25 @@ def get_image_providers() -> list[str]:
     """Lista ordenada de provedores de imagem.
 
     ``IMAGE_PROVIDER`` aceita um ou vários (separados por vírgula):
-    - ``gemini,huggingface,openai`` — Gemini → HF → OpenAI
+    - ``pexels,gemini,huggingface,openai`` — stock → Gemini → HF → OpenAI
     - ``openai,gemini`` — OpenAI primeiro
-    - ``auto`` / vazio — Cursor (local) → Gemini → Hugging Face → OpenAI
+    - ``auto`` / vazio — Cursor (local) → Pexels → Gemini → Hugging Face → OpenAI
 
     No Render, ``cursor`` é ignorado (SDK não roda lá).
-    Aliases: ``hf`` → ``huggingface``.
+    Aliases: ``hf`` → ``huggingface``, ``stock`` → ``pexels``.
     """
     raw = os.getenv("IMAGE_PROVIDER", "").strip().lower()
     on_render = bool(os.getenv("RENDER"))
-    aliases = {"hf": "huggingface"}
-    allowed = {"cursor", "gemini", "openai", "huggingface", "hf", "auto"}
+    aliases = {"hf": "huggingface", "stock": "pexels"}
+    allowed = {"cursor", "gemini", "openai", "huggingface", "hf", "pexels", "stock", "auto"}
 
     parts = [p.strip() for p in raw.replace(";", ",").split(",") if p.strip()]
     parts = [p for p in parts if p in allowed]
 
     def _expand_auto() -> list[str]:
         if on_render:
-            return ["gemini", "huggingface", "openai"]
-        return ["cursor", "gemini", "huggingface", "openai"]
+            return ["pexels", "gemini", "huggingface", "openai"]
+        return ["cursor", "pexels", "gemini", "huggingface", "openai"]
 
     if not parts or parts == ["auto"]:
         ordered = _expand_auto()
@@ -1913,6 +2146,16 @@ def generate_article_image(
     print(f"   [img] Prompt (trecho): {prompt[:160].replace(chr(10), ' ')}...")
 
     for provider in providers:
+        if provider == "pexels":
+            if not get_pexels_api_key():
+                print("   [img/pexels] PEXELS_API_KEY ausente — pulando.")
+                continue
+            url = _generate_article_image_pexels(title, tag, resumo, slug)
+            if url:
+                return url
+            print("   [img/pexels] Sem capa — proximo provedor.")
+            continue
+
         if provider == "cursor":
             if not os.getenv("CURSOR_API_KEY", "").strip():
                 print("   [img/cursor] CURSOR_API_KEY nao configurada — pulando.")
@@ -1985,11 +2228,13 @@ def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[
     """
     _reset_image_quota_state()
     client_db = get_db()
-    scan = max(limit * 25, 40)
+    # Stock (Pexels) é rápido — varre mais fundo para achar antigos sem capa.
+    scan = max(limit * 80, 200)
     result = client_db.execute(
         """
         SELECT id, titulo, tag, link, resumo, imagem_url
         FROM news
+        WHERE imagem_url IS NULL OR TRIM(COALESCE(imagem_url, '')) = ''
         ORDER BY id DESC
         LIMIT ?
         """,
@@ -1999,23 +2244,38 @@ def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[
     rows: list[Any] = []
     repaired_ids: list[int] = []
     for row in result.rows:
-        article_id = int(row[0])
-        imagem_url = row[5] if len(row) > 5 else None
-        if not imagem_url or not str(imagem_url).strip():
-            rows.append(row)
-        elif repair_broken and not _media_file_exists(imagem_url):
-            print(
-                f"   [img] URL quebrada #{article_id}: {imagem_url} "
-                f"(arquivo ausente em {get_article_images_dir()}) — regenerando."
-            )
-            client_db.execute(
-                "UPDATE news SET imagem_url = NULL WHERE id = ?",
-                [article_id],
-            )
-            repaired_ids.append(article_id)
-            rows.append(row)
+        rows.append(row)
         if len(rows) >= limit:
             break
+
+    if repair_broken and len(rows) < limit:
+        broken_scan = max(limit * 40, 80)
+        recent = client_db.execute(
+            """
+            SELECT id, titulo, tag, link, resumo, imagem_url
+            FROM news
+            WHERE imagem_url IS NOT NULL AND TRIM(imagem_url) != ''
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            [broken_scan],
+        )
+        for row in recent.rows:
+            if len(rows) >= limit:
+                break
+            article_id = int(row[0])
+            imagem_url = row[5] if len(row) > 5 else None
+            if not _media_file_exists(imagem_url):
+                print(
+                    f"   [img] URL quebrada #{article_id}: {imagem_url} "
+                    f"(arquivo ausente em {get_article_images_dir()}) — regenerando."
+                )
+                client_db.execute(
+                    "UPDATE news SET imagem_url = NULL WHERE id = ?",
+                    [article_id],
+                )
+                repaired_ids.append(article_id)
+                rows.append(row)
 
     updated: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
@@ -2038,6 +2298,10 @@ def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[
         f"(id DESC); reparos={len(repaired_ids)}."
     )
     for row in rows:
+        if pexels_rate_limited():
+            print("   [img] Pexels em rate limit — interrompendo lote.")
+            failed.append({"id": int(row[0]), "titulo": "rate_limit_429"})
+            break
         article_id, titulo, tag, link, resumo = row[0], row[1], row[2], row[3] or "", row[4] or ""
         print(f"   [img] Capa pendente #{article_id}: {titulo[:60]}...")
         imagem_url = generate_article_image(
@@ -2058,15 +2322,19 @@ def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[
             if imagem_url and not _media_file_exists(imagem_url):
                 print(f"   [img] Arquivo nao persistiu apos gerar ({imagem_url}) — nao atualiza DB.")
             failed.append({"id": article_id, "titulo": (titulo or "")[:80]})
+            if pexels_rate_limited():
+                print("   [img] Pexels em rate limit — interrompendo lote.")
+                break
 
     client_db.close()
     return {
-        "processed": len(rows),
+        "processed": len(updated) + len(failed),
         "updated": len(updated),
         "failed": len(failed),
         "repaired_broken": len(repaired_ids),
         "items": updated,
         "errors": failed,
+        "rate_limited": pexels_rate_limited(),
         "priority": "newest_first",
     }
 

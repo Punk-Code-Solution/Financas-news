@@ -206,6 +206,13 @@ def run() -> int:
             client.get("/static/js/image-fallback.js").status_code == 200,
         )
 
+        os.environ["IMAGE_PROVIDER"] = "pexels,gemini"
+        providers = core.get_image_providers()
+        check("IMAGE_PROVIDER inclui pexels primeiro", providers[:1] == ["pexels"], str(providers))
+        q_selic = core._stock_search_query("Copom mantém a Selic", "Juros", "")
+        check("stock query Selic", "central bank" in q_selic or "interest" in q_selic, q_selic)
+        os.environ.pop("IMAGE_PROVIDER", None)
+
         # Evita cookie lang=en/ja afetar o restante da suíte (padrão PT).
         client.cookies.clear()
 

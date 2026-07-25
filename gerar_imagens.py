@@ -1,7 +1,7 @@
-"""Gera capas de IA para artigos que ainda nao possuem imagem.
+"""Gera capas (Pexels stock + IA) para artigos sem imagem.
 
-Prioriza noticias mais novas (id DESC). Padrao: 1 por execucao
-(compativel com o limite OpenAI de 1 imagem/minuto).
+Prioriza noticias mais novas (id DESC). Padrao: 1 por execucao.
+Com Pexels, lotes maiores sao viaveis (ex.: python gerar_imagens.py 10).
 """
 import sys
 
@@ -16,6 +16,7 @@ import core
 
 if __name__ == "__main__":
     limit = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+    limit = max(1, min(limit, 50))
     resultado = core.backfill_missing_images(limit=limit)
     print(f"Processados: {resultado['processed']}")
     print(f"Atualizados: {resultado['updated']}")

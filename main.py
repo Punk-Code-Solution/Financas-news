@@ -785,10 +785,11 @@ def ping():
 
 @app.get("/api/gerar-imagens")
 def gerar_imagens(request: Request, token: str | None = None, limit: int = 1):
-    """Gera capas pendentes (1/min no OpenAI). Prioriza noticias novas sem capa."""
+    """Gera capas pendentes (Pexels/stock rápido; IA como fallback). Prioriza noticias novas."""
     require_robo_auth(request, token)
 
-    limit = max(1, min(limit, 5))
+    # Stock permite lotes maiores; IA ainda respeita cotas internas.
+    limit = max(1, min(limit, 15))
     print(f"Gerando imagens para ate {limit} artigos sem capa (prioridade: novas)...")
     resultado = core.backfill_missing_images(limit=limit)
     _invalidate_home_cache()
