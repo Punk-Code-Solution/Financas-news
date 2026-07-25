@@ -57,11 +57,30 @@ def main() -> int:
             print("Smoke falhou — abort.")
             return 2
 
+    # HOT = janela das mais novas coberta antes do backlog a cada ciclo, garantindo
+    # que artigos recem-publicados furem a fila. BULK = varre o backlog antigo.
+    hot = 12
     batch = 40
     max_batches = 200
     done = int(smoke.get("updated") or 0)
     fail_streak = 0
     missing = count_missing(client)
+
+    def run_pass(n: int, label: str) -> dict:
+        nonlocal done
+        t0 = time.time()
+        result = core.backfill_missing_images(limit=n)
+        elapsed = time.time() - t0
+        upd = int(result.get("updated") or 0)
+        done += upd
+        print(
+            f"[{label}] updated={upd} failed={result.get('failed')} "
+            f"rate_limited={result.get('rate_limited')} "
+            f"em {elapsed:.1f}s ({(upd / elapsed) if elapsed else 0:.1f}/s) "
+            f"acumulado={done}",
+            flush=True,
+        )
+        return result
 
     for i in range(max_batches):
         if missing <= 0:
@@ -72,22 +91,22 @@ def main() -> int:
             time.sleep(55 * 60)
             core.clear_pexels_rate_limit()
 
-        n = min(batch, missing)
-        print(f"\n=== lote {i + 1}: {n} (restam {missing}) ===", flush=True)
-        t0 = time.time()
-        result = core.backfill_missing_images(limit=n)
-        elapsed = time.time() - t0
-        upd = int(result.get("updated") or 0)
-        done += upd
-        # Evita COUNT a cada lote (Turso lento): estima pelo updated.
+        print(f"\n=== ciclo {i + 1} (restam ~{missing}) ===", flush=True)
+
+        # 1) Passe quente: sempre as mais novas primeiro (id DESC no backfill).
+        hot_result = run_pass(hot, "hot/novas")
+        if hot_result.get("rate_limited"):
+            print("429 — pausa 55 min", flush=True)
+            time.sleep(55 * 60)
+            core.clear_pexels_rate_limit()
+            fail_streak = 0
+            missing = count_missing(client)
+            continue
+
+        # 2) Passe backlog: varre as antigas (as mais novas ja sairam no passe quente).
+        result = run_pass(batch, "bulk/backlog")
+        upd = int(hot_result.get("updated") or 0) + int(result.get("updated") or 0)
         missing = max(0, missing - upd)
-        print(
-            f"updated={upd} failed={result.get('failed')} "
-            f"rate_limited={result.get('rate_limited')} "
-            f"em {elapsed:.1f}s ({(upd / elapsed) if elapsed else 0:.1f}/s) "
-            f"acumulado={done} restam~{missing}",
-            flush=True,
-        )
 
         if result.get("rate_limited"):
             print("429 — pausa 55 min", flush=True)
@@ -101,7 +120,7 @@ def main() -> int:
             fail_streak += 1
             missing = count_missing(client)
             if fail_streak >= 5:
-                print("5 lotes sem progresso — fim.")
+                print("5 ciclos sem progresso — fim.")
                 break
             time.sleep(5)
         else:
