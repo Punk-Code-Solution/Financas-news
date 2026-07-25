@@ -1382,7 +1382,7 @@ def _ensure_used_pexels_ids() -> set[str]:
                 """
                 SELECT imagem_url FROM news
                 WHERE imagem_url LIKE '%pexels.com/photos/%'
-                + """
+                """
             ).rows
             for row in rows:
                 pid = _pexels_photo_id_from_url(row[0] if row else None)
@@ -2404,7 +2404,7 @@ def _media_filename_from_url(imagem_url: str | None) -> str | None:
     name = str(imagem_url).strip().rstrip("/").rsplit("/", 1)[-1]
     if not name or name in (".", "..") or "/" in name or "\\" in name:
         return None
-    if not re.fullmatch(r"[A-Za-z0-9._-]+ ", name):
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", name):
         return None
     return name
 
