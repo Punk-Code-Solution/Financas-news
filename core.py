@@ -1393,66 +1393,11 @@ def _mark_pexels_id_used(photo_id: str | None) -> None:
         ids.add(str(photo_id))
 
 
-def _pexels_search(
-    api_key: str,
-    query: str,
-    page: int,
-    verify: bool,
-) -> list[dict[str, Any]]:
-    params = {
-        "query": query,
-        "per_page": 80,  # max Pexels: 1 chamada abastece muitas capas da mesma query
-        "orientation": "landscape",
-        "size": "large",
-        "page": max(1, min(int(page), 80)),
-    }
-    try:
-        resp = requests.get(
-            "https://api.pexels.com/v1/search",
-            headers={"Authorization": api_key},
-            params=params,
-            timeout=25,
-            verify=verify,
-        )
-    except requests.exceptions.SSLError:
-        urllib3.disable_warnings(InsecureRequestWarning)
-        try:
-            resp = requests.get(
-                "https://api.pexels.com/v1/search",
-                headers={"Authorization": api_key},
-                params=params,
-                timeout=25,
-                verify=False,
-            )
-        except Exception as exc:
-            print(f"   [img/pexels] Erro de rede na busca: {exc}")
-            return []
-    except Exception as exc:
-        print(f"   [img/pexels] Erro de rede na busca: {exc}")
-        return []
-
-    if resp.status_code == 401:
-        print("   [img/pexels] Token invalido (401).")
-        return []
-    if resp.status_code == 429:
-        global _PEXELS_RATE_LIMITED
-        _PEXELS_RATE_LIMITED = True
-        print("   [img/pexels] Rate limit (429) — pulando.")
-        return []
-    if resp.status_code != 200:
-        print(f"   [img/pexels] HTTP {resp.status_code} na busca.")
-        return []
-    try:
-        return list((resp.json() or {}).get("photos") or [])
-    except Exception:
-        print("   [img/pexels] JSON invalido.")
-        return []
-
-
-# Pool em memoria: varias noticias com a mesma query compartilham 1 busca (80 fotos).
+# Pool em memoria + lock de busca (workers reusam pool; API serializada).
 _PEXELS_POOL: dict[str, list[dict[str, Any]]] = {}
 _PEXELS_POOL_NEXT_PAGE: dict[str, int] = {}
 _PEXELS_POOL_LOCK = threading.Lock()
+_PEXELS_SEARCH_LOCK = threading.Lock()
 
 
 def clear_pexels_pool() -> None:
@@ -1466,6 +1411,66 @@ def _pexels_photo_url(photo: dict[str, Any] | None) -> str | None:
         return None
     src = photo.get("src") or {}
     return src.get("large2x") or src.get("large") or src.get("original") or src.get("medium")
+
+
+def _pexels_search(
+    api_key: str,
+    query: str,
+    page: int,
+    verify: bool,
+) -> list[dict[str, Any]]:
+    params = {
+        "query": query,
+        "per_page": 80,  # max Pexels: 1 chamada abastece muitas capas da mesma query
+        "orientation": "landscape",
+        "size": "large",
+        "page": max(1, min(int(page), 80)),
+    }
+    # Uma busca por vez — workers paralelos reusam o pool sem martelar a API.
+    global _PEXELS_RATE_LIMITED
+    with _PEXELS_SEARCH_LOCK:
+        if _PEXELS_RATE_LIMITED:
+            return []
+        try:
+            resp = requests.get(
+                "https://api.pexels.com/v1/search",
+                headers={"Authorization": api_key},
+                params=params,
+                timeout=25,
+                verify=verify,
+            )
+        except requests.exceptions.SSLError:
+            urllib3.disable_warnings(InsecureRequestWarning)
+            try:
+                resp = requests.get(
+                    "https://api.pexels.com/v1/search",
+                    headers={"Authorization": api_key},
+                    params=params,
+                    timeout=25,
+                    verify=False,
+                )
+            except Exception as exc:
+                print(f"   [img/pexels] Erro de rede na busca: {exc}")
+                return []
+        except Exception as exc:
+            print(f"   [img/pexels] Erro de rede na busca: {exc}")
+            return []
+
+        if resp.status_code == 401:
+            print("   [img/pexels] Token invalido (401).")
+            return []
+        if resp.status_code == 429:
+            _PEXELS_RATE_LIMITED = True
+            print("   [img/pexels] Rate limit (429) — pulando.")
+            return []
+        if resp.status_code != 200:
+            print(f"   [img/pexels] HTTP {resp.status_code} na busca.")
+            return []
+        try:
+            return list((resp.json() or {}).get("photos") or [])
+        except Exception:
+            print("   [img/pexels] JSON invalido.")
+            return []
 
 
 def _pexels_take_from_pool(query: str) -> dict[str, Any] | None:
@@ -1486,19 +1491,22 @@ def _pexels_refill_pool(
     api_key: str,
     query: str,
     verify: bool,
-    preferred_page: int,
+    preferred_page: int = 1,
 ) -> int:
     """Uma chamada API; adiciona fotos ainda nao usadas ao pool. Retorna qtd nova."""
     if pexels_rate_limited():
         return 0
     with _PEXELS_POOL_LOCK:
-        page = _PEXELS_POOL_NEXT_PAGE.get(query)
-        if page is None:
-            page = max(1, min(int(preferred_page), 80))
+        # Sempre avanca a partir de 1 (paginas altas do Pexels costumam vir vazias).
+        page = _PEXELS_POOL_NEXT_PAGE.get(query, 1)
         _PEXELS_POOL_NEXT_PAGE[query] = page + 1 if page < 80 else 1
 
     photos = _pexels_search(api_key, query, page, verify)
     if not photos:
+        # Se a pagina atual veio vazia, volta para 1 na proxima.
+        with _PEXELS_POOL_LOCK:
+            if page > 1:
+                _PEXELS_POOL_NEXT_PAGE[query] = 1
         return 0
 
     used = _ensure_used_pexels_ids()
@@ -1506,7 +1514,11 @@ def _pexels_refill_pool(
     with _PEXELS_POOL_LOCK:
         pool = _PEXELS_POOL.setdefault(query, [])
         seen = {str(p.get("id") or "") for p in pool}
-        for photo in photos:
+        ordered = list(photos)
+        if len(ordered) > 1:
+            start = max(0, int(preferred_page) - 1) % len(ordered)
+            ordered = ordered[start:] + ordered[:start]
+        for photo in ordered:
             pid = str(photo.get("id") or "").strip()
             if not pid or pid in used or pid in seen:
                 continue
@@ -1649,13 +1661,13 @@ def _generate_article_image_pexels(title: str, tag: str, resumo: str, slug: str)
         photo = _pexels_take_from_pool(query)
         if photo:
             break
-        # Ate 2 buscas (160 fotos) por variante antes de mudar a query.
-        for _ in range(2):
+        # Ate 4 buscas (320 fotos) por variante antes de mudar a query.
+        for _ in range(4):
             if pexels_rate_limited():
                 return None
             added = _pexels_refill_pool(api_key, query, verify, preferred_page)
             if added <= 0:
-                break
+                continue
             photo = _pexels_take_from_pool(query)
             if photo:
                 break
@@ -2476,14 +2488,30 @@ def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[
         return article_id, titulo or "", url, "ok"
 
     # Pexels remoto: paraleliza geracao (pool compartilhado = poucas buscas API).
+    # Lotes pequenos ficam sequenciais (mais estavel no smoke / debug).
     parallel = (
         _pexels_use_remote_url()
         and get_image_providers() == ["pexels"]
-        and len(rows) > 1
+        and len(rows) >= 8
     )
     workers = min(8, len(rows)) if parallel else 1
     if parallel:
         print(f"   [img] Modo paralelo: {workers} workers")
+        # Pre-aquece pool por query unica (1 busca / tema no lote).
+        api_key = get_pexels_api_key()
+        if api_key:
+            _configure_ssl_certs()
+            verify = _ssl_verify_enabled()
+            if not verify:
+                urllib3.disable_warnings(InsecureRequestWarning)
+            _ensure_used_pexels_ids()
+            warmed: set[str] = set()
+            for row in rows:
+                q = _stock_search_query(row[1] or "", row[2] or "", row[4] or "")
+                if q in warmed:
+                    continue
+                warmed.add(q)
+                _pexels_refill_pool(api_key, q, verify, 1)
 
     results: list[tuple[int, str, str | None, str]] = []
     if workers == 1:

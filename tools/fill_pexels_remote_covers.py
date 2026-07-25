@@ -49,8 +49,13 @@ def main() -> int:
     smoke = core.backfill_missing_images(limit=4)
     print(smoke, flush=True)
     if not smoke.get("updated"):
-        print("Smoke falhou — abort.")
-        return 2
+        print("Smoke falhou — tentando 1 capa sequencial...", flush=True)
+        core.clear_pexels_pool()
+        smoke = core.backfill_missing_images(limit=1)
+        print(smoke, flush=True)
+        if not smoke.get("updated"):
+            print("Smoke falhou — abort.")
+            return 2
 
     batch = 40
     max_batches = 200
