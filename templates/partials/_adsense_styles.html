@@ -130,25 +130,25 @@
     }
 
     /*
-      HLTV: publicidade no MEIO de cada margem lateral.
-      position:fixed estável (sem recalcular no scroll — evita corte sob o nav).
-      Miolo = max-w-7xl (80rem). Gutter centro = (100vw - 80rem) / 4.
+      Publicidade lateral: só no gutter fora do max-w-7xl (80rem).
+      Precisa de ~1700px+ de viewport para caber 160px de cada lado sem cobrir notícias.
     */
     .ad-skin {
         display: none;
         position: fixed;
         top: var(--ad-skin-top, 7.5rem);
-        z-index: 40;
+        z-index: 1;
         width: 160px;
         max-height: calc(100vh - var(--ad-skin-top, 7.5rem) - 1rem);
         overflow: hidden;
-        pointer-events: auto;
+        pointer-events: none;
     }
+    /* Borda interna do ad encosta no gutter: (viewport - 80rem) / 2 - 160px - gap */
     .ad-skin--left {
-        left: max(0.75rem, calc((100vw - 80rem) / 4 - 5rem));
+        left: max(0.5rem, calc((100vw - 80rem) / 2 - 10rem - 0.75rem));
     }
     .ad-skin--right {
-        right: max(0.75rem, calc((100vw - 80rem) / 4 - 5rem));
+        right: max(0.5rem, calc((100vw - 80rem) / 2 - 10rem - 0.75rem));
     }
     .ad-skin__label {
         display: block;
@@ -168,6 +168,7 @@
         border-radius: 0.25rem;
         background: rgba(148, 163, 184, 0.08);
         border: 1px solid rgba(148, 163, 184, 0.2);
+        pointer-events: auto;
     }
     .ad-skin__box > ins.adsbygoogle {
         display: inline-block !important;
@@ -176,9 +177,17 @@
         max-height: 600px !important;
     }
 
-    /* Só mostra quando há margem real ao lado do max-w-7xl */
-    @media (min-width: 1500px) {
+    /* Gutter mínimo ≈ 2×(160px + 12px) + 80rem → ~1700px */
+    @media (min-width: 1700px) {
         .ad-skin { display: block; }
+    }
+
+    /* Reforço: miolo editorial acima dos skins se houver sobreposição residual */
+    main.container,
+    main.max-w-7xl,
+    .layout-with-sidebar {
+        position: relative;
+        z-index: 2;
     }
 
     .ad-center:has(ins.adsbygoogle[data-ad-status="unfilled"]),
