@@ -149,6 +149,9 @@ def _is_transient_db_error(exc: BaseException) -> bool:
         "timed out",
         "timeout",
         "network is unreachable",
+        # Outra thread reconectou o pool no meio desta query.
+        "client_closed",
+        "client is closed",
     )
     return any(n in msg for n in needles)
 
@@ -176,20 +179,44 @@ class PooledClient:
 
     def __init__(self, inner: ClientSync):
         self._inner: ClientSync = inner
+        self._swap_lock = threading.Lock()
+
+    def _reconnect(self, stale: ClientSync) -> None:
+        """Substitui o client interno uma única vez por falha compartilhada.
+
+        Todas as threads do FastAPI usam o mesmo ``_inner``. Sem o guard de
+        identidade, cada thread que falhasse fecharia o client recém-criado
+        pelas outras, derrubando requests saudáveis com ``CLIENT_CLOSED``.
+        """
+        with self._swap_lock:
+            if self._inner is not stale:
+                return
+            fresh = _create_client()
+            if not isinstance(fresh, PooledClient):
+                raise RuntimeError("Reconexão do Turso retornou client não pooled.")
+            self._inner = fresh._inner
+        try:
+            stale.close()
+        except Exception:
+            pass
 
     def execute(self, sql: str, args: list[Any] | None = None) -> QueryResult:
         attempts = max(1, int(os.getenv("TURSO_EXECUTE_RETRIES", "4")))
         delay = float(os.getenv("TURSO_RETRY_BASE_SEC", "1.5"))
         last_exc: BaseException | None = None
         for attempt in range(1, attempts + 1):
+            inner = self._inner
             try:
                 if args is None:
-                    return _as_query_result(self._inner.execute(sql))
-                return _as_query_result(self._inner.execute(sql, args))
+                    return _as_query_result(inner.execute(sql))
+                return _as_query_result(inner.execute(sql, args))
             except Exception as exc:
                 last_exc = exc
                 if not _is_transient_db_error(exc) or attempt >= attempts:
                     raise
+                if self._inner is not inner:
+                    # Outra thread já trocou o client — repete direto no novo.
+                    continue
                 wait = delay * (2 ** (attempt - 1))
                 print(
                     f"   [db] Turso instável ({type(exc).__name__}): "
@@ -198,15 +225,7 @@ class PooledClient:
                 )
                 time.sleep(wait)
                 # Recria o client HTTP — a sessão aiohttp pode ter morrido.
-                try:
-                    self.close_hard()
-                except Exception:
-                    pass
-                fresh = _create_client()
-                if isinstance(fresh, PooledClient):
-                    self._inner = fresh._inner
-                else:
-                    raise
+                self._reconnect(inner)
         assert last_exc is not None
         raise last_exc
 
@@ -304,7 +323,7 @@ def ensure_schema(client: DbClient) -> None:
             SET created_at = published_at
             WHERE (created_at IS NULL OR created_at = '')
               AND published_at IS NOT NULL AND published_at != ''
-        + """)
+        """)
 
         _ = client.execute("""
             CREATE TABLE IF NOT EXISTS newsletter_subscribers (

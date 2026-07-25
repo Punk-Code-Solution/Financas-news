@@ -1333,9 +1333,17 @@ def get_pexels_api_key() -> str:
 
 
 def _pexels_use_remote_url() -> bool:
-    """Se true, grava a URL do CDN Pexels no banco (capa aparece sem disco local/Render)."""
+    """Se true, grava a URL do CDN Pexels no banco (capa aparece sem disco local/Render).
+
+    No Render, o default e remoto: disco efemero nao persiste capas entre deploys
+    e ``ARTICLE_IMAGES_DIR`` local costuma falhar. Defina ``PEXELS_USE_REMOTE_URL=false``
+    so se houver disco persistente montado de proposito.
+    """
     raw = (os.getenv("PEXELS_USE_REMOTE_URL") or "").strip().lower()
-    return raw in ("1", "true", "yes", "on")
+    if raw:
+        return raw in ("1", "true", "yes", "on")
+    # RENDER e setado automaticamente pelo host; dashboard sem a var nao deve cair em disco.
+    return bool(os.getenv("RENDER"))
 
 
 # Flag setada em HTTP 429 para o backfill/script pausar (tier free ~200 req/h).
@@ -1688,21 +1696,25 @@ def _generate_article_image_pexels(title: str, tag: str, resumo: str, slug: str)
     if not photo:
         # Acervo grande: fotos "novas" da query acabam. Permite reuso determinístico
         # por slug para ainda cobrir o backlog (melhor que artigo sem capa).
-        for query in query_variants[:2]:
-            if pexels_rate_limited():
-                return None
-            page = (slug_hash % 15) + 1
-            photos = _pexels_search(api_key, query, page, verify)
-            if not photos:
-                continue
-            candidate = photos[slug_hash % len(photos)]
-            if _pexels_photo_url(candidate):
-                photo = candidate
-                print(
-                    f"   [img/pexels] Reuso (pool esgotado) id={candidate.get('id')} "
-                    f"query={query[:36]!r}"
-                )
+        # Paginas altas do Pexels costumam vir vazias — prioriza pagina 1.
+        reuse_pages = [1, (slug_hash % 8) + 1, 2, 3, 4]
+        for query in query_variants:
+            if photo or pexels_rate_limited():
                 break
+            for page in reuse_pages:
+                if pexels_rate_limited():
+                    break
+                photos = _pexels_search(api_key, query, page, verify)
+                if not photos:
+                    continue
+                candidate = photos[slug_hash % len(photos)]
+                if _pexels_photo_url(candidate):
+                    photo = candidate
+                    print(
+                        f"   [img/pexels] Reuso (pool esgotado) id={candidate.get('id')} "
+                        f"query={query[:36]!r} page={page}"
+                    )
+                    break
         if not photo:
             print("   [img/pexels] Nenhuma foto nova utilizavel.")
             return None

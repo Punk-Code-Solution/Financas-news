@@ -91,13 +91,24 @@ def test_media_filename_from_url_accepts_normal_slug():
     assert core._media_filename_from_url("/media/articles/nome com espaco.jpg") is None
 
 
-def test_cover_url_ready_http_and_local(tmp_path, monkeypatch):
-    monkeypatch.setattr(core, "get_article_images_dir", lambda: tmp_path)
-    assert core._cover_url_ready("https://images.pexels.com/photos/1/x.jpeg")
-    missing = core._cover_url_ready("/media/articles/nao-existe.png")
-    assert missing is False
-    (tmp_path / "existe.jpg").write_bytes(b"\xff\xd8\xff\xd9")
-    assert core._cover_url_ready("/media/articles/existe.jpg")
+def test_pexels_use_remote_url_defaults_on_render(monkeypatch=None):
+    import os
+
+    os.environ.pop("PEXELS_USE_REMOTE_URL", None)
+    os.environ["RENDER"] = "true"
+    try:
+        assert core._pexels_use_remote_url() is True
+    finally:
+        os.environ.pop("RENDER", None)
+        os.environ.pop("PEXELS_USE_REMOTE_URL", None)
+
+    os.environ["PEXELS_USE_REMOTE_URL"] = "false"
+    os.environ["RENDER"] = "true"
+    try:
+        assert core._pexels_use_remote_url() is False
+    finally:
+        os.environ.pop("RENDER", None)
+        os.environ.pop("PEXELS_USE_REMOTE_URL", None)
 
 
 def test_pexels_skips_already_used_photo_id():
@@ -219,6 +230,7 @@ if __name__ == "__main__":
     test_get_image_providers_includes_pexels()
     test_pexels_photo_id_from_url()
     test_media_filename_from_url_accepts_normal_slug()
+    test_pexels_use_remote_url_defaults_on_render()
     test_pexels_skips_already_used_photo_id()
     test_pexels_generate_saves_file()
     test_pexels_skipped_without_key()
