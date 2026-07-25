@@ -34,9 +34,9 @@ class LocalDbClient:
 
     def __init__(self, path: str):
         self._conn = sqlite3.connect(path, check_same_thread=False)
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=NORMAL")
-        self._conn.execute("PRAGMA temp_store=MEMORY")
+        _ = self._conn.execute("PRAGMA journal_mode=WAL")
+        _ = self._conn.execute("PRAGMA synchronous=NORMAL")
+        _ = self._conn.execute("PRAGMA temp_store=MEMORY")
         # Conexão única compartilhada entre threads — serializa o acesso.
         self._lock = threading.Lock()
 
@@ -65,6 +65,7 @@ _client_lock = threading.Lock()
 _schema_ready = False
 _schema_lock = threading.Lock()
 _fts_ready = False
+_ssl_x509_relaxed = False
 _sentiment_cache: dict[str, tuple[float, str]] = {}
 _sentiment_cache_lock = threading.Lock()
 _SENTIMENT_CACHE_TTL = 45.0
@@ -91,16 +92,23 @@ def _configure_ssl_certs() -> None:
     if not hasattr(ssl, "VERIFY_X509_STRICT"):
         return
 
-    if not getattr(ssl.create_default_context, "_financas_x509_relaxed", False):
+    global _ssl_x509_relaxed
+    if not _ssl_x509_relaxed:
         _original = ssl.create_default_context
 
-        def create_default_context(*args, **kwargs):
-            ctx = _original(*args, **kwargs)
+        def create_default_context(
+            purpose: ssl.Purpose = ssl.Purpose.SERVER_AUTH,
+            *,
+            cafile: str | None = None,
+            capath: str | None = None,
+            cadata: str | None = None,
+        ) -> ssl.SSLContext:
+            ctx = _original(purpose, cafile=cafile, capath=capath, cadata=cadata)
             ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT
             return ctx
 
-        create_default_context._financas_x509_relaxed = True  # type: ignore[attr-defined]
         ssl.create_default_context = create_default_context  # type: ignore[assignment]
+        _ssl_x509_relaxed = True
 
     try:
         import aiohttp.connector as aio_connector
@@ -113,6 +121,55 @@ def _configure_ssl_certs() -> None:
         pass
 
 
+def _is_transient_db_error(exc: BaseException) -> bool:
+    """Timeouts / queda de rede com Turso (comum no Windows: WinError 121)."""
+    # libsql HTTP às vezes responde 200 sem chave "result" (sessão/API instável).
+    if isinstance(exc, KeyError) and exc.args and exc.args[0] == "result":
+        return True
+    name = type(exc).__name__
+    if name in {
+        "ClientConnectorError",
+        "ClientOSError",
+        "ServerTimeoutError",
+        "ServerDisconnectedError",
+        "ClientConnectionError",
+        "TimeoutError",
+        "CancelledError",
+    }:
+        return True
+    msg = str(exc).lower()
+    needles = (
+        "tempo limite do semáforo",
+        "semaphore timeout",
+        "winerror 121",
+        "cannot connect to host",
+        "connection reset",
+        "temporarily unavailable",
+        "timed out",
+        "timeout",
+        "network is unreachable",
+    )
+    return any(n in msg for n in needles)
+
+
+def reset_db_client() -> None:
+    """Fecha e descarta o client global (força reconexão no próximo get_db)."""
+    global _client
+    with _client_lock:
+        old = _client
+        _client = None
+    if old is None:
+        return
+    try:
+        close_hard = getattr(old, "close_hard", None)
+        if callable(close_hard):
+            close_hard()
+        else:
+            old.close()
+    except Exception:
+        pass
+
+
 class PooledClient:
     """Proxy que reutiliza o client remoto sem fechar a cada request."""
 
@@ -120,9 +177,37 @@ class PooledClient:
         self._inner = inner
 
     def execute(self, sql: str, args: list[Any] | None = None) -> QueryResult:
-        if args is None:
-            return _as_query_result(self._inner.execute(sql))
-        return _as_query_result(self._inner.execute(sql, args))
+        attempts = max(1, int(os.getenv("TURSO_EXECUTE_RETRIES", "4")))
+        delay = float(os.getenv("TURSO_RETRY_BASE_SEC", "1.5"))
+        last_exc: BaseException | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                if args is None:
+                    return _as_query_result(self._inner.execute(sql))
+                return _as_query_result(self._inner.execute(sql, args))
+            except Exception as exc:
+                last_exc = exc
+                if not _is_transient_db_error(exc) or attempt >= attempts:
+                    raise
+                wait = delay * (2 ** (attempt - 1))
+                print(
+                    f"   [db] Turso instável ({type(exc).__name__}): "
+                    + f"retry {attempt}/{attempts} em {wait:.1f}s…",
+                    flush=True,
+                )
+                time.sleep(wait)
+                # Recria o client HTTP — a sessão aiohttp pode ter morrido.
+                try:
+                    self.close_hard()
+                except Exception:
+                    pass
+                fresh = _create_client()
+                if isinstance(fresh, PooledClient):
+                    self._inner = fresh._inner
+                else:
+                    raise
+        assert last_exc is not None
+        raise last_exc
 
     def close(self) -> None:
         pass
