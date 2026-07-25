@@ -1,6 +1,6 @@
 /**
  * Ticker de cotações via AwesomeAPI (estilo Cointelegraph).
- * Componente isolado: preenche #market-ticker, atualiza valores in-place
+ * Componente isolado: atualiza cada item ao passar na viewport,
  * sem resetar a animação e sem mensagem de carregamento.
  */
 (function () {
@@ -28,13 +28,17 @@
         'https://economia.awesomeapi.com.br/last/' +
         PAIRS.map((p) => p.key.replace(/BRL$/, '-BRL')).join(',');
 
-    const POLL_INTERVAL_MS = 20000;
-    const CACHE_KEY = 'tickerData_v3';
-    const CACHE_TTL_MS = 15000;
+    const POLL_INTERVAL_MS = 10000;
+    const CACHE_KEY = 'tickerData_v4';
+    const CACHE_TTL_MS = 8000;
     /** Cópias do grupo — garante faixa larga o bastante para loop sem buracos. */
     const GROUP_COPIES = 2;
     /** Repetições internas do conjunto de pares dentro de cada grupo. */
     const SET_REPEAT = 2;
+    /** Evita piscar o mesmo item várias vezes seguidas. */
+    const ITEM_UPDATE_COOLDOWN_MS = 1800;
+
+    let latestQuotes = null;
 
     const resolveLocale = () => {
         const root = document.documentElement;
@@ -71,7 +75,6 @@
     function flash(el) {
         if (!el) return;
         el.classList.remove('is-flash');
-        // Força reflow para reiniciar a animação CSS.
         void el.offsetWidth;
         el.classList.add('is-flash');
     }
@@ -79,6 +82,8 @@
     function makeItem(pair) {
         const item = document.createElement('span');
         item.className = 'fn-ticker__item';
+        item.setAttribute('data-ticker-key', pair.key);
+        item.dataset.lastPaint = '0';
 
         const codeEl = document.createElement('span');
         codeEl.className = 'fn-ticker__code';
@@ -115,29 +120,87 @@
         tickerEl.replaceChildren(frag);
     }
 
-    function render(tickerEl, data, animateChanges) {
-        PAIRS.forEach(({ key }) => {
-            const quote = data[key];
-            if (!quote) return;
-            const bidText = formatCurrency(quote.bid);
-            const pctText = `(${formatPct(quote.pctChange)})`;
-            const pctClass = getColorClass(quote.pctChange);
+    function paintItem(item, animate) {
+        if (!latestQuotes || !(item instanceof HTMLElement)) return;
+        const key = item.getAttribute('data-ticker-key');
+        const quote = latestQuotes[key];
+        if (!quote) return;
 
-            tickerEl.querySelectorAll(`[data-ticker-bid="${key}"]`).forEach((el) => {
-                const changed = animateChanges && el.textContent && el.textContent !== '—' && el.textContent !== bidText;
-                el.textContent = bidText;
-                if (changed) flash(el);
-            });
-            tickerEl.querySelectorAll(`[data-ticker-pct="${key}"]`).forEach((el) => {
-                const changed =
-                    animateChanges &&
-                    el.textContent &&
-                    el.textContent !== pctText;
-                el.className = `fn-ticker__pct ${pctClass}`;
-                el.textContent = pctText;
-                if (changed) flash(el);
-            });
+        const now = Date.now();
+        const lastPaint = Number(item.dataset.lastPaint || 0);
+        if (animate && now - lastPaint < ITEM_UPDATE_COOLDOWN_MS) return;
+
+        const bidEl = item.querySelector('[data-ticker-bid]');
+        const pctEl = item.querySelector('[data-ticker-pct]');
+        if (!bidEl || !pctEl) return;
+
+        const bidText = formatCurrency(quote.bid);
+        const pctText = `(${formatPct(quote.pctChange)})`;
+        const pctClass = getColorClass(quote.pctChange);
+        const prevBid = bidEl.textContent;
+        const prevPct = pctEl.textContent;
+        const changed =
+            (prevBid && prevBid !== '—' && prevBid !== bidText) ||
+            (prevPct && prevPct !== pctText);
+
+        bidEl.textContent = bidText;
+        pctEl.className = `fn-ticker__pct ${pctClass}`;
+        pctEl.textContent = pctText;
+        item.dataset.lastPaint = String(now);
+
+        // Sempre anima ao passar na tela (efeito “ao vivo”); reforça se o valor mudou.
+        if (animate) {
+            flash(bidEl);
+            flash(pctEl);
+            item.classList.toggle('is-tick-up', pctClass === 'ticker-up');
+            item.classList.toggle('is-tick-down', pctClass === 'ticker-down');
+            item.classList.remove('is-passing');
+            void item.offsetWidth;
+            item.classList.add('is-passing');
+            if (changed) item.classList.add('is-changed');
+            else item.classList.remove('is-changed');
+            window.clearTimeout(Number(item.dataset.passTimer || 0));
+            item.dataset.passTimer = String(
+                window.setTimeout(() => {
+                    item.classList.remove('is-passing', 'is-changed', 'is-tick-up', 'is-tick-down');
+                }, 900)
+            );
+        }
+    }
+
+    function paintAll(tickerEl, animate) {
+        tickerEl.querySelectorAll('.fn-ticker__item').forEach((item) => {
+            paintItem(item, animate);
         });
+    }
+
+    function watchPassingItems(tickerEl) {
+        const viewport = tickerEl.closest('.fn-ticker__viewport');
+        if (!viewport) return;
+
+        const wasVisible = new WeakMap();
+
+        function tick() {
+            window.requestAnimationFrame(tick);
+            if (document.visibilityState === 'hidden' || !latestQuotes) return;
+
+            const root = viewport.getBoundingClientRect();
+            tickerEl.querySelectorAll('.fn-ticker__item').forEach((item) => {
+                const box = item.getBoundingClientRect();
+                const visible =
+                    box.right > root.left + 8 &&
+                    box.left < root.right - 8 &&
+                    box.bottom > root.top &&
+                    box.top < root.bottom;
+                const prev = wasVisible.get(item) === true;
+                if (visible && !prev) {
+                    paintItem(item, true);
+                }
+                wasVisible.set(item, visible);
+            });
+        }
+
+        window.requestAnimationFrame(tick);
     }
 
     function readCache() {
@@ -187,12 +250,13 @@
             sessionStorage.removeItem('tickerTime');
             sessionStorage.removeItem('tickerData');
             sessionStorage.removeItem('tickerData_v2');
+            sessionStorage.removeItem('tickerData_v3');
         } catch (e) {
             /* ignora */
         }
 
-        // Estrutura imediata (sem texto de loading) — placeholders "—" até a API responder.
         buildSkeleton(tickerEl);
+        watchPassingItems(tickerEl);
 
         let hasData = false;
         let fetching = false;
@@ -202,7 +266,9 @@
             fetching = true;
             try {
                 const data = await fetchQuotes(Boolean(forceNetwork));
-                render(tickerEl, data, hasData);
+                latestQuotes = data;
+                // Primeira carga: pinta tudo quieto. Depois só o observer anima ao passar.
+                if (!hasData) paintAll(tickerEl, false);
                 hasData = true;
             } catch (error) {
                 // Mantém placeholders / último valor — sem mensagem de erro na barra.
@@ -213,7 +279,8 @@
 
         const cached = readCache();
         if (cached) {
-            render(tickerEl, cached, false);
+            latestQuotes = cached;
+            paintAll(tickerEl, false);
             hasData = true;
         }
 
