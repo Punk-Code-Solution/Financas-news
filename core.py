@@ -1984,7 +1984,12 @@ def _generate_article_image_cursor(prompt: str, slug: str) -> str | None:
         return None
 
     try:
-        from cursor_sdk import Agent, AgentOptions, CursorAgentError, LocalAgentOptions
+        from cursor_sdk import (  # type: ignore[import-not-found]
+            Agent,
+            AgentOptions,
+            CursorAgentError,
+            LocalAgentOptions,
+        )
     except ImportError:
         print("   [img/cursor] Pacote cursor-sdk nao instalado. Rode: pip install -r requirements.txt")
         return None
