@@ -1,14 +1,12 @@
-{# Multiplex / relacionados no rodapé do artigo #}
 {% if monetization.adsense.enabled and monetization.adsense.autorelaxed_slot %}
-<div class="ad-center ad-center--tall my-6" aria-label="Publicidade">
+<div class="ad-center ad-center--tall" aria-label="Publicidade">
     <span class="ad-center__label">publicidade</span>
-    <div class="ad-center__box" style="max-height:320px;min-height:160px;">
+    <div class="ad-center__box">
         <ins class="adsbygoogle"
-             style="display:block;width:100%;max-width:100%;"
+             style="display:block"
              data-ad-format="autorelaxed"
              data-ad-client="{{ monetization.adsense.client }}"
              data-ad-slot="{{ monetization.adsense.autorelaxed_slot }}"></ins>
-        <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
     </div>
 </div>
 {% endif %}

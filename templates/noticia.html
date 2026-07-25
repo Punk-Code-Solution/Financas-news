@@ -18,6 +18,7 @@
     <script src="/static/js/image-fallback.js"></script>
     {% if monetization.adsense.enabled %}
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ monetization.adsense.client }}" crossorigin="anonymous"></script>
+    <script src="/static/js/adsense-loader.js" defer></script>
     {% endif %}
 
     {% set meta_desc = (noticia[2] or '')|replace('\n', ' ')|trim %}
@@ -328,7 +329,7 @@
             </div>
             {% endif %}
 
-            {% with center_slot=monetization.adsense.article_top_slot %}
+            {% with center_slot=monetization.adsense.fluid2_slot, center_format='fluid', center_layout_key=monetization.adsense.fluid2_layout_key %}
             {% include "partials/_adsense_center.html" %}
             {% endwith %}
 

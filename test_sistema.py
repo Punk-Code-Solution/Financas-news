@@ -182,6 +182,21 @@ def run() -> int:
             "/static/js/image-fallback.js" in r.text,
             "script de fallback de capa ausente",
         )
+        check(
+            "Home: adsense-loader.js",
+            "/static/js/adsense-loader.js" in r.text,
+            "loader de AdSense ausente",
+        )
+        check(
+            "Home: fluid com layout-key",
+            'data-ad-format="fluid"' not in r.text
+            or 'data-ad-layout-key="' in r.text,
+            "unidade fluid sem layout-key",
+        )
+        check(
+            "Static adsense-loader.js",
+            client.get("/static/js/adsense-loader.js").status_code == 200,
+        )
         if "/noticia/" in r.text and "object-cover" in r.text:
             check(
                 "Home: data-fallback nas capas",

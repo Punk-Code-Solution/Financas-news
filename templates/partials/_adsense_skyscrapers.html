@@ -1,4 +1,3 @@
-{# Skyscrapers simétricos no meio de cada margem (fora do miolo max-w-7xl) #}
 {% if monetization.adsense.enabled and monetization.adsense.skyscraper_slot %}
 <aside class="ad-skin ad-skin--left" aria-label="Publicidade">
     <span class="ad-skin__label">Publicidade</span>
@@ -7,7 +6,6 @@
              style="display:inline-block;width:160px;height:600px"
              data-ad-client="{{ monetization.adsense.client }}"
              data-ad-slot="{{ monetization.adsense.skyscraper_slot }}"></ins>
-        <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
     </div>
 </aside>
 <aside class="ad-skin ad-skin--right" aria-label="Publicidade">
@@ -17,43 +15,6 @@
              style="display:inline-block;width:160px;height:600px"
              data-ad-client="{{ monetization.adsense.client }}"
              data-ad-slot="{{ monetization.adsense.skyscraper_slot }}"></ins>
-        <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
     </div>
 </aside>
-<script>
-(function () {
-    function placeAdSkins() {
-        var skins = document.querySelectorAll('.ad-skin');
-        if (!skins.length) return;
-        var nav = document.querySelector('nav.sticky') || document.querySelector('nav');
-        var ticker = document.querySelector('.ticker-wrapper');
-        var top = 96;
-        if (nav) {
-            var navBottom = nav.getBoundingClientRect().bottom;
-            /* nav sticky: bottom já é o offset fixo na viewport */
-            top = Math.ceil(navBottom) + 12;
-        } else if (ticker) {
-            top = Math.ceil(ticker.getBoundingClientRect().height) + 72;
-        }
-        var maxH = Math.max(240, window.innerHeight - top - 16);
-        skins.forEach(function (el) {
-            el.style.top = top + 'px';
-            el.style.maxHeight = maxH + 'px';
-            var box = el.querySelector('.ad-skin__box');
-            if (box) {
-                box.style.maxHeight = Math.max(200, maxH - 24) + 'px';
-                box.style.height = Math.min(600, Math.max(200, maxH - 24)) + 'px';
-            }
-        });
-        document.documentElement.style.setProperty('--ad-skin-top', top + 'px');
-    }
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', placeAdSkins);
-    } else {
-        placeAdSkins();
-    }
-    window.addEventListener('resize', placeAdSkins);
-    /* NÃO escuta scroll — fixed fica estável abaixo do header */
-})();
-</script>
 {% endif %}

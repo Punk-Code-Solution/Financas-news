@@ -1,4 +1,4 @@
-{# In-article (meio do texto) #}
-{% with center_slot=monetization.adsense.in_article_slot, center_tall=true, center_format='fluid' %}
+{# In-article: display retangular (nao misturar format=fluid sem layout-key) #}
+{% with center_slot=monetization.adsense.in_article_slot, center_tall=true %}
 {% include "partials/_adsense_center.html" %}
 {% endwith %}

@@ -26,6 +26,9 @@ services:
         value: pexels,gemini,huggingface,openai
       - key: PEXELS_API_KEY
         sync: false
+      # Grava a URL do CDN Pexels no banco: capa aparece sem depender do disco do Render.
+      - key: PEXELS_USE_REMOTE_URL
+        value: "true"
       - key: HF_TOKEN
         sync: false
       - key: HF_IMAGE_MODELOS

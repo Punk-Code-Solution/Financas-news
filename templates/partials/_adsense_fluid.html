@@ -1,4 +1,4 @@
-{# Compat: faixa 1 do feed #}
-{% with center_slot=monetization.adsense.fluid_slot %}
+{# In-feed fluid 1 — exige layout-key do AdSense #}
+{% with center_slot=monetization.adsense.fluid_slot, center_format='fluid', center_layout_key=monetization.adsense.fluid_layout_key %}
 {% include "partials/_adsense_center.html" %}
 {% endwith %}

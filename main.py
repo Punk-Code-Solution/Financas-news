@@ -793,7 +793,14 @@ def gerar_imagens(request: Request, token: str | None = None, limit: int = 1):
     print(f"Gerando imagens para ate {limit} artigos sem capa (prioridade: novas)...")
     resultado = core.backfill_missing_images(limit=limit)
     _invalidate_home_cache()
-    return {"status": "Sucesso", **resultado}
+    return {
+        "status": "Sucesso",
+        **resultado,
+        # Diagnóstico de config (sem expor segredo): ajuda a identificar env faltando no host.
+        "providers": core.get_image_providers(),
+        "pexels_key": bool(core.get_pexels_api_key()),
+        "pexels_remote_url": core._pexels_use_remote_url(),
+    }
 
 
 @app.get("/api/rodar-robo")

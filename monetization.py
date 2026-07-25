@@ -112,6 +112,11 @@ def get_monetization_config() -> dict[str, object]:
     adsense_autorelaxed_slot = _env("ADSENSE_AUTORELAXED_SLOT") or "2568646523"
     adsense_enabled = bool(adsense_client)
     adsense_display_enabled = adsense_enabled and bool(adsense_slot)
+    # Fluid In-feed so funciona com layout-key; sem key, desliga o slot.
+    if not adsense_fluid_layout:
+        adsense_fluid_slot = ""
+    if not adsense_fluid2_layout:
+        adsense_fluid2_slot = ""
 
     affiliates: list[dict[str, object]] = []
     for item in DEFAULT_AFFILIATES:

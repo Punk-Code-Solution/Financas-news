@@ -89,6 +89,7 @@
     
     {% if monetization.adsense.enabled %}
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ monetization.adsense.client }}" crossorigin="anonymous"></script>
+    <script src="/static/js/adsense-loader.js" defer></script>
     {% endif %}
 
     <script>
@@ -327,7 +328,7 @@
         {% endif %}
 
         {% if monetization.adsense.enabled and not q %}
-        {% with center_slot=monetization.adsense.feed_top_slot %}
+        {% with center_slot=monetization.adsense.fluid_slot, center_format='fluid', center_layout_key=monetization.adsense.fluid_layout_key %}
         {% include "partials/_adsense_center.html" %}
         {% endwith %}
         {% endif %}
@@ -351,15 +352,12 @@
                         {% include "partials/feed_news_items.html" %}
                         {% endwith %}
                     </div>
-                    {% if not loop.last %}
-                        {% if loop.index % 3 == 1 %}
+                    {# No maximo 2 faixas no feed inicial — evita rajada de 400 do AdSense #}
+                    {% if not loop.last and loop.index <= 2 %}
+                        {% if loop.index == 1 %}
                             {% include "partials/_adsense_fluid.html" %}
-                        {% elif loop.index % 3 == 2 %}
-                            {% include "partials/_adsense_fluid2.html" %}
                         {% else %}
-                            {% with center_slot=monetization.adsense.in_article_slot, center_tall=true %}
-                            {% include "partials/_adsense_center.html" %}
-                            {% endwith %}
+                            {% include "partials/_adsense_fluid2.html" %}
                         {% endif %}
                     {% endif %}
                     {% endfor %}
@@ -426,7 +424,7 @@
                 </div>
                 {% endif %}
 
-                {% with center_slot=monetization.adsense.feed_bottom_slot %}
+                {% with center_slot=monetization.adsense.fluid2_slot, center_format='fluid', center_layout_key=monetization.adsense.fluid2_layout_key %}
                 {% include "partials/_adsense_center.html" %}
                 {% endwith %}
             </div>
@@ -472,6 +470,9 @@
                 
                 setInitialThemeIcons();
                 paintSparklines();
+                if (typeof window.__financasAdsenseScan === 'function') {
+                    window.__financasAdsenseScan(mainEl);
+                }
                 mainEl.style.opacity = '1';
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             } catch (error) {

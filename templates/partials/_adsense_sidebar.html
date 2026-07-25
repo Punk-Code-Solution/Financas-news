@@ -1,15 +1,13 @@
-{# Lateral do portal — um único retângulo vertical #}
 {% if monetization.adsense.enabled and monetization.adsense.sidebar_slot %}
-<div class="ad-rail">
+<div class="ad-rail" aria-label="Publicidade">
     <span class="ad-rail__label">Publicidade</span>
-    <div class="ad-rail__box p-1">
+    <div class="ad-rail__box">
         <ins class="adsbygoogle"
-             style="display:block;width:100%;max-width:100%;"
+             style="display:block"
              data-ad-client="{{ monetization.adsense.client }}"
              data-ad-slot="{{ monetization.adsense.sidebar_slot }}"
-             data-ad-format="vertical"
-             data-full-width-responsive="false"></ins>
-        <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+             data-ad-format="auto"
+             data-full-width-responsive="true"></ins>
     </div>
 </div>
 {% endif %}

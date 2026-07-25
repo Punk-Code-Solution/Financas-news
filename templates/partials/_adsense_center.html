@@ -1,16 +1,28 @@
-{# Faixa central estilo Poder360 — passe center_slot (e opcionalmente center_tall) #}
+{# Faixa central — display ou fluid (In-feed). Passe center_slot;
+   para fluid: center_format='fluid' + center_layout_key. #}
 {% set _slot = center_slot|default('') %}
-{% if monetization.adsense.enabled and _slot %}
-<div class="ad-center{% if center_tall|default(false) %} ad-center--tall{% endif %}" aria-label="Publicidade">
+{% set _format = center_format|default('') %}
+{% set _layout = center_layout_key|default('') %}
+{% set _is_fluid = _format == 'fluid' and _layout %}
+{% if monetization.adsense.enabled and _slot and (_format != 'fluid' or _is_fluid) %}
+<div class="ad-center{% if center_tall|default(false) %} ad-center--tall{% endif %}{% if _is_fluid %} ad-center--fluid{% endif %}" aria-label="Publicidade">
     <span class="ad-center__label">publicidade</span>
     <div class="ad-center__box">
+        {% if _is_fluid %}
+        <ins class="adsbygoogle"
+             style="display:block"
+             data-ad-client="{{ monetization.adsense.client }}"
+             data-ad-slot="{{ _slot }}"
+             data-ad-format="fluid"
+             data-ad-layout-key="{{ _layout }}"></ins>
+        {% else %}
         <ins class="adsbygoogle"
              style="display:block;width:100%;max-height:{% if center_tall|default(false) %}280px{% else %}120px{% endif %};"
              data-ad-client="{{ monetization.adsense.client }}"
              data-ad-slot="{{ _slot }}"
-             data-ad-format="{% if center_format|default('') %}{{ center_format }}{% elif center_tall|default(false) %}rectangle{% else %}horizontal{% endif %}"
+             data-ad-format="{% if center_tall|default(false) %}rectangle{% else %}horizontal{% endif %}"
              data-full-width-responsive="false"></ins>
-        <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+        {% endif %}
     </div>
 </div>
 {% endif %}
