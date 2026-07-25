@@ -133,20 +133,24 @@
       Publicidade lateral: fica sempre no gutter, nunca sobre o miolo.
       O miolo encolhe conforme a tela para abrir espaço a partir de notebooks.
       --ad-skin-w = largura do criativo por faixa; 0 quando não há espaço.
+      --ad-skin-top = abaixo do ticker + nav sticky (evita cortar o “teto”).
     */
     :root {
         --ad-skin-w: 0px;
         --ad-skin-gap: 14px;
+        --ad-skin-top: 9.75rem; /* ticker ~1.9rem + nav sticky ~7.5rem + folga */
+        --ad-skin-bottom: 1rem;
         --fn-content-w: 80rem;
         --fn-gutter: calc((100vw - var(--fn-content-w)) / 2);
     }
     .ad-skin {
         display: none;
         position: fixed;
-        top: var(--ad-skin-top, 7.5rem);
+        top: var(--ad-skin-top);
+        bottom: var(--ad-skin-bottom);
         z-index: 1;
         width: var(--ad-skin-w);
-        max-height: calc(100vh - var(--ad-skin-top, 7.5rem) - 1rem);
+        max-height: calc(100vh - var(--ad-skin-top) - var(--ad-skin-bottom));
         overflow: hidden;
         pointer-events: none;
     }
@@ -170,21 +174,22 @@
     .ad-skin__box {
         width: var(--ad-skin-w);
         height: 600px;
-        max-height: calc(100vh - var(--ad-skin-top, 7.5rem) - 2.5rem);
+        max-height: calc(100% - 1.1rem); /* reserva o label “Publicidade” */
         overflow: hidden;
         border-radius: 0.25rem;
         background: rgba(148, 163, 184, 0.08);
         border: 1px solid rgba(148, 163, 184, 0.2);
         pointer-events: auto;
+        box-sizing: border-box;
     }
     .ad-skin__box > ins.adsbygoogle {
         display: inline-block !important;
         width: var(--ad-skin-w) !important;
         height: 100% !important;
-        max-height: 600px !important;
+        max-height: 100% !important;
     }
 
-    /* Notebook (1280–1439): criativo estreito, miolo encolhe o necessário. */
+    /* Notebook (1280+): criativo estreito, miolo encolhe o necessário. */
     @media (min-width: 1280px) {
         :root {
             --ad-skin-w: 120px;
