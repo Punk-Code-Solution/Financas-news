@@ -1321,6 +1321,12 @@ def get_pexels_api_key() -> str:
     return (os.getenv("PEXELS_API_KEY") or os.getenv("PEXELS_KEY") or "").strip()
 
 
+def _pexels_use_remote_url() -> bool:
+    """Se true, grava a URL do CDN Pexels no banco (capa aparece sem disco local/Render)."""
+    raw = (os.getenv("PEXELS_USE_REMOTE_URL") or "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
 # Flag setada em HTTP 429 para o backfill/script pausar (tier free ~200 req/h).
 _PEXELS_RATE_LIMITED = False
 
@@ -1522,6 +1528,14 @@ def _generate_article_image_pexels(title: str, tag: str, resumo: str, slug: str)
         url = src.get("large2x") or src.get("large") or src.get("original") or src.get("medium")
         if not url:
             continue
+
+        # Modo remoto: 1 req API/capa e a URL funciona em producao sem upload de arquivo.
+        if _pexels_use_remote_url():
+            photographer = (photo.get("photographer") or "").strip()
+            safe_name = photographer.encode("ascii", "replace").decode("ascii") or "stock"
+            print(f"   [img/pexels] Capa remota OK ({safe_name}): {url[:90]}...")
+            return url
+
         try:
             img_resp = requests.get(url, timeout=40, verify=verify)
         except requests.exceptions.SSLError:
@@ -2220,6 +2234,16 @@ def _media_file_exists(imagem_url: str | None) -> bool:
     return path.is_file() and path.stat().st_size > 0
 
 
+def _cover_url_ready(imagem_url: str | None) -> bool:
+    """True se a capa pode ser publicada (arquivo local ou URL http(s) externa)."""
+    if not imagem_url:
+        return False
+    url = str(imagem_url).strip()
+    if url.startswith(("http://", "https://")):
+        return True
+    return _media_file_exists(url)
+
+
 def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[str, Any]:
     """Gera capas pendentes: prioriza notícias mais novas (id DESC).
 
@@ -2312,14 +2336,14 @@ def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[
             article_id=article_id,
             use_openai=True,
         )
-        if imagem_url and _media_file_exists(imagem_url):
+        if imagem_url and _cover_url_ready(imagem_url):
             client_db.execute(
                 "UPDATE news SET imagem_url = ? WHERE id = ?",
                 [imagem_url, article_id],
             )
             updated.append({"id": article_id, "imagem_url": imagem_url})
         else:
-            if imagem_url and not _media_file_exists(imagem_url):
+            if imagem_url and not _cover_url_ready(imagem_url):
                 print(f"   [img] Arquivo nao persistiu apos gerar ({imagem_url}) — nao atualiza DB.")
             failed.append({"id": article_id, "titulo": (titulo or "")[:80]})
             if pexels_rate_limited():
