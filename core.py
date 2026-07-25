@@ -1686,8 +1686,26 @@ def _generate_article_image_pexels(title: str, tag: str, resumo: str, slug: str)
             break
 
     if not photo:
-        print("   [img/pexels] Nenhuma foto nova utilizavel.")
-        return None
+        # Acervo grande: fotos "novas" da query acabam. Permite reuso determinístico
+        # por slug para ainda cobrir o backlog (melhor que artigo sem capa).
+        for query in query_variants[:2]:
+            if pexels_rate_limited():
+                return None
+            page = (slug_hash % 15) + 1
+            photos = _pexels_search(api_key, query, page, verify)
+            if not photos:
+                continue
+            candidate = photos[slug_hash % len(photos)]
+            if _pexels_photo_url(candidate):
+                photo = candidate
+                print(
+                    f"   [img/pexels] Reuso (pool esgotado) id={candidate.get('id')} "
+                    f"query={query[:36]!r}"
+                )
+                break
+        if not photo:
+            print("   [img/pexels] Nenhuma foto nova utilizavel.")
+            return None
 
     url = _pexels_photo_url(photo) or ""
     url_id = str(photo.get("id") or "").strip() or _pexels_photo_id_from_url(url)
