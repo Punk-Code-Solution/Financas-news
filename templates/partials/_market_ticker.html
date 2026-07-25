@@ -1,0 +1,102 @@
+{# Barra de cotações — componente isolado (estilo Cointelegraph).
+   CSS + markup aqui; lógica em /static/js/market-ticker.js #}
+<style>
+    .fn-ticker {
+        --fn-ticker-bg: #f1f5f9;
+        --fn-ticker-border: #e2e8f0;
+        --fn-ticker-label: #64748b;
+        --fn-ticker-bid: #0f172a;
+        --fn-ticker-up: #16a34a;
+        --fn-ticker-down: #dc2626;
+        --fn-ticker-sep: #cbd5e1;
+        background: var(--fn-ticker-bg);
+        border-bottom: 1px solid var(--fn-ticker-border);
+        color: var(--fn-ticker-label);
+        font-size: 0.75rem;
+        line-height: 1.25;
+        transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    }
+    .dark .fn-ticker {
+        --fn-ticker-bg: #0e1217;
+        --fn-ticker-border: #1e293b;
+        --fn-ticker-label: #94a3b8;
+        --fn-ticker-bid: #f8fafc;
+        --fn-ticker-up: #4ade80;
+        --fn-ticker-down: #f87171;
+        --fn-ticker-sep: #334155;
+    }
+    .fn-ticker__viewport {
+        overflow: hidden;
+        white-space: nowrap;
+        padding: 0.35rem 0;
+    }
+    .fn-ticker__track {
+        display: flex;
+        width: max-content;
+        animation: fn-ticker-scroll 70s linear infinite;
+        will-change: transform;
+    }
+    .fn-ticker__track:hover {
+        animation-play-state: paused;
+        cursor: default;
+    }
+    .fn-ticker__group {
+        display: flex;
+        flex-shrink: 0;
+        align-items: center;
+    }
+    .fn-ticker__item {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 0.35rem;
+        margin-right: 2.25rem;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+    }
+    .fn-ticker__code {
+        color: var(--fn-ticker-label);
+        font-weight: 500;
+    }
+    .fn-ticker__bid {
+        color: var(--fn-ticker-bid);
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        transition: color 0.2s ease;
+    }
+    .fn-ticker__pct {
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+    }
+    .fn-ticker__pct.ticker-up { color: var(--fn-ticker-up); }
+    .fn-ticker__pct.ticker-down { color: var(--fn-ticker-down); }
+    .fn-ticker__bid.is-flash,
+    .fn-ticker__pct.is-flash {
+        animation: fn-ticker-flash 0.7s ease;
+    }
+    @keyframes fn-ticker-scroll {
+        from { transform: translateX(0); }
+        to { transform: translateX(-50%); }
+    }
+    @keyframes fn-ticker-flash {
+        0% { opacity: 1; }
+        35% { opacity: 0.45; }
+        100% { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .fn-ticker__track { animation: none; }
+        .fn-ticker__bid.is-flash,
+        .fn-ticker__pct.is-flash { animation: none; }
+    }
+</style>
+<div class="fn-ticker" aria-label="{{ t('ticker_aria') }}">
+    <div class="fn-ticker__viewport">
+        <div
+            class="fn-ticker__track"
+            id="market-ticker"
+            data-ticker-animated="true"
+            data-locale="{{ number_locale }}"
+            role="presentation"
+        ></div>
+    </div>
+</div>
+<script src="/static/js/market-ticker.js" defer></script>

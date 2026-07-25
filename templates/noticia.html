@@ -116,12 +116,6 @@
     </script>
     
     <style>
-        .ticker-wrapper { overflow: hidden; white-space: nowrap; background-color: #111827; color: #cbd5e1; font-size: 0.75rem; padding: 0.25rem 0; border-bottom: 1px solid #1e293b;}
-        .ticker-content { display: inline-block; animation: ticker 30s linear infinite; }
-        .ticker-content:hover { animation-play-state: paused; cursor: default; }
-        @keyframes ticker { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
-        .ticker-item { margin-right: 3rem; font-weight: 600; letter-spacing: 0.05em; }
-        .ticker-up { color: #4ade80; } .ticker-down { color: #f87171; }
         .faq-item > summary {
             list-style: none;
             cursor: pointer;
@@ -234,9 +228,7 @@
         </div>
     </div>
 
-    <div class="ticker-wrapper">
-        <div class="ticker-content" id="market-ticker"><span class="text-slate-500">{{ t('quotes_realtime') }}</span></div>
-    </div>
+    {% include "partials/_market_ticker.html" %}
 
     <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] transition-colors duration-200 pt-3 pb-3 sticky top-0 z-50">
         <div class="container mx-auto px-4 flex flex-wrap items-center gap-x-2 gap-y-2">
@@ -702,7 +694,6 @@
             });
         });
     </script>
-    <script src="/static/js/market-ticker.js" defer></script>
     {% include "partials/_swg_basic.html" %}
 </body>
 </html>

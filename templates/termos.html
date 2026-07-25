@@ -18,18 +18,9 @@
             document.documentElement.classList.add('dark');
         } else { document.documentElement.classList.remove('dark'); }
     </script>
-    <style>
-        .ticker-wrapper { overflow: hidden; white-space: nowrap; background-color: #111827; color: #cbd5e1; font-size: 0.75rem; padding: 0.25rem 0; border-bottom: 1px solid #1e293b;}
-        .ticker-content { display: inline-block; animation: ticker 30s linear infinite; }
-        @keyframes ticker { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
-        .ticker-item { margin-right: 3rem; font-weight: 600; letter-spacing: 0.05em; }
-        .ticker-up { color: #4ade80; } .ticker-down { color: #f87171; }
-    </style>
 </head>
 <body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 transition-colors duration-200 flex flex-col min-h-screen">
-    <div class="ticker-wrapper">
-        <div class="ticker-content" id="market-ticker" data-locale="{{ number_locale }}"><span class="text-slate-500">{{ t('loading_quotes') }}</span></div>
-    </div>
+    {% include "partials/_market_ticker.html" %}
     <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] transition-colors duration-200 pt-4 pb-4">
         <div class="container mx-auto px-4 flex flex-col lg:flex-row justify-between items-center gap-4">
             <a href="/?lang={{ lang }}" class="text-2xl font-black tracking-tighter">
@@ -72,7 +63,6 @@
             });
         });
     </script>
-    <script src="/static/js/market-ticker.js"></script>
     {% include "partials/_swg_basic.html" %}
 </body>
 </html>
