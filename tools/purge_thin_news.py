@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT))
 
 from dotenv import load_dotenv
 
-load_dotenv(ROOT / ".env")
+_ = load_dotenv(ROOT / ".env")
 
 from db import get_db, sync_news_fts  # noqa: E402
 from educational_guides import EDUCATIONAL_GUIDES, find_guide_noticia_id  # noqa: E402

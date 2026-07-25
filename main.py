@@ -51,7 +51,7 @@ from i18n import (
     resolve_lang,
 )
 
-load_dotenv()
+_ = load_dotenv()
 
 FEED_BATCH = 8
 FEATURED_COUNT = 4
@@ -651,14 +651,14 @@ def get_robots_txt():
     # Busca e paginação legada (?page=) não devem consumir crawl budget.
     content = (
         "User-agent: *\n"
-        "Allow: /\n"
-        "Disallow: /api/\n"
-        "Disallow: /ping\n"
-        "Disallow: /*?q=\n"
-        "Disallow: /*?*q=\n"
-        "Disallow: /*?page=\n"
-        "Disallow: /*?*page=\n"
-        f"Sitemap: {SITE_ORIGIN}/sitemap.xml\n"
+        + "Allow: /\n"
+        + "Disallow: /api/\n"
+        + "Disallow: /ping\n"
+        + "Disallow: /*?q=\n"
+        + "Disallow: /*?*q=\n"
+        + "Disallow: /*?page=\n"
+        + "Disallow: /*?*page=\n"
+        + f"Sitemap: {SITE_ORIGIN}/sitemap.xml\n"
     )
     return Response(content=content, media_type="text/plain")
 
@@ -714,7 +714,7 @@ def get_sitemap():
     for loc, changefreq, priority, lastmod in static_urls:
         xml_parts.append(
             f"  <url><loc>{loc}</loc><lastmod>{lastmod}</lastmod>"
-            f"<changefreq>{changefreq}</changefreq><priority>{priority}</priority></url>"
+            + f"<changefreq>{changefreq}</changefreq><priority>{priority}</priority></url>"
         )
 
     for row in noticias:
@@ -725,8 +725,8 @@ def get_sitemap():
         lastmod_date = (lastmod or today)[:10]
         xml_parts.append(
             f"  <url><loc>{absolute_url(SITE_ORIGIN, f'/noticia/{nid}')}</loc>"
-            f"<lastmod>{lastmod_date}</lastmod>"
-            f"<changefreq>weekly</changefreq><priority>0.6</priority></url>"
+            + f"<lastmod>{lastmod_date}</lastmod>"
+            + f"<changefreq>weekly</changefreq><priority>0.6</priority></url>"
         )
 
     xml_parts.append("</urlset>")
@@ -874,7 +874,9 @@ def gerar_analises_proprias(request: Request, token: str | None = None, count: i
     print(f"Gerando análises próprias (alvo={alvo}, meta_dia={meta})...")
     geradas = core.generate_own_analyses(count=alvo)
     salvas = _persist_generated_news(geradas)
-    backfill = core.backfill_missing_images(limit=1) if salvas else None
+    # Cobre o lote novo (não só 1) — capas falham no hot path com 429/cota.
+    cover_limit = min(40, max(salvas, 1)) if salvas else 0
+    backfill = core.backfill_missing_images(limit=cover_limit) if cover_limit else None
     _invalidate_home_cache()
     invalidate_sentiment_cache()
     return {
@@ -920,7 +922,7 @@ def rodar_robo(request: Request, token: str | None = None):
 
     if not noticias_geradas and not own_geradas:
         print("Nenhuma noticia nova — gerando capa para pendentes (prioridade id DESC)...")
-        backfill = core.backfill_missing_images(limit=1)
+        backfill = core.backfill_missing_images(limit=8)
         _invalidate_home_cache()
         return {
             "status": "Sem noticias novas — backfill de capas executado.",
@@ -935,8 +937,13 @@ def rodar_robo(request: Request, token: str | None = None):
             "backfill_capas": backfill,
         }
 
-    print("Backfill pos-robo: 1 capa pendente (prioridade noticias novas)...")
-    backfill = core.backfill_missing_images(limit=1)
+    novas = salvas + own_salvas
+    cover_limit = min(40, max(novas, 8))
+    print(
+        f"Backfill pos-robo: ate {cover_limit} capa(s) pendente(s) "
+        + f"(novas_salvas={novas}, prioridade noticias novas)..."
+    )
+    backfill = core.backfill_missing_images(limit=cover_limit)
     _invalidate_home_cache()
     invalidate_sentiment_cache()
     return {

@@ -10,7 +10,7 @@ import requests
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
-load_dotenv(ROOT / ".env")
+_ = load_dotenv(ROOT / ".env")
 
 SITE = (os.getenv("SITE_ORIGIN") or "https://financas-news.net.br").rstrip("/")
 TOKEN = (os.getenv("ROBO_TOKEN") or os.getenv("ROBOT_TOKEN") or "").strip()

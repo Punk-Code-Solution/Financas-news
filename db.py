@@ -45,9 +45,9 @@ class LocalDbClient:
         with self._lock:
             cursor = self._conn.cursor()
             if args:
-                cursor.execute(sql, args)
+                _ = cursor.execute(sql, args)
             else:
-                cursor.execute(sql)
+                _ = cursor.execute(sql)
             if sql.strip().upper().startswith("SELECT"):
                 return QueryResult(cursor.fetchall())
             self._conn.commit()
@@ -82,8 +82,8 @@ def _configure_ssl_certs() -> None:
         import certifi
 
         bundle = certifi.where()
-        os.environ.setdefault("SSL_CERT_FILE", bundle)
-        os.environ.setdefault("REQUESTS_CA_BUNDLE", bundle)
+        _ = os.environ.setdefault("SSL_CERT_FILE", bundle)
+        _ = os.environ.setdefault("REQUESTS_CA_BUNDLE", bundle)
     except ImportError:
         pass
 
@@ -164,7 +164,7 @@ def reset_db_client() -> None:
     try:
         close_hard = getattr(old, "close_hard", None)
         if callable(close_hard):
-            close_hard()
+            _ = close_hard()
         else:
             old.close()
     except Exception:
@@ -241,7 +241,7 @@ def _create_client() -> LocalDbClient | PooledClient:
     if not url or not token:
         raise ValueError(
             "Credenciais do Turso não encontradas. "
-            "Defina TURSO_DATABASE_URL e TURSO_AUTH_TOKEN, ou USE_LOCAL_DB=true para SQLite local."
+            + "Defina TURSO_DATABASE_URL e TURSO_AUTH_TOKEN, ou USE_LOCAL_DB=true para SQLite local."
         )
 
     return PooledClient(libsql_client.create_client_sync(url=url, auth_token=token))
@@ -272,7 +272,7 @@ def ensure_schema(client: DbClient) -> None:
         if _schema_ready:
             return
 
-        client.execute("""
+        _ = client.execute("""
             CREATE TABLE IF NOT EXISTS news (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 titulo TEXT,
@@ -295,18 +295,18 @@ def ensure_schema(client: DbClient) -> None:
             ("versao_analise", "INTEGER"),
         ]:
             try:
-                client.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
+                _ = client.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
             except Exception:
                 pass
 
-        client.execute("""
+        _ = client.execute("""
             UPDATE news
             SET created_at = published_at
             WHERE (created_at IS NULL OR created_at = '')
               AND published_at IS NOT NULL AND published_at != ''
-        """)
+        + """)
 
-        client.execute("""
+        _ = client.execute("""
             CREATE TABLE IF NOT EXISTS newsletter_subscribers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT UNIQUE NOT NULL,
@@ -321,7 +321,7 @@ def ensure_schema(client: DbClient) -> None:
             "CREATE INDEX IF NOT EXISTS idx_news_link ON news(link)",
         ):
             try:
-                client.execute(sql)
+                _ = client.execute(sql)
             except Exception:
                 pass
 
@@ -338,7 +338,7 @@ def _ensure_fts(client: DbClient) -> None:
     """
     global _fts_ready
     try:
-        client.execute(
+        _ = client.execute(
             """
             CREATE VIRTUAL TABLE IF NOT EXISTS news_fts USING fts5(
                 titulo,
@@ -353,7 +353,7 @@ def _ensure_fts(client: DbClient) -> None:
         # Remove triggers legados que quebram o client HTTP do Turso.
         for trigger in ("news_fts_ai", "news_fts_ad", "news_fts_au"):
             try:
-                client.execute(f"DROP TRIGGER IF EXISTS {trigger}")
+                _ = client.execute(f"DROP TRIGGER IF EXISTS {trigger}")
             except Exception:
                 pass
 
@@ -380,14 +380,14 @@ def _ensure_fts(client: DbClient) -> None:
                 END
                 """,
             ):
-                client.execute(sql)
+                _ = client.execute(sql)
 
         count = client.execute("SELECT COUNT(*) FROM news_fts")
         fts_rows = int(count.rows[0][0]) if count.rows else 0
         news_count = client.execute("SELECT COUNT(*) FROM news")
         news_rows = int(news_count.rows[0][0]) if news_count.rows else 0
         if news_rows and fts_rows < max(1, int(news_rows * 0.9)):
-            client.execute("INSERT INTO news_fts(news_fts) VALUES('rebuild')")
+            _ = client.execute("INSERT INTO news_fts(news_fts) VALUES('rebuild')")
         _fts_ready = True
     except Exception:
         _fts_ready = False
@@ -401,7 +401,7 @@ def sync_news_fts(client: DbClient | None = None) -> None:
         return
     db = client or get_db()
     try:
-        db.execute("INSERT INTO news_fts(news_fts) VALUES('rebuild')")
+        _ = db.execute("INSERT INTO news_fts(news_fts) VALUES('rebuild')")
     except Exception:
         pass
 

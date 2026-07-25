@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 
 from dotenv import load_dotenv
 
-load_dotenv(ROOT / ".env")
+_ = load_dotenv(ROOT / ".env")
 
 from db import get_db
 

@@ -228,6 +228,14 @@ def run() -> int:
         check("IMAGE_PROVIDER inclui pexels primeiro", providers[:1] == ["pexels"], str(providers))
         q_selic = core._stock_search_query("Copom mantém a Selic", "Juros", "")
         check("stock query Selic", "central bank" in q_selic or "interest" in q_selic, q_selic)
+        check(
+            "cover_url_ready: Pexels CDN remota é válida",
+            core._cover_url_ready("https://images.pexels.com/photos/123/test.jpeg"),
+        )
+        check(
+            "cover_url_ready: /media local inexistente NÃO é válida",
+            not core._cover_url_ready("/media/articles/arquivo-inexistente-xyz.png"),
+        )
         os.environ.pop("IMAGE_PROVIDER", None)
 
         # Evita cookie lang=en/ja afetar o restante da suíte (padrão PT).

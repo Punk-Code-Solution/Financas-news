@@ -13,7 +13,6 @@ from pathlib import Path
 import re
 import threading
 import time
-import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 from dotenv import load_dotenv
@@ -23,7 +22,7 @@ from urllib3.exceptions import InsecureRequestWarning
 
 from db import existing_news_links, get_db, get_editorial_context
 
-load_dotenv()
+_ = load_dotenv()
 
 # Cache em memória para não bloquear cada pageview com APIs externas.
 _MARKET_CACHE: dict[str, tuple[float, Any]] = {}
@@ -152,8 +151,8 @@ def _configure_ssl_certs() -> None:
         import certifi
 
         bundle = certifi.where()
-        os.environ.setdefault("SSL_CERT_FILE", bundle)
-        os.environ.setdefault("REQUESTS_CA_BUNDLE", bundle)
+        _ = os.environ.setdefault("SSL_CERT_FILE", bundle)
+        _ = os.environ.setdefault("REQUESTS_CA_BUNDLE", bundle)
     except ImportError:
         pass
 
@@ -517,7 +516,7 @@ def fetch_bcb_historical(days: int = 90) -> dict[str, Any]:
         label = BCB_HISTORICAL_LABELS[key]
         url = (
             f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{series_id}"
-            f"/dados/ultimos/{days}?formato=json"
+            + f"/dados/ultimos/{days}?formato=json"
         )
         dados = _http_get_json(url, timeout=_HTTP_TIMEOUT)
         if not isinstance(dados, list) or not dados:
@@ -664,19 +663,19 @@ def fetch_sparkline_data(blocking: bool = False) -> dict[str, list[float]]:
 def warmup_market_caches() -> None:
     """Pré-aquece caches de mercado no startup para o 1º pageview não esperar rede."""
     try:
-        fetch_market_snapshot(blocking=True)
+        _ = fetch_market_snapshot(blocking=True)
     except Exception:
         pass
     try:
-        fetch_bcb_snapshot(blocking=True)
+        _ = fetch_bcb_snapshot(blocking=True)
     except Exception:
         pass
     try:
-        fetch_market_historical()
+        _ = fetch_market_historical()
     except Exception:
         pass
     try:
-        fetch_sparkline_data(blocking=True)
+        _ = fetch_sparkline_data(blocking=True)
     except Exception:
         pass
 
@@ -742,7 +741,7 @@ def fetch_market_snapshot_as_of(as_of: datetime) -> dict[str, Any]:
     def _one(pair: str, label: str):
         url = (
             f"https://economia.awesomeapi.com.br/json/daily/{pair}/"
-            f"?start_date={start.strftime('%Y%m%d')}&end_date={day_key}"
+            + f"?start_date={start.strftime('%Y%m%d')}&end_date={day_key}"
         )
         dados = _http_get_json(url, timeout=_HTTP_TIMEOUT)
         if not isinstance(dados, list) or not dados:
@@ -798,8 +797,8 @@ def fetch_bcb_snapshot_as_of(as_of: datetime) -> dict[str, dict[str, Any]]:
     def _one(key: str, series_id: int):
         url = (
             f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{series_id}/dados"
-            f"?formato=json&dataInicial={start.strftime('%d/%m/%Y')}"
-            f"&dataFinal={as_of.strftime('%d/%m/%Y')}"
+            + f"?formato=json&dataInicial={start.strftime('%d/%m/%Y')}"
+            + f"&dataFinal={as_of.strftime('%d/%m/%Y')}"
         )
         dados = _http_get_json(url, timeout=_HTTP_TIMEOUT)
         if not isinstance(dados, list) or not dados:
@@ -850,7 +849,7 @@ def fetch_market_historical_as_of(
         for label, pair in AWESOME_HISTORICAL.items():
             url = (
                 f"https://economia.awesomeapi.com.br/json/daily/{pair}/"
-                f"?start_date={start.strftime('%Y%m%d')}&end_date={day_key}"
+                + f"?start_date={start.strftime('%Y%m%d')}&end_date={day_key}"
             )
             dados = _http_get_json(url, timeout=_HTTP_TIMEOUT)
             if not isinstance(dados, list) or not dados:
@@ -876,8 +875,8 @@ def fetch_market_historical_as_of(
             label = BCB_HISTORICAL_LABELS[key]
             url = (
                 f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{series_id}/dados"
-                f"?formato=json&dataInicial={start.strftime('%d/%m/%Y')}"
-                f"&dataFinal={as_of.strftime('%d/%m/%Y')}"
+                + f"?formato=json&dataInicial={start.strftime('%d/%m/%Y')}"
+                + f"&dataFinal={as_of.strftime('%d/%m/%Y')}"
             )
             dados = _http_get_json(url, timeout=_HTTP_TIMEOUT)
             if not isinstance(dados, list) or not dados:
@@ -1070,7 +1069,7 @@ def _format_delta_line(delta: dict[str, Any] | None, suffix: str = "") -> str:
     pct = delta.get("variacao_pct")
     past = delta.get("valor_passado")
     data = delta.get("data_passada") or ""
-    sign = "+" if (pct or 0) >= 0 else ""
+    sign = "+ " if (pct or 0) >= 0 else ""
     past_txt = f"{past:.4g}".replace(".", ",") if isinstance(past, float) else str(past)
     bits = [f"{sign}{pct}% vs ~{delta.get('dias')}d", f"de {past_txt}{suffix}"]
     if data:
@@ -1104,7 +1103,7 @@ def format_data_context(market, bcb, db_context, historico=None, tag_hint: str =
             d30 = _series_delta(series, 30)
             lines.append(
                 f"- {label}: {val.get('valor')} (ref. {val.get('data')}) | "
-                f"tendência 7d: {_format_delta_line(d7)} | 30d: {_format_delta_line(d30)}"
+                + f"tendência 7d: {_format_delta_line(d7)} | 30d: {_format_delta_line(d30)}"
             )
 
     # Cotações: dólar sempre + extras da tag
@@ -1126,7 +1125,7 @@ def format_data_context(market, bcb, db_context, historico=None, tag_hint: str =
         d30 = _series_delta(series, 30)
         lines.append(
             f"- {key}: {val.get('cotacao')} (var. 24h: {val.get('variacao_24h')}) | "
-            f"7d: {_format_delta_line(d7)} | 30d: {_format_delta_line(d30)}"
+            + f"7d: {_format_delta_line(d7)} | 30d: {_format_delta_line(d30)}"
         )
     # Demais cotações disponíveis (contexto extra, sem obrigar)
     for key, val in market.items():
@@ -1205,37 +1204,37 @@ _IMAGE_SCENE_CUES: list[tuple[tuple[str, ...], str]] = [
     (
         ("nova zelândia", "new zealand", "auckland", "wellington"),
         "New Zealand financial district / Auckland waterfront skyline at dusk, Pacific atmosphere, "
-        "modern glass offices of a licensed financial-services firm expanding into Oceania",
+        + "modern glass offices of a licensed financial-services firm expanding into Oceania",
     ),
     (
         ("bitmex",),
         "abandoned crypto derivatives trading floor, dark empty desks, offline monitors, "
-        "sense of an exchange shutting down — crisis, not celebration",
+        + "sense of an exchange shutting down — crisis, not celebration",
     ),
     (
         ("colapso", "falência", "fechamento", "fim da exchange", "shut down", "collapse"),
         "financial crisis mood: empty trading desks, red warning lights on dark screens, "
-        "deserted exchange office — no triumphant coin photos",
+        + "deserted exchange office — no triumphant coin photos",
     ),
     (
         ("compliance", "vigilância", "regulação", "regulament", "kyc", "aml"),
         "regulatory compliance desk: KYC documents, surveillance monitor wall, "
-        "institutional audit room with soft cool lighting — professional, not speculative",
+        + "institutional audit room with soft cool lighting — professional, not speculative",
     ),
     (
         ("binance",),
         "global crypto exchange operations hub with world-map screens and compliance analysts "
-        "at desks — institutional security vibe, not gold coins",
+        + "at desks — institutional security vibe, not gold coins",
     ),
     (
         ("bitget",),
         "fintech firm expanding abroad: passport and boarding-pass motifs beside "
-        "glowing trading terminals, international growth energy",
+        + "glowing trading terminals, international growth energy",
     ),
     (
         ("japão", "japonês", "japonesa", "tokyo", "tóquio", "repatria", "iene", "yen"),
         "Tokyo skyline and financial towers, abstract yen capital-flow visuals, "
-        "global risk and repatriation mood — macro, not crypto coins",
+        + "global risk and repatriation mood — macro, not crypto coins",
     ),
     (
         ("selic", "copom", "banco central"),
@@ -1264,7 +1263,7 @@ _IMAGE_SCENE_CUES: list[tuple[tuple[str, ...], str]] = [
     (
         ("bitcoin", "btc"),
         "Bitcoin as secondary motif only if essential — prefer network nodes or institutional custody vault "
-        "over piles of physical coins",
+        + "over piles of physical coins",
     ),
 ]
 
@@ -1274,7 +1273,7 @@ def _first_paragraph(text: str, max_chars: int = 320) -> str:
     if not raw:
         return ""
     para = re.split(r"\n\s*\n", raw, maxsplit=1)[0].strip()
-    para = re.sub(r"\s+", " ", para)
+    para = re.sub(r"\s+ ", " ", para)
     return para[:max_chars]
 
 
@@ -1291,27 +1290,27 @@ def _extract_image_scene_cues(title: str, resumo: str, tag: str) -> str:
     fallback = TAG_IMAGE_VISUALS.get(tag, "financial markets, economy, professional journalism")
     return (
         f"Invent a unique editorial scene that visually retells THIS headline "
-        f"(not a stock category wallpaper). Mood board: {fallback}."
+        + f"(not a stock category wallpaper). Mood board: {fallback}."
     )
 
 
 def _build_image_prompt(title: str, tag: str, resumo: str = "") -> str:
-    headline = re.sub(r"\s+", " ", (title or "").strip())[:180]
+    headline = re.sub(r"\s+ ", " ", (title or "").strip())[:180]
     context = _first_paragraph(resumo, 360)
     scene = _extract_image_scene_cues(headline, context, tag or "Economia")
     return (
         "Create ONE editorial cover image for a Brazilian financial news site (Finanças News). "
-        "Illustrate the SPECIFIC story below — the reader must recognize the topic without reading text.\n"
-        f"Headline: {headline}\n"
-        f"Category: {tag or 'Economia'}\n"
-        f"Story context: {context or '(use the headline only)'}\n"
-        f"Required scene: {scene}\n"
-        "Composition: cinematic 16:9, photojournalism or polished illustration, dramatic lighting, "
-        "rich but restrained colors, single clear focal subject.\n"
-        "Strict rules: no text, letters, numbers, logos, watermarks, brand marks, or readable UI; "
-        "no celebrity faces; no generic gold Bitcoin coin piles or repeated crypto wallpaper "
-        "unless the headline is literally about physical coins; avoid looking like a stock template "
-        "used for every crypto article."
+        + "Illustrate the SPECIFIC story below — the reader must recognize the topic without reading text.\n"
+        + f"Headline: {headline}\n"
+        + f"Category: {tag or 'Economia'}\n"
+        + f"Story context: {context or '(use the headline only)'}\n"
+        + f"Required scene: {scene}\n"
+        + "Composition: cinematic 16:9, photojournalism or polished illustration, dramatic lighting, "
+        + "rich but restrained colors, single clear focal subject.\n"
+        + "Strict rules: no text, letters, numbers, logos, watermarks, brand marks, or readable UI; "
+        + "no celebrity faces; no generic gold Bitcoin coin piles or repeated crypto wallpaper "
+        + "unless the headline is literally about physical coins; avoid looking like a stock template "
+        + "used for every crypto article."
     )
 
 
@@ -1325,7 +1324,7 @@ def _save_image_bytes(data: bytes, mime_type: str, slug: str) -> str | None:
     ext = "png" if "png" in (mime_type or "") else "jpg"
     filename = f"{slug}.{ext}"
     filepath = get_article_images_dir() / filename
-    filepath.write_bytes(data)
+    _ = filepath.write_bytes(data)
     return f"/media/articles/{filename}"
 
 
@@ -1340,27 +1339,27 @@ def _pexels_use_remote_url() -> bool:
 
 
 # Flag setada em HTTP 429 para o backfill/script pausar (tier free ~200 req/h).
-_PEXELS_RATE_LIMITED = False
+_pexels_rate_limited_flag = False
 
 # IDs de foto Pexels ja usados em capas (DB + sessao) — evita repetir a mesma imagem.
 _USED_PEXELS_LOCK = threading.Lock()
-_USED_PEXELS_IDS: set[str] | None = None
+_used_pexels_ids: set[str] | None = None
 
 
 def pexels_rate_limited() -> bool:
-    return bool(_PEXELS_RATE_LIMITED)
+    return bool(_pexels_rate_limited_flag)
 
 
 def clear_pexels_rate_limit() -> None:
-    global _PEXELS_RATE_LIMITED
-    _PEXELS_RATE_LIMITED = False
+    global _pexels_rate_limited_flag
+    _pexels_rate_limited_flag = False
 
 
 def clear_used_pexels_cache() -> None:
     """Forca recarregar IDs usados a partir do banco na proxima geracao."""
-    global _USED_PEXELS_IDS
+    global _used_pexels_ids
     with _USED_PEXELS_LOCK:
-        _USED_PEXELS_IDS = None
+        _used_pexels_ids = None
 
 
 def _pexels_photo_id_from_url(url: str | None) -> str | None:
@@ -1372,10 +1371,10 @@ def _pexels_photo_id_from_url(url: str | None) -> str | None:
 
 def _ensure_used_pexels_ids() -> set[str]:
     """Carrega do Turso os IDs Pexels ja ligados a noticias (cache em memoria)."""
-    global _USED_PEXELS_IDS
+    global _used_pexels_ids
     with _USED_PEXELS_LOCK:
-        if _USED_PEXELS_IDS is not None:
-            return _USED_PEXELS_IDS
+        if _used_pexels_ids is not None:
+            return _used_pexels_ids
         ids: set[str] = set()
         try:
             client_db = get_db()
@@ -1383,7 +1382,7 @@ def _ensure_used_pexels_ids() -> set[str]:
                 """
                 SELECT imagem_url FROM news
                 WHERE imagem_url LIKE '%pexels.com/photos/%'
-                """
+                + """
             ).rows
             for row in rows:
                 pid = _pexels_photo_id_from_url(row[0] if row else None)
@@ -1392,9 +1391,9 @@ def _ensure_used_pexels_ids() -> set[str]:
             client_db.close()
         except Exception as exc:
             print(f"   [img/pexels] Nao foi possivel listar IDs usados: {exc}")
-        _USED_PEXELS_IDS = ids
+        _used_pexels_ids = ids
         print(f"   [img/pexels] Capas Pexels ja usadas: {len(ids)} foto(s)")
-        return _USED_PEXELS_IDS
+        return _used_pexels_ids
 
 
 def _mark_pexels_id_used(photo_id: str | None) -> None:
@@ -1439,9 +1438,9 @@ def _pexels_search(
         "page": max(1, min(int(page), 80)),
     }
     # Uma busca por vez — workers paralelos reusam o pool sem martelar a API.
-    global _PEXELS_RATE_LIMITED
+    global _pexels_rate_limited_flag
     with _PEXELS_SEARCH_LOCK:
-        if _PEXELS_RATE_LIMITED:
+        if _pexels_rate_limited_flag:
             return []
         try:
             resp = requests.get(
@@ -1472,7 +1471,7 @@ def _pexels_search(
             print("   [img/pexels] Token invalido (401).")
             return []
         if resp.status_code == 429:
-            _PEXELS_RATE_LIMITED = True
+            _pexels_rate_limited_flag = True
             print("   [img/pexels] Rate limit (429) — pulando.")
             return []
         if resp.status_code != 200:
@@ -1999,13 +1998,13 @@ def _generate_article_image_cursor(prompt: str, slug: str) -> str | None:
 
     agent_prompt = (
         "Gere exatamente UMA imagem editorial usando a ferramenta de geracao de imagens do Cursor.\n\n"
-        f"Descricao: {prompt}\n\n"
-        "Requisitos obrigatorios:\n"
-        "- Proporcao 16:9\n"
-        "- Sem texto, letras, logos ou marcas d'agua\n"
-        f"- Salve o arquivo exatamente em: {output_png.resolve()}\n"
-        "- Se nao conseguir PNG, salve em JPG no mesmo diretorio com o mesmo nome base\n\n"
-        "Ao concluir, responda apenas: SAVED"
+        + f"Descricao: {prompt}\n\n"
+        + "Requisitos obrigatorios:\n"
+        + "- Proporcao 16:9\n"
+        + "- Sem texto, letras, logos ou marcas d'agua\n"
+        + f"- Salve o arquivo exatamente em: {output_png.resolve()}\n"
+        + "- Se nao conseguir PNG, salve em JPG no mesmo diretorio com o mesmo nome base\n\n"
+        + "Ao concluir, responda apenas: SAVED"
     )
 
     print(f"   [img/cursor] Gerando imagem via Cursor ({model})...")
@@ -2041,7 +2040,7 @@ def _generate_article_image_cursor(prompt: str, slug: str) -> str | None:
         if path.stem != slug:
             target = images_dir / f"{slug}{path.suffix.lower()}"
             if not target.exists():
-                path.replace(target)
+                path = path.replace(target)
                 path = target
         return f"/media/articles/{path.name}"
 
@@ -2071,7 +2070,7 @@ def _generate_article_image_gemini(prompt: str, slug: str) -> str | None:
         if not modelos:
             print(
                 f"   [img/gemini] Chave {key_index}/{len(keys)} sem modelos "
-                f"(cota: {sorted(exhausted)} | indisponiveis: {sorted(_unavailable_image_models)})."
+                + f"(cota: {sorted(exhausted)} | indisponiveis: {sorted(_unavailable_image_models)})."
             )
             continue
 
@@ -2119,7 +2118,7 @@ def _generate_article_image_gemini(prompt: str, slug: str) -> str | None:
                     exhausted.add(model)
                     print(
                         f"   [img/gemini] Sem cota/acesso em {model} (chave {key_index}) "
-                        "— proximo modelo/chave."
+                        + "— proximo modelo/chave."
                     )
                 print(f"   [img/gemini] Falha ({model}, chave {key_index}): {e}")
                 continue
@@ -2148,8 +2147,8 @@ def _generate_article_image_openai(prompt: str, slug: str) -> str | None:
     if not modelos:
         print(
             f"   [img/openai] Sem modelos "
-            f"(cota: {sorted(_exhausted_openai_image_models)} | "
-            f"indisponiveis: {sorted(_unavailable_openai_image_models)})."
+            + f"(cota: {sorted(_exhausted_openai_image_models)} | "
+            + f"indisponiveis: {sorted(_unavailable_openai_image_models)})."
         )
         return None
 
@@ -2173,7 +2172,7 @@ def _generate_article_image_openai(prompt: str, slug: str) -> str | None:
                     _exhausted_openai_image_models.add(m)
                 print(
                     "   [img/openai] Billing hard limit atingido — "
-                    "interrompendo fila OpenAI (libere o limite no painel OpenAI)."
+                    + "interrompendo fila OpenAI (libere o limite no painel OpenAI)."
                 )
                 print(f"   [img/openai] Falha ({model}): {e}")
                 return None
@@ -2241,7 +2240,7 @@ def _generate_article_image_huggingface(prompt: str, slug: str) -> str | None:
     except ImportError:
         print(
             "   [img/hf] Pacote huggingface_hub nao instalado. "
-            "Rode: pip install -r requirements.txt"
+            + "Rode: pip install -r requirements.txt"
         )
         return None
 
@@ -2254,8 +2253,8 @@ def _generate_article_image_huggingface(prompt: str, slug: str) -> str | None:
     if not modelos:
         print(
             f"   [img/hf] Sem modelos "
-            f"(cota: {sorted(_exhausted_hf_image_models)} | "
-            f"indisponiveis: {sorted(_unavailable_hf_image_models)})."
+            + f"(cota: {sorted(_exhausted_hf_image_models)} | "
+            + f"indisponiveis: {sorted(_unavailable_hf_image_models)})."
         )
         return None
 
@@ -2382,7 +2381,7 @@ def _media_filename_from_url(imagem_url: str | None) -> str | None:
     name = str(imagem_url).strip().rstrip("/").rsplit("/", 1)[-1]
     if not name or name in (".", "..") or "/" in name or "\\" in name:
         return None
-    if not re.fullmatch(r"[A-Za-z0-9._-]+", name):
+    if not re.fullmatch(r"[A-Za-z0-9._-]+ ", name):
         return None
     return name
 
@@ -2450,12 +2449,14 @@ def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[
                 break
             article_id = int(row[0])
             imagem_url = row[5] if len(row) > 5 else None
-            if not _media_file_exists(imagem_url):
+            # Só repara caminhos locais quebrados. URL http(s) (Pexels CDN etc.)
+            # é capa válida — _media_file_exists falharia e apagaria capas remotas.
+            if not _cover_url_ready(imagem_url):
                 print(
                     f"   [img] URL quebrada #{article_id}: {imagem_url} "
-                    f"(arquivo ausente em {get_article_images_dir()}) — regenerando."
+                    + f"(arquivo ausente em {get_article_images_dir()}) — regenerando."
                 )
-                client_db.execute(
+                _ = client_db.execute(
                     "UPDATE news SET imagem_url = NULL WHERE id = ?",
                     [article_id],
                 )
@@ -2480,7 +2481,7 @@ def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[
 
     print(
         f"   [img] Backfill: ate {len(rows)} capa(s), prioridade noticias novas "
-        f"(id DESC); reparos={len(repaired_ids)}."
+        + f"(id DESC); reparos={len(repaired_ids)}."
     )
 
     def _process_row(row: Any) -> tuple[int, str, str | None, str]:
@@ -2516,14 +2517,14 @@ def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[
             verify = _ssl_verify_enabled()
             if not verify:
                 urllib3.disable_warnings(InsecureRequestWarning)
-            _ensure_used_pexels_ids()
+            _ = _ensure_used_pexels_ids()
             warmed: set[str] = set()
             for row in rows:
                 q = _stock_search_query(row[1] or "", row[2] or "", row[4] or "")
                 if q in warmed:
                     continue
                 warmed.add(q)
-                _pexels_refill_pool(api_key, q, verify, 1)
+                _ = _pexels_refill_pool(api_key, q, verify, 1)
 
     results: list[tuple[int, str, str | None, str]] = []
     if workers == 1:
@@ -2546,7 +2547,7 @@ def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[
             failed.append({"id": article_id, "titulo": "rate_limit_429"})
             continue
         if imagem_url and _cover_url_ready(imagem_url):
-            client_db.execute(
+            _ = client_db.execute(
                 "UPDATE news SET imagem_url = ? WHERE id = ?",
                 [imagem_url, article_id],
             )
@@ -2617,7 +2618,7 @@ def generate_content_with_fallback(prompt: str) -> str | None:
                     if _is_daily_quota_error(e):
                         print(
                             f"   ⚠️ Cota diária esgotada em {model} "
-                            f"(chave {key_index}) — próximo modelo/chave."
+                            + f"(chave {key_index}) — próximo modelo/chave."
                         )
                         exhausted.add(model)
                         break
@@ -2842,8 +2843,8 @@ def refresh_article_market_data(article_id: int, add_update_note: bool = True) -
             periodo = (as_of.strftime("%d/%m/%Y") if as_of else "a publicação")
             atualizacao = (
                 f"Atualização em {agora}: desde {periodo}, "
-                f"as cotações mudaram — {'; '.join(changes[:4])}. "
-                f"Os gráficos e o painel principal continuam no período da análise."
+                + f"as cotações mudaram — {'; '.join(changes[:4])}. "
+                + f"Os gráficos e o painel principal continuam no período da análise."
             )
 
     if atualizacao:
@@ -2855,7 +2856,7 @@ def refresh_article_market_data(article_id: int, add_update_note: bool = True) -
     if base.get("historico_publicacao"):
         base["historico"] = base["historico_publicacao"]
 
-    client.execute(
+    _ = client.execute(
         """
         UPDATE news
         SET dados_mercado = ?, updated_at = ?, versao_analise = ?
@@ -2931,7 +2932,7 @@ def _slugify_tag(tag: str) -> str:
         }
     )
     slug = raw.translate(table)
-    slug = re.sub(r"[^a-z0-9-]+", "", slug)
+    slug = re.sub(r"[^a-z0-9-]+ ", "", slug)
     return slug.strip("-") or "economia"
 
 
@@ -3113,7 +3114,7 @@ def generate_own_analyses(count: int | None = None) -> list[dict[str, Any]]:
 
     print(
         f"\n--- Análises próprias: faltam {missing} hoje "
-        f"(já={already}, meta={target_day}) ---"
+        + f"(já={already}, meta={target_day}) ---"
     )
 
     source_rows = _fetch_recent_source_news(limit=max(24, missing * 10))
