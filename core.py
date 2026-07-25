@@ -1330,6 +1330,10 @@ def _pexels_use_remote_url() -> bool:
 # Flag setada em HTTP 429 para o backfill/script pausar (tier free ~200 req/h).
 _PEXELS_RATE_LIMITED = False
 
+# IDs de foto Pexels ja usados em capas (DB + sessao) — evita repetir a mesma imagem.
+_USED_PEXELS_LOCK = threading.Lock()
+_USED_PEXELS_IDS: set[str] | None = None
+
 
 def pexels_rate_limited() -> bool:
     return bool(_PEXELS_RATE_LIMITED)
@@ -1338,6 +1342,111 @@ def pexels_rate_limited() -> bool:
 def clear_pexels_rate_limit() -> None:
     global _PEXELS_RATE_LIMITED
     _PEXELS_RATE_LIMITED = False
+
+
+def clear_used_pexels_cache() -> None:
+    """Forca recarregar IDs usados a partir do banco na proxima geracao."""
+    global _USED_PEXELS_IDS
+    with _USED_PEXELS_LOCK:
+        _USED_PEXELS_IDS = None
+
+
+def _pexels_photo_id_from_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    match = re.search(r"/photos/(\d+)/", str(url))
+    return match.group(1) if match else None
+
+
+def _ensure_used_pexels_ids() -> set[str]:
+    """Carrega do Turso os IDs Pexels ja ligados a noticias (cache em memoria)."""
+    global _USED_PEXELS_IDS
+    with _USED_PEXELS_LOCK:
+        if _USED_PEXELS_IDS is not None:
+            return _USED_PEXELS_IDS
+        ids: set[str] = set()
+        try:
+            client_db = get_db()
+            rows = client_db.execute(
+                """
+                SELECT imagem_url FROM news
+                WHERE imagem_url LIKE '%pexels.com/photos/%'
+                """
+            ).rows
+            for row in rows:
+                pid = _pexels_photo_id_from_url(row[0] if row else None)
+                if pid:
+                    ids.add(pid)
+            client_db.close()
+        except Exception as exc:
+            print(f"   [img/pexels] Nao foi possivel listar IDs usados: {exc}")
+        _USED_PEXELS_IDS = ids
+        print(f"   [img/pexels] Capas Pexels ja usadas: {len(ids)} foto(s)")
+        return _USED_PEXELS_IDS
+
+
+def _mark_pexels_id_used(photo_id: str | None) -> None:
+    if not photo_id:
+        return
+    ids = _ensure_used_pexels_ids()
+    with _USED_PEXELS_LOCK:
+        ids.add(str(photo_id))
+
+
+def _pexels_search(
+    api_key: str,
+    query: str,
+    page: int,
+    verify: bool,
+) -> list[dict[str, Any]]:
+    params = {
+        "query": query,
+        "per_page": 30,
+        "orientation": "landscape",
+        "size": "large",
+        "page": max(1, min(int(page), 80)),
+    }
+    try:
+        resp = requests.get(
+            "https://api.pexels.com/v1/search",
+            headers={"Authorization": api_key},
+            params=params,
+            timeout=25,
+            verify=verify,
+        )
+    except requests.exceptions.SSLError:
+        urllib3.disable_warnings(InsecureRequestWarning)
+        try:
+            resp = requests.get(
+                "https://api.pexels.com/v1/search",
+                headers={"Authorization": api_key},
+                params=params,
+                timeout=25,
+                verify=False,
+            )
+        except Exception as exc:
+            print(f"   [img/pexels] Erro de rede na busca: {exc}")
+            return []
+    except Exception as exc:
+        print(f"   [img/pexels] Erro de rede na busca: {exc}")
+        return []
+
+    if resp.status_code == 401:
+        print("   [img/pexels] Token invalido (401).")
+        return []
+    if resp.status_code == 429:
+        global _PEXELS_RATE_LIMITED
+        _PEXELS_RATE_LIMITED = True
+        print("   [img/pexels] Rate limit (429) — pulando.")
+        return []
+    if resp.status_code != 200:
+        print(f"   [img/pexels] HTTP {resp.status_code} na busca.")
+        return []
+    try:
+        return list((resp.json() or {}).get("photos") or [])
+    except Exception:
+        print("   [img/pexels] JSON invalido.")
+        return []
 
 
 # Termos PT → consulta em inglês (Pexels indexa melhor em EN).
@@ -1440,127 +1549,108 @@ def _fit_cover_jpeg(raw: bytes, max_side: int = 1280) -> bytes | None:
 
 
 def _generate_article_image_pexels(title: str, tag: str, resumo: str, slug: str) -> str | None:
-    """Busca foto editorial no Pexels (grátis) e salva localmente."""
+    """Busca foto editorial no Pexels (grátis); evita IDs ja usados em outras capas."""
     api_key = get_pexels_api_key()
     if not api_key:
         print("   [img/pexels] PEXELS_API_KEY nao configurada.")
         return None
 
-    query = _stock_search_query(title, tag, resumo)
-    print(f"   [img/pexels] Buscando foto: {query!r}")
+    base_query = _stock_search_query(title, tag, resumo)
+    # Variantes leves quando a query principal esgota fotos novas.
+    query_variants = [
+        base_query,
+        f"{base_query} brazil",
+        f"{base_query} city",
+        f"{base_query} office",
+        f"{base_query} people",
+    ]
+    print(f"   [img/pexels] Buscando foto: {base_query!r}")
     _configure_ssl_certs()
     verify = _ssl_verify_enabled()
     if not verify:
         urllib3.disable_warnings(InsecureRequestWarning)
 
-    try:
-        resp = requests.get(
-            "https://api.pexels.com/v1/search",
-            headers={"Authorization": api_key},
-            params={
-                "query": query,
-                "per_page": 15,
-                "orientation": "landscape",
-                "size": "large",
-                "page": (int(hashlib.sha256(slug.encode()).hexdigest(), 16) % 5) + 1,
-            },
-            timeout=25,
-            verify=verify,
-        )
-    except requests.exceptions.SSLError as exc:
-        # Mesmo fallback do restante do app (Windows/MITM).
-        urllib3.disable_warnings(InsecureRequestWarning)
-        try:
-            resp = requests.get(
-                "https://api.pexels.com/v1/search",
-                headers={"Authorization": api_key},
-                params={
-                    "query": query,
-                    "per_page": 15,
-                    "orientation": "landscape",
-                    "size": "large",
-                    "page": (int(hashlib.sha256(slug.encode()).hexdigest(), 16) % 5) + 1,
-                },
-                timeout=25,
-                verify=False,
-            )
-        except Exception as exc2:
-            print(f"   [img/pexels] Erro de rede na busca: {exc2}")
+    used = _ensure_used_pexels_ids()
+    slug_hash = int(hashlib.sha256(slug.encode()).hexdigest(), 16)
+    start_page = (slug_hash % 12) + 1
+
+    for q_idx, query in enumerate(query_variants):
+        if pexels_rate_limited():
             return None
-    except Exception as exc:
-        print(f"   [img/pexels] Erro de rede na busca: {exc}")
-        return None
-
-    if resp.status_code == 401:
-        print("   [img/pexels] Token invalido (401).")
-        return None
-    if resp.status_code == 429:
-        global _PEXELS_RATE_LIMITED
-        _PEXELS_RATE_LIMITED = True
-        print("   [img/pexels] Rate limit (429) — pulando.")
-        return None
-    if resp.status_code != 200:
-        print(f"   [img/pexels] HTTP {resp.status_code} na busca.")
-        return None
-
-    try:
-        photos = (resp.json() or {}).get("photos") or []
-    except Exception:
-        print("   [img/pexels] JSON invalido.")
-        return None
-    if not photos:
-        print("   [img/pexels] Nenhum resultado para a query.")
-        return None
-
-    photos_sorted = sorted(
-        photos,
-        key=lambda p: abs(
-            (float(p.get("width") or 16) / max(1.0, float(p.get("height") or 9))) - (16 / 9)
-        ),
-    )
-    # Variar escolha por slug (evita a mesma foto stock em dezenas de artigos).
-    if len(photos_sorted) > 1:
-        start = int(hashlib.sha256(slug.encode()).hexdigest(), 16) % len(photos_sorted)
-        photos_sorted = photos_sorted[start:] + photos_sorted[:start]
-
-    for photo in photos_sorted[:3]:
-        src = photo.get("src") or {}
-        url = src.get("large2x") or src.get("large") or src.get("original") or src.get("medium")
-        if not url:
-            continue
-
-        # Modo remoto: 1 req API/capa e a URL funciona em producao sem upload de arquivo.
-        if _pexels_use_remote_url():
-            photographer = (photo.get("photographer") or "").strip()
-            safe_name = photographer.encode("ascii", "replace").decode("ascii") or "stock"
-            print(f"   [img/pexels] Capa remota OK ({safe_name}): {url[:90]}...")
-            return url
-
-        try:
-            img_resp = requests.get(url, timeout=40, verify=verify)
-        except requests.exceptions.SSLError:
-            urllib3.disable_warnings(InsecureRequestWarning)
-            try:
-                img_resp = requests.get(url, timeout=40, verify=False)
-            except Exception as exc:
-                print(f"   [img/pexels] Download falhou: {exc}")
+        for page_offset in range(6):
+            if pexels_rate_limited():
+                return None
+            page = ((start_page - 1 + page_offset + q_idx * 3) % 40) + 1
+            photos = _pexels_search(api_key, query, page, verify)
+            if not photos:
+                if pexels_rate_limited():
+                    return None
                 continue
-        except Exception as exc:
-            print(f"   [img/pexels] Download falhou: {exc}")
-            continue
-        if img_resp.status_code != 200 or not img_resp.content:
-            continue
-        jpeg = _fit_cover_jpeg(img_resp.content)
-        if not jpeg:
-            continue
-        saved = _save_image_bytes(jpeg, "image/jpeg", slug)
-        if saved:
-            photographer = (photo.get("photographer") or "").strip()
-            safe_name = photographer.encode("ascii", "replace").decode("ascii") or "stock"
-            print(f"   [img/pexels] Capa OK ({safe_name}): {saved}")
-            return saved
 
-    print("   [img/pexels] Nenhuma foto utilizavel.")
+            photos_sorted = sorted(
+                photos,
+                key=lambda p: abs(
+                    (float(p.get("width") or 16) / max(1.0, float(p.get("height") or 9)))
+                    - (16 / 9)
+                ),
+            )
+            if len(photos_sorted) > 1:
+                start = slug_hash % len(photos_sorted)
+                photos_sorted = photos_sorted[start:] + photos_sorted[:start]
+
+            for photo in photos_sorted:
+                pid = str(photo.get("id") or "").strip()
+                src = photo.get("src") or {}
+                url = (
+                    src.get("large2x")
+                    or src.get("large")
+                    or src.get("original")
+                    or src.get("medium")
+                )
+                if not url:
+                    continue
+                url_id = pid or _pexels_photo_id_from_url(url)
+                if url_id and url_id in used:
+                    continue
+
+                photographer = (photo.get("photographer") or "").strip()
+                safe_name = photographer.encode("ascii", "replace").decode("ascii") or "stock"
+
+                if _pexels_use_remote_url():
+                    _mark_pexels_id_used(url_id)
+                    print(
+                        f"   [img/pexels] Capa remota OK ({safe_name}, id={url_id}): "
+                        f"{url[:80]}..."
+                    )
+                    return url
+
+                try:
+                    img_resp = requests.get(url, timeout=40, verify=verify)
+                except requests.exceptions.SSLError:
+                    urllib3.disable_warnings(InsecureRequestWarning)
+                    try:
+                        img_resp = requests.get(url, timeout=40, verify=False)
+                    except Exception as exc:
+                        print(f"   [img/pexels] Download falhou: {exc}")
+                        continue
+                except Exception as exc:
+                    print(f"   [img/pexels] Download falhou: {exc}")
+                    continue
+                if img_resp.status_code != 200 or not img_resp.content:
+                    continue
+                jpeg = _fit_cover_jpeg(img_resp.content)
+                if not jpeg:
+                    continue
+                saved = _save_image_bytes(jpeg, "image/jpeg", slug)
+                if saved:
+                    _mark_pexels_id_used(url_id)
+                    print(f"   [img/pexels] Capa OK ({safe_name}, id={url_id}): {saved}")
+                    return saved
+
+            if q_idx == 0 and page_offset == 0:
+                print("   [img/pexels] Fotos desta pagina ja usadas — buscando outras...")
+
+    print("   [img/pexels] Nenhuma foto nova utilizavel.")
     return None
 
 

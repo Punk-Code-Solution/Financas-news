@@ -41,6 +41,7 @@ def main() -> int:
 
     print("\n=== SMOKE ===", flush=True)
     core.clear_pexels_rate_limit()
+    core.clear_used_pexels_cache()
     smoke = core.backfill_missing_images(limit=2)
     print(smoke, flush=True)
     if not smoke.get("updated"):

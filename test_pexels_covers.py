@@ -74,6 +74,64 @@ def test_get_image_providers_includes_pexels(monkeypatch=None):
         os.environ.pop("IMAGE_PROVIDER", None)
 
 
+def test_pexels_photo_id_from_url():
+    assert (
+        core._pexels_photo_id_from_url(
+            "https://images.pexels.com/photos/33607526/pexels-photo-33607526.jpeg?auto=compress"
+        )
+        == "33607526"
+    )
+
+
+def test_pexels_skips_already_used_photo_id():
+    images_dir = Path("static/images/articles")
+    images_dir.mkdir(parents=True, exist_ok=True)
+    slug = "testpexelsunique01"
+    for old in images_dir.glob(f"{slug}.*"):
+        old.unlink()
+
+    search_payload = {
+        "photos": [
+            {
+                "id": 111,
+                "width": 1600,
+                "height": 900,
+                "photographer": "A",
+                "src": {"large": "https://images.pexels.com/photos/111/a.jpg"},
+            },
+            {
+                "id": 222,
+                "width": 1600,
+                "height": 900,
+                "photographer": "B",
+                "src": {"large": "https://images.pexels.com/photos/222/b.jpg"},
+            },
+        ]
+    }
+    search_resp = MagicMock(status_code=200)
+    search_resp.json.return_value = search_payload
+
+    with patch.dict(
+        os.environ,
+        {
+            "PEXELS_API_KEY": "fake-key",
+            "PEXELS_USE_REMOTE_URL": "1",
+            "ARTICLE_IMAGES_DIR": str(images_dir),
+        },
+    ):
+        core.clear_used_pexels_cache()
+        with patch.object(core, "_ensure_used_pexels_ids", return_value={"111"}):
+            with patch("core.requests.get", return_value=search_resp):
+                url = core._generate_article_image_pexels(
+                    "Titulo teste",
+                    "Economia",
+                    "",
+                    slug,
+                )
+    assert url and "/photos/222/" in url
+    core.clear_used_pexels_cache()
+
+
 def test_pexels_generate_saves_file(tmp_path: Path | None = None):
     images_dir = Path("static/images/articles")
     images_dir.mkdir(parents=True, exist_ok=True)
@@ -85,6 +143,7 @@ def test_pexels_generate_saves_file(tmp_path: Path | None = None):
     search_payload = {
         "photos": [
             {
+                "id": 999001,
                 "width": 1600,
                 "height": 900,
                 "photographer": "Tester",
@@ -97,18 +156,28 @@ def test_pexels_generate_saves_file(tmp_path: Path | None = None):
     search_resp.json.return_value = search_payload
     dl_resp = MagicMock(status_code=200, content=jpeg)
 
-    with patch.dict(os.environ, {"PEXELS_API_KEY": "fake-key", "ARTICLE_IMAGES_DIR": str(images_dir)}):
-        with patch("core.requests.get", side_effect=[search_resp, dl_resp]):
-            url = core._generate_article_image_pexels(
-                "Selic sobe e afeta crédito",
-                "Juros",
-                "O Copom elevou a taxa básica.",
-                slug,
-            )
+    with patch.dict(
+        os.environ,
+        {
+            "PEXELS_API_KEY": "fake-key",
+            "PEXELS_USE_REMOTE_URL": "0",
+            "ARTICLE_IMAGES_DIR": str(images_dir),
+        },
+    ):
+        core.clear_used_pexels_cache()
+        with patch.object(core, "_ensure_used_pexels_ids", return_value=set()):
+            with patch("core.requests.get", side_effect=[search_resp, dl_resp]):
+                url = core._generate_article_image_pexels(
+                    "Selic sobe e afeta crédito",
+                    "Juros",
+                    "O Copom elevou a taxa básica.",
+                    slug,
+                )
 
     assert url == f"/media/articles/{slug}.jpg"
     assert (images_dir / f"{slug}.jpg").is_file()
     (images_dir / f"{slug}.jpg").unlink(missing_ok=True)
+    core.clear_used_pexels_cache()
 
 
 def test_pexels_skipped_without_key():
@@ -127,6 +196,8 @@ if __name__ == "__main__":
     test_stock_search_query_pet_plans()
     test_fit_cover_jpeg_16x9()
     test_get_image_providers_includes_pexels()
+    test_pexels_photo_id_from_url()
+    test_pexels_skips_already_used_photo_id()
     test_pexels_generate_saves_file()
     test_pexels_skipped_without_key()
     print("PASS: test_pexels_covers")
