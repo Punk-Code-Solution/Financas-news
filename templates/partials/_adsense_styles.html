@@ -130,25 +130,32 @@
     }
 
     /*
-      Publicidade lateral: só no gutter fora do max-w-7xl (80rem).
-      Precisa de ~1700px+ de viewport para caber 160px de cada lado sem cobrir notícias.
+      Publicidade lateral: fica sempre no gutter, nunca sobre o miolo.
+      O miolo encolhe conforme a tela para abrir espaço a partir de notebooks.
+      --ad-skin-w = largura do criativo por faixa; 0 quando não há espaço.
     */
+    :root {
+        --ad-skin-w: 0px;
+        --ad-skin-gap: 14px;
+        --fn-content-w: 80rem;
+        --fn-gutter: calc((100vw - var(--fn-content-w)) / 2);
+    }
     .ad-skin {
         display: none;
         position: fixed;
         top: var(--ad-skin-top, 7.5rem);
         z-index: 1;
-        width: 160px;
+        width: var(--ad-skin-w);
         max-height: calc(100vh - var(--ad-skin-top, 7.5rem) - 1rem);
         overflow: hidden;
         pointer-events: none;
     }
-    /* Borda interna do ad encosta no gutter: (viewport - 80rem) / 2 - 160px - gap */
+    /* Centraliza o criativo dentro do gutter, com folga mínima na borda. */
     .ad-skin--left {
-        left: max(0.5rem, calc((100vw - 80rem) / 2 - 10rem - 0.75rem));
+        left: max(var(--ad-skin-gap), calc(var(--fn-gutter) / 2 - var(--ad-skin-w) / 2));
     }
     .ad-skin--right {
-        right: max(0.5rem, calc((100vw - 80rem) / 2 - 10rem - 0.75rem));
+        right: max(var(--ad-skin-gap), calc(var(--fn-gutter) / 2 - var(--ad-skin-w) / 2));
     }
     .ad-skin__label {
         display: block;
@@ -161,7 +168,7 @@
         text-align: center;
     }
     .ad-skin__box {
-        width: 160px;
+        width: var(--ad-skin-w);
         height: 600px;
         max-height: calc(100vh - var(--ad-skin-top, 7.5rem) - 2.5rem);
         overflow: hidden;
@@ -172,14 +179,29 @@
     }
     .ad-skin__box > ins.adsbygoogle {
         display: inline-block !important;
-        width: 160px !important;
+        width: var(--ad-skin-w) !important;
         height: 100% !important;
         max-height: 600px !important;
     }
 
-    /* Gutter mínimo ≈ 2×(160px + 12px) + 80rem → ~1700px */
-    @media (min-width: 1700px) {
+    /* Notebook (1280–1439): criativo estreito, miolo encolhe o necessário. */
+    @media (min-width: 1280px) {
+        :root {
+            --ad-skin-w: 120px;
+            --fn-content-w: min(
+                80rem,
+                calc(100vw - 2 * (var(--ad-skin-w) + 2 * var(--ad-skin-gap)))
+            );
+        }
         .ad-skin { display: block; }
+        main.max-w-7xl,
+        footer .max-w-7xl {
+            max-width: var(--fn-content-w);
+        }
+    }
+    /* Notebook grande / desktop: criativo padrão 160px. */
+    @media (min-width: 1600px) {
+        :root { --ad-skin-w: 160px; }
     }
 
     /* Reforço: miolo editorial acima dos skins se houver sobreposição residual */
