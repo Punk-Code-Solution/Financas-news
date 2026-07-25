@@ -13,7 +13,8 @@
     {% include "partials/_hreflang.html" %}
     {% include "partials/_styles.html" %}
     <script>
-        if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        // Padrão do site é claro; escuro só quando o leitor escolheu no toggle.
+        if (localStorage.getItem('color-theme') === 'dark') {
             document.documentElement.classList.add('dark');
         } else { document.documentElement.classList.remove('dark'); }
     </script>

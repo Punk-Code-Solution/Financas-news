@@ -18,6 +18,8 @@ services:
         value: "3"
       - key: ROBOT_MAX_ARTICLES
         value: "36"
+      - key: ROBOT_OWN_ANALYSES
+        value: "3"
       - key: GEMINI_MODELOS
         value: gemini-3.1-flash-lite-preview,gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-2.5-flash-lite,gemini-2.5-flash,gemini-3-flash,gemini-3.5-flash
       - key: GEMINI_IMAGE_MODELOS

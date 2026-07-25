@@ -49,10 +49,11 @@ O diferencial não é republicar RSS — é produzir conteúdo com **contexto ma
 ### Etapas de cada execução do robô
 
 1. **Coleta de dados de mercado** — USD, EUR, BTC (AwesomeAPI) + Selic, IPCA e dólar comercial (API BCB).
-2. **Leitura de ~30 feeds RSS** (BR + internacionais) — até 3 notícias/fonte, teto 36/rodada (`ROBOT_MAX_PER_FEED` / `ROBOT_MAX_ARTICLES`).
-3. **Dedupe por link** antes da IA (economiza cota).
-4. **Contexto editorial** — cruza com o acervo do portal.
-5. **Geração de texto** — Gemini nas chaves 1→2→3 (análise 500+ palavras / JSON).
+2. **Análises próprias (cota reservada)** — gera pelo menos `ROBOT_OWN_ANALYSES` (default 3) matérias autorais a partir do acervo do banco (`internal://analise/...`), antes do RSS, para não perder a cota Gemini.
+3. **Leitura de ~30 feeds RSS** (BR + internacionais) — até 3 notícias/fonte, teto 36/rodada (`ROBOT_MAX_PER_FEED` / `ROBOT_MAX_ARTICLES`), com teto reduzido pelo que ainda falta da meta própria.
+4. **Dedupe por link** antes da IA (economiza cota).
+5. **Contexto editorial** — cruza com o acervo do portal.
+6. **Geração de texto** — Gemini nas chaves 1→2→3 (análise 500+ palavras / JSON).
 6. **Geração de imagem** — Gemini na varredura; fallback OpenAI/DALL-E no backfill (1/min); lote ordena com capa primeiro.
 7. **Publicação** — grava no Turso e exibe no frontend.
 
@@ -282,6 +283,7 @@ Sinais on-page: `rel=canonical`, meta description, JSON-LD (`WebSite` na home, `
 | Rota | Função |
 |------|--------|
 | `GET /api/rodar-robo` | Dispara pipeline (auth: Bearer / X-Robo-Token / ?token=) |
+| `GET /api/gerar-analises-proprias` | Gera análises próprias a partir do acervo (mesma auth; meta diária `ROBOT_OWN_ANALYSES`) |
 | `GET /api/gerar-imagens` | Backfill de capas (mesma auth) |
 | `GET /api/atualizar-artigos` | Atualiza dados de mercado (mesma auth) |
 | `POST /api/newsletter` | Captura de e-mail |
@@ -297,9 +299,10 @@ Sinais on-page: `rel=canonical`, meta description, JSON-LD (`WebSite` na home, `
 GOOGLE_API_KEY=           # ou GEMINI_API_KEY (chave 1)
 GOOGLE_API_KEY_2=         # opcional: segunda chave (fallback de cota)
 GOOGLE_API_KEY_3=         # opcional: terceira chave (fallback de cota)
-ROBO_TOKEN=               # obrigatório: /api/rodar-robo, /api/gerar-imagens, /api/atualizar-artigos
+ROBO_TOKEN=               # obrigatório: /api/rodar-robo, /api/gerar-imagens, /api/atualizar-artigos, /api/gerar-analises-proprias
 ROBOT_MAX_PER_FEED=3
 ROBOT_MAX_ARTICLES=36
+ROBOT_OWN_ANALYSES=3      # mínimo diário de análises próprias a partir do acervo (0=desliga)
 # GOOGLE_API_KEYS=key1,key2,key3   # alternativa: lista de chaves
 TURSO_DATABASE_URL=       # URL libsql:// do Turso
 TURSO_AUTH_TOKEN=         # Token de autenticação Turso
@@ -369,7 +372,9 @@ https://financas-news.net.br/api/rodar-robo?token=SEU_ROBO_TOKEN
 ```
 
 Preferencial (menos vazamento em logs): header `Authorization: Bearer SEU_ROBO_TOKEN`.  
-Variáveis úteis: `ROBO_TOKEN`, `ROBOT_MAX_PER_FEED=3`, `ROBOT_MAX_ARTICLES=36`, `GOOGLE_API_KEY` / `_2` / `_3`.
+Variáveis úteis: `ROBO_TOKEN`, `ROBOT_MAX_PER_FEED=3`, `ROBOT_MAX_ARTICLES=36`, `ROBOT_OWN_ANALYSES=3`, `GOOGLE_API_KEY` / `_2` / `_3`.
+
+O robô prioriza a meta diária de **análises próprias** (síntese do acervo, sem RSS). Se ainda faltar, tenta de novo após os feeds. Endpoint dedicado: `/api/gerar-analises-proprias`.
 
 Se não houver notícias novas, o robô gera **1 capa** para o artigo pendente mais recente (senão, antigos sem capa).
 

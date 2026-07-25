@@ -779,9 +779,66 @@ def require_robo_auth(request: Request, token: str | None = None) -> None:
         raise HTTPException(status_code=401, detail="Nao autorizado")
 
 
+def _persist_generated_news(noticias_geradas: list[dict[str, Any]]) -> int:
+    """Insere no Turso o lote gerado pela IA. Retorna quantas linhas novas."""
+    if not noticias_geradas:
+        return 0
+
+    client = get_db()
+    salvas = 0
+    existing = existing_news_links([n.get("original_link", "") for n in noticias_geradas])
+
+    for n in noticias_geradas:
+        link = n.get("original_link") or ""
+        if not link or link in existing:
+            continue
+
+        agora = n.get("published_at")
+        dados_raw = n.get("dados_mercado")
+        if dados_raw:
+            try:
+                dados_obj = json.loads(dados_raw) if isinstance(dados_raw, str) else dados_raw
+                refs = dados_obj.get("referencias_internas") or []
+                if refs:
+                    dados_obj["referencias_internas"] = resolve_referencias_internas(client, refs)
+                    dados_raw = json.dumps(dados_obj, ensure_ascii=False)
+            except json.JSONDecodeError:
+                pass
+
+        client.execute(
+            """
+            INSERT INTO news (
+                titulo, resumo, impacto, link, tag, sentimento, published_at,
+                fonte, dados_mercado, contexto_editorial, created_at, imagem_url, versao_analise
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                n["titulo_viral"],
+                n["resumo_simples"],
+                n["impacto_bolso"],
+                link,
+                n["tag"],
+                n.get("sentimento", "Neutro"),
+                agora,
+                n.get("fonte"),
+                dados_raw if dados_raw else n.get("dados_mercado"),
+                n.get("contexto_editorial", ""),
+                agora,
+                n.get("imagem_url"),
+                n.get("versao_analise", 1),
+            ],
+        )
+        existing.add(link)
+        salvas += 1
+
+    return salvas
+
+
 @app.get("/ping")
 def ping():
     return {"status": "Render acordado!"}
+
 
 @app.get("/api/gerar-imagens")
 def gerar_imagens(request: Request, token: str | None = None, limit: int = 1):
@@ -803,15 +860,65 @@ def gerar_imagens(request: Request, token: str | None = None, limit: int = 1):
     }
 
 
+@app.get("/api/gerar-analises-proprias")
+def gerar_analises_proprias(request: Request, token: str | None = None, count: int | None = None):
+    """Gera análises editoriais próprias a partir do acervo (sem RSS).
+
+    Consome a cota diária de texto Gemini. Por padrão completa a meta
+    ``ROBOT_OWN_ANALYSES`` (mín. 3/dia) — só gera o que ainda falta hoje.
+    """
+    require_robo_auth(request, token)
+
+    meta = core.get_robot_own_analyses_count()
+    alvo = meta if count is None else max(0, min(int(count), 10))
+    print(f"Gerando análises próprias (alvo={alvo}, meta_dia={meta})...")
+    geradas = core.generate_own_analyses(count=alvo)
+    salvas = _persist_generated_news(geradas)
+    backfill = core.backfill_missing_images(limit=1) if salvas else None
+    _invalidate_home_cache()
+    invalidate_sentiment_cache()
+    return {
+        "status": "Sucesso",
+        "meta_diaria": meta,
+        "ja_publicadas_hoje": core.count_own_analyses_today(),
+        "processadas_pela_ia": len(geradas),
+        "novas_salvas_no_banco": salvas,
+        "backfill_capas": backfill,
+        "titulos": [g.get("titulo_viral") for g in geradas],
+    }
+
+
 @app.get("/api/rodar-robo")
 def rodar_robo(request: Request, token: str | None = None):
     require_robo_auth(request, token)
-        
-    print("🤖 Iniciando robô via API...")
-    noticias_geradas = core.fetch_and_process()
 
-    # Sem notícias novas: usa a rodada para gerar capa de artigos antigos sem imagem.
-    if not noticias_geradas:
+    print("🤖 Iniciando robô via API...")
+
+    # 1) Reserva da cota do dia: análises próprias a partir do acervo (meta ≥ 3).
+    # Roda ANTES do RSS para não perder a cota Gemini com feeds.
+    own_target = core.get_robot_own_analyses_count()
+    own_geradas: list[dict[str, Any]] = []
+    own_salvas = 0
+    if own_target > 0:
+        print(f"Análises próprias: prioridade na cota (meta diária={own_target})...")
+        own_geradas = core.generate_own_analyses()
+        own_salvas = _persist_generated_news(own_geradas)
+
+    # 2) RSS: teto da rodada reduzido pelo que ainda falta da meta própria,
+    # para não esgotar a cota antes de completar o mínimo diário.
+    reserved = max(0, own_target - core.count_own_analyses_today())
+    max_articles = max(1, core.get_robot_max_articles() - reserved)
+    noticias_geradas = core.fetch_and_process(max_articles=max_articles)
+    salvas = _persist_generated_news(noticias_geradas)
+
+    # Se a meta própria ainda não fechou (ex.: acervo curto na 1ª passagem), tenta de novo.
+    if own_target > 0 and core.count_own_analyses_today() < own_target:
+        print("Análises próprias: 2ª passagem após RSS...")
+        extra = core.generate_own_analyses()
+        own_geradas.extend(extra)
+        own_salvas += _persist_generated_news(extra)
+
+    if not noticias_geradas and not own_geradas:
         print("Nenhuma noticia nova — gerando capa para pendentes (prioridade id DESC)...")
         backfill = core.backfill_missing_images(limit=1)
         _invalidate_home_cache()
@@ -819,52 +926,15 @@ def rodar_robo(request: Request, token: str | None = None):
             "status": "Sem noticias novas — backfill de capas executado.",
             "processadas_pela_ia": 0,
             "novas_salvas_no_banco": 0,
+            "analises_proprias": {
+                "meta_diaria": own_target,
+                "processadas": 0,
+                "salvas": 0,
+                "hoje": core.count_own_analyses_today(),
+            },
             "backfill_capas": backfill,
         }
 
-    client = get_db()
-    salvas = 0
-    existing = existing_news_links([n.get("original_link", "") for n in noticias_geradas])
-
-    for n in noticias_geradas:
-        link = n.get("original_link") or ""
-        if link in existing:
-            continue
-
-        agora = n.get("published_at")
-        dados_raw = n.get("dados_mercado")
-        if dados_raw:
-            try:
-                dados_obj = json.loads(dados_raw) if isinstance(dados_raw, str) else dados_raw
-                refs = dados_obj.get("referencias_internas") or []
-                if refs:
-                    dados_obj["referencias_internas"] = resolve_referencias_internas(client, refs)
-                    dados_raw = json.dumps(dados_obj, ensure_ascii=False)
-            except json.JSONDecodeError:
-                pass
-
-        client.execute('''
-            INSERT INTO news (titulo, resumo, impacto, link, tag, sentimento, published_at, fonte, dados_mercado, contexto_editorial, created_at, imagem_url, versao_analise)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', [
-            n["titulo_viral"],
-            n["resumo_simples"],
-            n["impacto_bolso"],
-            link,
-            n["tag"],
-            n.get("sentimento", "Neutro"),
-            agora,
-            n.get("fonte"),
-            dados_raw if dados_raw else n.get("dados_mercado"),
-            n.get("contexto_editorial", ""),
-            agora,
-            n.get("imagem_url"),
-            n.get("versao_analise", 1),
-        ])
-        existing.add(link)
-        salvas += 1
-
-    # Após publicar novas: tenta 1 capa pendente (novas sem capa primeiro; senão antigas).
     print("Backfill pos-robo: 1 capa pendente (prioridade noticias novas)...")
     backfill = core.backfill_missing_images(limit=1)
     _invalidate_home_cache()
@@ -873,6 +943,13 @@ def rodar_robo(request: Request, token: str | None = None):
         "status": "Sucesso",
         "processadas_pela_ia": len(noticias_geradas),
         "novas_salvas_no_banco": salvas,
+        "analises_proprias": {
+            "meta_diaria": own_target,
+            "processadas": len(own_geradas),
+            "salvas": own_salvas,
+            "hoje": core.count_own_analyses_today(),
+            "titulos": [g.get("titulo_viral") for g in own_geradas],
+        },
         "backfill_capas": backfill,
     }
 
@@ -886,6 +963,7 @@ def atualizar_artigos(request: Request, token: str | None = None, limit: int = 1
     resultado = core.refresh_stale_articles(limit=limit)
     _invalidate_home_cache()
     return {"status": "Sucesso", **resultado}
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))

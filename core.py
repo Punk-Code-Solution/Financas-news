@@ -242,6 +242,18 @@ def get_robot_max_articles() -> int:
         return 36
 
 
+def get_robot_own_analyses_count() -> int:
+    """Mínimo de análises próprias (a partir do acervo) a gerar por dia."""
+    try:
+        return max(0, min(int(os.getenv("ROBOT_OWN_ANALYSES", "3")), 10))
+    except ValueError:
+        return 3
+
+
+OWN_ANALYSIS_LINK_PREFIX = "internal://analise/"
+OWN_ANALYSIS_FONTE = "Finanças News"
+
+
 def _api_key_id(api_key: str) -> str:
     return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:8]
 
@@ -2903,6 +2915,288 @@ def _news_link_exists(link: str) -> bool:
         return link in existing_news_links([link])
     except Exception:
         return False
+
+
+def _slugify_tag(tag: str) -> str:
+    raw = (tag or "economia").strip().lower()
+    table = str.maketrans(
+        {
+            "á": "a", "à": "a", "ã": "a", "â": "a",
+            "é": "e", "ê": "e",
+            "í": "i",
+            "ó": "o", "ô": "o", "õ": "o",
+            "ú": "u",
+            "ç": "c",
+            " ": "-",
+        }
+    )
+    slug = raw.translate(table)
+    slug = re.sub(r"[^a-z0-9-]+", "", slug)
+    return slug.strip("-") or "economia"
+
+
+def _own_analysis_link(tag: str, seed: str = "") -> str:
+    day = datetime.now().strftime("%Y%m%d")
+    tag_slug = _slugify_tag(tag)
+    digest = hashlib.sha256(f"{day}|{tag}|{seed}".encode()).hexdigest()[:8]
+    return f"{OWN_ANALYSIS_LINK_PREFIX}{day}-{tag_slug}-{digest}"
+
+
+def count_own_analyses_today() -> int:
+    """Quantas análises próprias (internal://analise/) já foram publicadas hoje."""
+    day = datetime.now().strftime("%Y%m%d")
+    prefix = f"{OWN_ANALYSIS_LINK_PREFIX}{day}-"
+    try:
+        client = get_db()
+        row = client.execute(
+            "SELECT COUNT(*) FROM news WHERE link LIKE ?",
+            [f"{prefix}%"],
+        ).rows
+        return int(row[0][0]) if row else 0
+    except Exception as exc:
+        print(f"   [analise-propria] Falha ao contar do dia: {exc}")
+        return 0
+
+
+def _fetch_recent_source_news(limit: int = 40) -> list[tuple]:
+    """Notícias externas recentes do acervo (exclui guias e análises próprias)."""
+    client = get_db()
+    result = client.execute(
+        """
+        SELECT id, titulo, tag, sentimento, impacto, resumo, fonte, published_at
+        FROM news
+        WHERE link NOT LIKE 'internal://%'
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        [max(8, limit)],
+    )
+    return list(result.rows)
+
+
+def _pick_own_analysis_angles(rows: list[tuple], count: int) -> list[dict[str, Any]]:
+    """Escolhe ângulos distintos por tag a partir do acervo recente."""
+    by_tag: dict[str, list[tuple]] = {}
+    for row in rows:
+        tag = str(row[2] or "Economia").strip()
+        if tag not in VALID_TAGS:
+            tag = "Economia"
+        by_tag.setdefault(tag, []).append(row)
+
+    # Prioriza tags com mais matéria recente e sentimento definido.
+    ranked = sorted(
+        by_tag.items(),
+        key=lambda item: (len(item[1]), 1 if item[0] != "Economia" else 0),
+        reverse=True,
+    )
+
+    angles: list[dict[str, Any]] = []
+    for tag, items in ranked:
+        if len(angles) >= count:
+            break
+        sample = items[:8]
+        titles = [str(r[1] or "").strip() for r in sample if r[1]]
+        if len(titles) < 2:
+            continue
+        sentiments = [str(r[3] or "Neutro") for r in sample]
+        neg = sum(1 for s in sentiments if "negativ" in s.lower())
+        pos = sum(1 for s in sentiments if "positiv" in s.lower())
+        if neg >= pos and neg > 0:
+            tone = "cautela"
+        elif pos > neg:
+            tone = "oportunidade"
+        else:
+            tone = "panorama"
+        angles.append(
+            {
+                "tag": tag,
+                "tone": tone,
+                "items": sample,
+                "titles": titles,
+            }
+        )
+
+    # Se ainda faltam ângulos, faz cortes temáticos dentro de Economia.
+    if len(angles) < count and "Economia" in by_tag:
+        eco = by_tag["Economia"]
+        chunks = [eco[i : i + 6] for i in range(0, min(len(eco), 18), 6)]
+        for chunk in chunks:
+            if len(angles) >= count:
+                break
+            titles = [str(r[1] or "").strip() for r in chunk if r[1]]
+            if len(titles) < 2:
+                continue
+            if any(a["tag"] == "Economia" and a["titles"][:2] == titles[:2] for a in angles):
+                continue
+            angles.append(
+                {
+                    "tag": "Economia",
+                    "tone": "panorama",
+                    "items": chunk,
+                    "titles": titles,
+                }
+            )
+
+    return angles[:count]
+
+
+def _build_own_analysis_brief(angle: dict[str, Any]) -> tuple[str, str]:
+    """Monta título-semente e conteúdo sintético a partir do acervo."""
+    tag = angle["tag"]
+    tone = angle["tone"]
+    items = angle["items"]
+    day_label = datetime.now().strftime("%d/%m/%Y")
+
+    tone_title = {
+        "cautela": f"Radar {tag}: o que o acervo do dia sinaliza de risco",
+        "oportunidade": f"Radar {tag}: sinais positivos no acervo desta semana",
+        "panorama": f"Análise própria: panorama de {tag} em {day_label}",
+    }
+    title = tone_title.get(tone, f"Análise própria: {tag} — {day_label}")
+
+    lines = [
+        f"Esta é uma ANÁLISE EDITORIAL PRÓPRIA do portal Finanças News ({day_label}).",
+        "NÃO existe uma única notícia RSS de origem — o editor cruza várias matérias já publicadas no acervo.",
+        f"Categoria-foco: {tag}. Tom sugerido: {tone}.",
+        "",
+        "FATOS / MATÉRIAS DO ACERVO PARA CRUZAR (use como evidência, sem plágio):",
+    ]
+    for row in items:
+        titulo = str(row[1] or "").strip()
+        sentimento = str(row[3] or "Neutro").strip()
+        impacto = str(row[4] or "").strip()
+        fonte = str(row[6] or "").strip()
+        when = str(row[7] or "").strip()
+        resumo = str(row[5] or "").strip().replace("\n", " ")
+        lines.append(
+            f"- [{sentimento}] {titulo}"
+            + (f" ({fonte}" + (f", {when}" if when else "") + ")" if fonte or when else "")
+        )
+        if impacto:
+            lines.append(f"  Impacto registrado: {impacto[:280]}")
+        if resumo:
+            lines.append(f"  Trecho útil: {resumo[:420]}")
+
+    lines.extend(
+        [
+            "",
+            "INSTRUÇÃO ESPECIAL PARA ANÁLISE PRÓPRIA:",
+            "- Produza um texto AUTORAL que une esses fios em uma tese editorial clara.",
+            "- Cite Selic, IPCA e dólar do painel; amarre cada parágrafo a um número.",
+            "- Explique o que muda para o investidor comum à luz do conjunto (não de uma só manchete).",
+            "- Evite repetir títulos do acervo; sintetize e avance a análise.",
+        ]
+    )
+    return title, "\n".join(lines)
+
+
+def generate_own_analyses(count: int | None = None) -> list[dict[str, Any]]:
+    """Gera análises editoriais próprias a partir do acervo (sem RSS).
+
+    Consome cota Gemini de texto (e tenta capa). Respeita o mínimo diário
+    configurado em ``ROBOT_OWN_ANALYSES`` (default 3): só gera o que ainda falta hoje.
+    """
+    target_day = get_robot_own_analyses_count() if count is None else max(0, min(int(count), 10))
+    if target_day <= 0:
+        print("   [analise-propria] Desativada (ROBOT_OWN_ANALYSES=0).")
+        return []
+
+    already = count_own_analyses_today()
+    missing = max(0, target_day - already)
+    if missing <= 0:
+        print(f"   [analise-propria] Meta diária já atingida ({already}/{target_day}).")
+        return []
+
+    if not get_gemini_api_keys():
+        print("   [analise-propria] Sem GOOGLE_API_KEY — abortando.")
+        return []
+
+    print(
+        f"\n--- Análises próprias: faltam {missing} hoje "
+        f"(já={already}, meta={target_day}) ---"
+    )
+
+    source_rows = _fetch_recent_source_news(limit=max(24, missing * 10))
+    if len(source_rows) < 4:
+        print("   [analise-propria] Acervo insuficiente (<4 matérias externas).")
+        return []
+
+    angles = _pick_own_analysis_angles(source_rows, missing)
+    if not angles:
+        print("   [analise-propria] Não foi possível montar ângulos a partir do acervo.")
+        return []
+
+    market = fetch_market_snapshot()
+    bcb = fetch_bcb_snapshot()
+    historico = fetch_market_historical()
+    generated: list[dict[str, Any]] = []
+
+    for angle in angles:
+        if _all_text_models_exhausted():
+            print("   [analise-propria] Cota diária esgotada — interrompendo.")
+            break
+
+        tag = angle["tag"]
+        seed_title, brief = _build_own_analysis_brief(angle)
+        link = _own_analysis_link(tag, seed=seed_title + "|" + "|".join(angle["titles"][:3]))
+
+        if existing_news_links([link]):
+            print(f"   [analise-propria] Link já existe — pulando {link}")
+            continue
+
+        db_context = get_editorial_context(tag_hint=tag)
+        data_context = format_data_context(market, bcb, db_context, historico, tag)
+        print(f"   [analise-propria] Gerando ângulo {tag}/{angle['tone']}: {seed_title[:60]}...")
+
+        ai_data = process_news_with_ai(
+            seed_title,
+            brief,
+            OWN_ANALYSIS_FONTE,
+            tag,
+            data_context,
+        )
+
+        if ai_data is None and _all_text_models_exhausted():
+            print("   [analise-propria] Cota esgotada após tentativa.")
+            break
+        if not ai_data:
+            print("   [analise-propria] IA não retornou JSON — próximo ângulo.")
+            continue
+
+        out_tag = ai_data.get("tag", tag)
+        if out_tag not in VALID_TAGS:
+            out_tag = tag
+            ai_data["tag"] = out_tag
+
+        imagem_url = generate_article_image(
+            ai_data.get("titulo_viral", seed_title),
+            out_tag,
+            link,
+            ai_data.get("resumo_simples", ""),
+            use_openai=False,
+        )
+        if imagem_url:
+            print("   [analise-propria] Capa OK.")
+        else:
+            print("   [analise-propria] Sem capa nesta rodada.")
+
+        published = datetime.now().strftime("%d/%m/%Y %H:%M")
+        generated.append(
+            {
+                "original_link": link,
+                "fonte": OWN_ANALYSIS_FONTE,
+                "published_at": published,
+                "imagem_url": imagem_url,
+                "dados_mercado": _build_dados_mercado_payload(market, bcb, ai_data, historico),
+                "contexto_editorial": ai_data.get("contexto_mercado", ""),
+                "versao_analise": 1,
+                **ai_data,
+            }
+        )
+        print(f"   [analise-propria] OK: {ai_data.get('titulo_viral', seed_title)[:70]}")
+
+    print(f"   [analise-propria] Lote: {len(generated)} análise(s) própria(s).")
+    return generated
 
 
 def fetch_and_process(max_per_feed: int | None = None, max_articles: int | None = None):

@@ -350,7 +350,7 @@ def run() -> int:
         r = client.get("/noticia/999999")
         check("Notícia 404", r.status_code == 404)
 
-        for path in ["/api/rodar-robo", "/api/gerar-imagens", "/api/atualizar-artigos"]:
+        for path in ["/api/rodar-robo", "/api/gerar-imagens", "/api/atualizar-artigos", "/api/gerar-analises-proprias"]:
             r = client.get(path)
             check(f"{path} sem token=401", r.status_code == 401, f"status={r.status_code}")
             r = client.get(path, params={"token": "token-invalido"})
@@ -358,6 +358,9 @@ def run() -> int:
 
         with (
             patch.object(core, "fetch_and_process", return_value=[]),
+            patch.object(core, "generate_own_analyses", return_value=[]),
+            patch.object(core, "count_own_analyses_today", return_value=3),
+            patch.object(core, "get_robot_own_analyses_count", return_value=3),
             patch.object(
                 core,
                 "backfill_missing_images",
@@ -376,6 +379,15 @@ def run() -> int:
             check("Bearer /api/gerar-imagens", r.status_code == 200, f"status={r.status_code}")
             r = client.get("/api/atualizar-artigos", headers=auth)
             check("Bearer /api/atualizar-artigos", r.status_code == 200, f"status={r.status_code}")
+            r = client.get("/api/gerar-analises-proprias", headers=auth)
+            check("Bearer /api/gerar-analises-proprias", r.status_code == 200, f"status={r.status_code}")
+            if r.status_code == 200:
+                body = r.json()
+                check(
+                    "analises-proprias payload",
+                    body.get("status") == "Sucesso" and "meta_diaria" in body,
+                    str(body)[:200],
+                )
             r = client.get("/api/gerar-imagens", params={"token": os.environ["ROBO_TOKEN"]})
             check("Query token /api/gerar-imagens", r.status_code == 200, f"status={r.status_code}")
             r = client.get("/api/gerar-imagens", headers={"X-Robo-Token": os.environ["ROBO_TOKEN"]})

@@ -73,11 +73,12 @@ def main() -> int:
         elapsed = time.time() - t0
         upd = int(result.get("updated") or 0)
         done += upd
+        rate = (upd / elapsed) if elapsed else 0.0
         print(
             f"[{label}] updated={upd} failed={result.get('failed')} "
-            f"rate_limited={result.get('rate_limited')} "
-            f"em {elapsed:.1f}s ({(upd / elapsed) if elapsed else 0:.1f}/s) "
-            f"acumulado={done}",
+            + f"rate_limited={result.get('rate_limited')} "
+            + f"em {elapsed:.1f}s ({rate:.1f}/s) "
+            + f"acumulado={done}",
             flush=True,
         )
         return result
