@@ -9,7 +9,7 @@
                 <span class="text-blue-600 dark:text-[#4ade80]">{{ tr_tag(n[5]) }}</span>
                 <span class="{% if 'positiv' in sent %}text-green-600{% elif 'negativ' in sent %}text-red-500{% else %}text-gray-400{% endif %}">● {{ tr_sentiment(n[6] | default('Neutro', true)) }}</span>
             </div>
-            <h3 class="mt-1 text-base md:text-lg font-bold leading-snug text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition line-clamp-3">{{ n[1] }}</h3>
+            <h3 class="font-serif mt-1 text-lg md:text-xl font-bold leading-snug text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition line-clamp-3">{{ n[1] }}</h3>
             <p class="mt-2 text-xs text-gray-500 dark:text-slate-500 line-clamp-1">
                 {% if n[8] %}{{ n[8] }}{% endif %}{% if n[8] and n[7] %} · {% endif %}{% if n[7] %}{{ n[7] }}{% endif %}
             </p>

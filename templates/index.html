@@ -17,8 +17,8 @@
     <link rel="dns-prefetch" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="dns-prefetch" href="https://economia.awesomeapi.com.br">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800;900&display=swap" rel="stylesheet"></noscript>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800;900&family=Playfair+Display:wght@700;800;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800;900&family=Playfair+Display:wght@700;800;900&display=swap" rel="stylesheet"></noscript>
     {% include "partials/_hreflang.html" %}
     
     <meta property="og:type" content="website" />
@@ -202,9 +202,12 @@
     <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] transition-colors duration-200 sticky top-0 z-50">
         <div class="container mx-auto px-4 pt-3 pb-2">
             <div class="flex flex-wrap justify-between items-center gap-x-3 gap-y-2">
-                <a href="/?lang={{ lang }}" class="text-xl sm:text-2xl font-black tracking-tighter shrink-0">
-                    <span class="text-green-600 dark:text-[#4ade80]">{{ t('brand_finance') }}</span><span class="text-gray-900 dark:text-white">{{ t('brand_news') }}</span>
-                </a>
+                <div class="flex items-baseline gap-3 min-w-0 shrink-0">
+                    <a href="/?lang={{ lang }}" class="text-xl sm:text-2xl font-black tracking-tighter shrink-0">
+                        <span class="text-green-600 dark:text-[#4ade80]">{{ t('brand_finance') }}</span><span class="text-gray-900 dark:text-white">{{ t('brand_news') }}</span>
+                    </a>
+                    <span id="masthead-date" class="hidden lg:inline-block border-l border-gray-300 dark:border-slate-700 pl-3 text-[11px] font-semibold uppercase tracking-widest text-gray-500 dark:text-slate-500"></span>
+                </div>
 
                 <div class="flex items-center gap-2 shrink-0 ml-auto">
                     <form action="/" method="GET" class="relative hidden sm:block">
@@ -277,7 +280,7 @@
             <div class="flex items-center justify-between mb-4">
                 <div>
                     <p class="text-xs font-bold uppercase tracking-[0.2em] text-blue-600 dark:text-[#4ade80]">{{ t('editorial_selection') }}</p>
-                    <h1 class="text-2xl md:text-3xl font-black text-gray-900 dark:text-white mt-1">
+                    <h1 class="font-serif text-2xl md:text-3xl font-black text-gray-900 dark:text-white mt-1">
                         {% if categoria_ativa %}{{ t('highlights_in', tag=tr_tag(categoria_ativa)) }}{% else %}{{ t('highlights_market') }}{% endif %}
                     </h1>
                 </div>
@@ -286,27 +289,46 @@
 
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
                 {% set destaque = news[0] %}
-                <article class="lg:col-span-7 relative min-h-[360px] md:min-h-[430px] rounded-2xl overflow-hidden bg-slate-900 group">
-                    <img src="{{ article_cover(destaque[11], destaque[5]) }}" data-fallback="{{ category_image(destaque[5]) }}" alt="{{ destaque[1] }}" class="absolute inset-0 w-full h-full object-cover object-center transition duration-500 group-hover:scale-105">
-                    <div class="featured-gradient absolute inset-0"></div>
-                    <a href="/noticia/{{ destaque[0] }}?lang={{ lang }}" class="absolute inset-0 flex flex-col justify-end p-6 md:p-8">
-                        <div class="flex items-center gap-2 mb-3">
-                            <span class="bg-[#4ade80] text-slate-950 text-[11px] font-black px-2.5 py-1 rounded-full uppercase">{{ tr_tag(destaque[5]) }}</span>
-                            {% if destaque[8] %}<span class="text-xs text-slate-300">{{ destaque[8] }}</span>{% endif %}
-                        </div>
-                        <h2 class="text-2xl md:text-4xl font-black text-white leading-tight group-hover:text-[#4ade80] transition">{{ destaque[1] }}</h2>
-                        <p class="mt-3 text-sm md:text-base text-slate-200 line-clamp-2 max-w-2xl">{{ destaque[2] }}</p>
-                    </a>
-                </article>
+                {% set trilha = news[featured_count:home_top_count] %}
+                <div class="lg:col-span-7 flex flex-col gap-4">
+                    <article class="relative min-h-[380px] md:min-h-[480px] rounded-2xl overflow-hidden bg-slate-900 group grow">
+                        <img src="{{ article_cover(destaque[11], destaque[5]) }}" data-fallback="{{ category_image(destaque[5]) }}" alt="{{ destaque[1] }}" class="absolute inset-0 w-full h-full object-cover object-center transition duration-500 group-hover:scale-105">
+                        <div class="featured-gradient absolute inset-0"></div>
+                        <a href="/noticia/{{ destaque[0] }}?lang={{ lang }}" class="absolute inset-0 flex flex-col justify-end p-6 md:p-8">
+                            <div class="flex items-center gap-2 mb-3">
+                                <span class="bg-[#4ade80] text-slate-950 text-[11px] font-black px-2.5 py-1 rounded-full uppercase">{{ tr_tag(destaque[5]) }}</span>
+                                {% if destaque[8] %}<span class="text-xs text-slate-300">{{ destaque[8] }}</span>{% endif %}
+                            </div>
+                            <h2 class="font-serif text-3xl md:text-5xl font-black text-white leading-[1.08] group-hover:text-[#4ade80] transition">{{ destaque[1] }}</h2>
+                            <p class="mt-4 text-sm md:text-base text-slate-200 line-clamp-2 max-w-2xl">{{ destaque[2] }}</p>
+                        </a>
+                    </article>
 
-                <div class="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
-                    {% for n in news[1:4] %}
+                    {% if trilha %}
+                    <div class="rounded-2xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-[#1e293b] px-5 py-4">
+                        <p class="text-[11px] font-black uppercase tracking-widest text-blue-600 dark:text-[#4ade80]">{{ t('read_also') }}</p>
+                        <ul class="mt-1 divide-y divide-gray-100 dark:divide-slate-800">
+                            {% for n in trilha %}
+                            <li>
+                                <a href="/noticia/{{ n[0] }}?lang={{ lang }}" class="group flex items-start gap-3 py-2.5">
+                                    <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-600 dark:bg-[#4ade80]"></span>
+                                    <span class="font-serif text-sm md:text-base font-bold leading-snug text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition line-clamp-2">{{ n[1] }}</span>
+                                </a>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div class="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 lg:auto-rows-fr gap-4">
+                    {% for n in news[1:featured_count] %}
                     <article class="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden hover:border-blue-300 dark:hover:border-slate-600 transition">
                         <a href="/noticia/{{ n[0] }}?lang={{ lang }}" class="flex h-full group">
                             <img src="{{ article_cover(n[11], n[5]) }}" data-fallback="{{ category_image(n[5]) }}" alt="{{ n[1] }}" loading="lazy" class="w-28 sm:w-32 lg:w-40 h-full min-h-[7.5rem] object-cover object-center shrink-0">
                             <div class="p-4 flex flex-col justify-center">
                                 <span class="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-[#4ade80]">{{ tr_tag(n[5]) }}</span>
-                                <h3 class="mt-1 text-base md:text-lg font-bold leading-snug text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition line-clamp-3">{{ n[1] }}</h3>
+                                <h3 class="font-serif mt-1 text-base md:text-lg font-bold leading-snug text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition line-clamp-3">{{ n[1] }}</h3>
                                 <span class="mt-2 text-xs text-gray-500 dark:text-slate-500">{% if n[8] %}{{ n[8] }}{% else %}{{ t('site_name') }}{% endif %}</span>
                             </div>
                         </a>
@@ -323,12 +345,12 @@
         {% endwith %}
         {% endif %}
 
-        {% set feed_news = news[4:] if news and not q else news %}
+        {% set feed_news = news[home_top_count:] if news and not q else news %}
         <div class="layout-with-sidebar{% if monetization.sidebar_widgets_visible %} has-sidebar{% endif %}">
             <div class="layout-main">
                 {% if feed_news %}
                 <div class="flex items-center justify-between border-b-2 border-gray-900 dark:border-white pb-2 mb-5">
-                    <h2 class="text-xl font-black text-gray-900 dark:text-white">
+                    <h2 class="font-serif text-2xl font-black text-gray-900 dark:text-white">
                         {% if q %}{{ t('news_found') }}{% else %}{{ t('latest_analyses') }}{% endif %}
                     </h2>
                     <span class="text-xs text-gray-500 dark:text-slate-500">{{ t('most_recent_first') }}</span>
@@ -441,6 +463,17 @@
             }
         }
 
+        function setMastheadDate() {
+            const el = document.getElementById('masthead-date');
+            if (!el) return;
+            const locale = document.documentElement.dataset.locale || 'pt-BR';
+            el.textContent = new Intl.DateTimeFormat(locale, {
+                weekday: 'long',
+                day: '2-digit',
+                month: 'long',
+            }).format(new Date());
+        }
+
         async function carregarPaginaSemPiscar(url, pushState = true) {
             const mainEl = document.querySelector('main');
             const navEl = document.querySelector('nav');
@@ -459,6 +492,7 @@
                 if (pushState) window.history.pushState({}, '', url);
                 
                 setInitialThemeIcons();
+                setMastheadDate();
                 paintSparklines();
                 // O main foi substituido: o sentinela antigo sumiu, precisa reobservar.
                 feedAutoLoad = true;
@@ -658,6 +692,7 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             setInitialThemeIcons();
+            setMastheadDate();
             paintSparklines();
             configurarScrollInfinito();
 

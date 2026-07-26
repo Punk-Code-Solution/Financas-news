@@ -55,6 +55,9 @@ _ = load_dotenv()
 
 FEED_BATCH = 8
 FEATURED_COUNT = 4
+# Chamadas de texto ("Leia também") logo abaixo da manchete principal.
+HEADLINE_TRAIL = 3
+HOME_TOP_COUNT = FEATURED_COUNT + HEADLINE_TRAIL
 
 
 class CachedStaticFiles(StarletteStaticFiles):
@@ -81,7 +84,7 @@ async def _lifespan(_app: FastAPI):
             print(f"Aviso: schema/DB no startup: {exc}")
         try:
             core.warmup_market_caches()
-            _load_home_listing(None, 0, FEATURED_COUNT + FEED_BATCH, None)
+            _load_home_listing(None, 0, HOME_TOP_COUNT + FEED_BATCH, None)
         except Exception as exc:
             print(f"Aviso: warmup inicial falhou: {exc}")
 
@@ -363,8 +366,8 @@ def _load_home_listing(
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, categoria: str | None = None, q: str | None = None):
-    # Sem busca: 4 destaques + 8 no feed (2 colunas). Com busca: só o feed de 8.
-    initial_limit = FEED_BATCH if q else FEATURED_COUNT + FEED_BATCH
+    # Sem busca: 4 destaques + 3 chamadas + 8 no feed. Com busca: só o feed de 8.
+    initial_limit = FEED_BATCH if q else HOME_TOP_COUNT + FEED_BATCH
     listing = _load_home_listing(categoria, 0, initial_limit, q)
     sparklines = core.fetch_sparkline_data(blocking=False)
 
@@ -379,6 +382,8 @@ def index(request: Request, categoria: str | None = None, q: str | None = None):
             "has_more": listing["has_more"],
             "next_offset": listing["next_offset"],
             "feed_batch": FEED_BATCH,
+            "featured_count": FEATURED_COUNT,
+            "home_top_count": HOME_TOP_COUNT,
             "monetization": get_monetization_config(),
             "suggested_news": listing["suggested_news"],
             "sparklines": sparklines,

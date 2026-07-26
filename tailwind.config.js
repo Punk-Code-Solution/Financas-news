@@ -9,6 +9,7 @@ module.exports = {
     extend: {
       fontFamily: {
         sans: ["Inter", "sans-serif"],
+        serif: ["'Playfair Display'", "Georgia", "serif"],
       },
       opacity: {
         45: "0.45",
