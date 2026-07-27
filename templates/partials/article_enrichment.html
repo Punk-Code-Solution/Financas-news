@@ -105,6 +105,22 @@
 </section>
 {% endif %}
 
+{# --- Lentes analíticas (escolas clássicas, paráfrase original) --- #}
+{% if enrichment.lentes_analiticas %}
+<section class="mb-8">
+    <h2 class="text-xs font-black uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-1">{{ t('analytical_lenses') }}</h2>
+    <p class="text-[11px] text-gray-500 dark:text-slate-500 mb-3">{{ t('analytical_lenses_disclaimer') }}</p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {% for lens in enrichment.lentes_analiticas %}
+        <div class="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-700 rounded-xl p-4">
+            <p class="text-xs font-black uppercase text-blue-600 dark:text-[#4ade80] mb-2">{{ lens.escola }}</p>
+            <p class="text-sm text-gray-700 dark:text-slate-300 leading-relaxed">{{ lens.aplicacao }}</p>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
 {# --- Perfil investidor (ponto 2 + 8) --- #}
 {% if enrichment.perfil_investidor %}
 <section class="mb-8" id="perfil-investidor-section">

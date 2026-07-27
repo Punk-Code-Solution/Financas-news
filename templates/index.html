@@ -103,6 +103,46 @@
 
     <style>
         .featured-gradient { background: linear-gradient(180deg, transparent 25%, rgba(2, 6, 23, .92) 100%); }
+
+        .headline-carousel__btn {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 10;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 2.25rem;
+            height: 2.25rem;
+            border-radius: 9999px;
+            background: rgba(15, 23, 42, 0.72);
+            color: #f8fafc;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            transition: background 0.2s ease, border-color 0.2s ease;
+        }
+        .headline-carousel__btn:hover {
+            background: rgba(15, 23, 42, 0.92);
+            border-color: rgba(74, 222, 128, 0.55);
+        }
+        .headline-carousel__btn--prev { left: 0.75rem; }
+        .headline-carousel__btn--next { right: 0.75rem; }
+        .headline-carousel__dot {
+            width: 0.55rem;
+            height: 0.55rem;
+            border-radius: 9999px;
+            background: rgba(248, 250, 252, 0.35);
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            transition: transform 0.2s ease, background 0.2s ease;
+        }
+        .headline-carousel__dot.is-active {
+            background: #4ade80;
+            transform: scale(1.15);
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .headline-carousel__track { transition: none; }
+        }
         
         /* Oculta as setas padrão do input numérico */
         input[type=number]::-webkit-inner-spin-button, 
@@ -288,27 +328,16 @@
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                {% set destaque = news[0] %}
-                {% set trilha = news[featured_count:home_top_count] %}
                 <div class="lg:col-span-7 flex flex-col gap-4">
-                    <article class="relative min-h-[380px] md:min-h-[480px] rounded-2xl overflow-hidden bg-slate-900 group grow">
-                        <img src="{{ article_cover(destaque[11], destaque[5]) }}" data-fallback="{{ category_image(destaque[5]) }}" alt="{{ destaque[1] }}" class="absolute inset-0 w-full h-full object-cover object-center transition duration-500 group-hover:scale-105">
-                        <div class="featured-gradient absolute inset-0"></div>
-                        <a href="/noticia/{{ destaque[0] }}?lang={{ lang }}" class="absolute inset-0 flex flex-col justify-end p-6 md:p-8">
-                            <div class="flex items-center gap-2 mb-3">
-                                <span class="bg-[#4ade80] text-slate-950 text-[11px] font-black px-2.5 py-1 rounded-full uppercase">{{ tr_tag(destaque[5]) }}</span>
-                                {% if destaque[8] %}<span class="text-xs text-slate-300">{{ destaque[8] }}</span>{% endif %}
-                            </div>
-                            <h2 class="font-serif text-3xl md:text-5xl font-black text-white leading-[1.08] group-hover:text-[#4ade80] transition">{{ destaque[1] }}</h2>
-                            <p class="mt-4 text-sm md:text-base text-slate-200 line-clamp-2 max-w-2xl">{{ destaque[2] }}</p>
-                        </a>
-                    </article>
+                    {% if headline_news %}
+                    {% include "partials/_headline_carousel.html" %}
+                    {% endif %}
 
-                    {% if trilha %}
+                    {% if trilha_news %}
                     <div class="rounded-2xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-[#1e293b] px-5 py-4">
                         <p class="text-[11px] font-black uppercase tracking-widest text-blue-600 dark:text-[#4ade80]">{{ t('read_also') }}</p>
                         <ul class="mt-1 divide-y divide-gray-100 dark:divide-slate-800">
-                            {% for n in trilha %}
+                            {% for n in trilha_news %}
                             <li>
                                 <a href="/noticia/{{ n[0] }}?lang={{ lang }}" class="group flex items-start gap-3 py-2.5">
                                     <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-600 dark:bg-[#4ade80]"></span>
@@ -322,7 +351,7 @@
                 </div>
 
                 <div class="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 lg:auto-rows-fr gap-4">
-                    {% for n in news[1:featured_count] %}
+                    {% for n in secondary_news %}
                     <article class="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden hover:border-blue-300 dark:hover:border-slate-600 transition">
                         <a href="/noticia/{{ n[0] }}?lang={{ lang }}" class="flex h-full group">
                             <img src="{{ article_cover(n[11], n[5]) }}" data-fallback="{{ category_image(n[5]) }}" alt="{{ n[1] }}" loading="lazy" class="w-28 sm:w-32 lg:w-40 h-full min-h-[7.5rem] object-cover object-center shrink-0">
@@ -345,7 +374,7 @@
         {% endwith %}
         {% endif %}
 
-        {% set feed_news = news[home_top_count:] if news and not q else news %}
+        {% set feed_news = feed_news if feed_news is defined and not q else news %}
         <div class="layout-with-sidebar{% if monetization.sidebar_widgets_visible %} has-sidebar{% endif %}">
             <div class="layout-main">
                 {% if feed_news %}
@@ -474,6 +503,63 @@
             }).format(new Date());
         }
 
+        function initHeadlineCarousel(root = document) {
+            root.querySelectorAll('[data-headline-carousel]').forEach((carousel) => {
+                if (carousel.dataset.carouselReady === 'true') return;
+                const track = carousel.querySelector('[data-headline-track]');
+                const slides = carousel.querySelectorAll('[data-headline-slide]');
+                if (!track || slides.length <= 1) {
+                    carousel.dataset.carouselReady = 'true';
+                    return;
+                }
+
+                let index = 0;
+                let timer = null;
+                const dots = carousel.querySelectorAll('[data-headline-dot]');
+                const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+                const goTo = (next) => {
+                    index = (next + slides.length) % slides.length;
+                    track.style.transform = `translateX(-${index * 100}%)`;
+                    dots.forEach((dot, i) => {
+                        const active = i === index;
+                        dot.classList.toggle('is-active', active);
+                        dot.setAttribute('aria-selected', active ? 'true' : 'false');
+                    });
+                };
+
+                const restartAuto = () => {
+                    if (timer) window.clearInterval(timer);
+                    if (reducedMotion) return;
+                    timer = window.setInterval(() => goTo(index + 1), 7000);
+                };
+
+                carousel.querySelector('[data-headline-prev]')?.addEventListener('click', () => {
+                    goTo(index - 1);
+                    restartAuto();
+                });
+                carousel.querySelector('[data-headline-next]')?.addEventListener('click', () => {
+                    goTo(index + 1);
+                    restartAuto();
+                });
+                dots.forEach((dot) => {
+                    dot.addEventListener('click', () => {
+                        goTo(Number(dot.dataset.headlineDot || 0));
+                        restartAuto();
+                    });
+                });
+
+                carousel.addEventListener('mouseenter', () => {
+                    if (timer) window.clearInterval(timer);
+                });
+                carousel.addEventListener('mouseleave', restartAuto);
+
+                goTo(0);
+                restartAuto();
+                carousel.dataset.carouselReady = 'true';
+            });
+        }
+
         async function carregarPaginaSemPiscar(url, pushState = true) {
             const mainEl = document.querySelector('main');
             const navEl = document.querySelector('nav');
@@ -493,6 +579,7 @@
                 
                 setInitialThemeIcons();
                 setMastheadDate();
+                initHeadlineCarousel();
                 paintSparklines();
                 // O main foi substituido: o sentinela antigo sumiu, precisa reobservar.
                 feedAutoLoad = true;
@@ -693,6 +780,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             setInitialThemeIcons();
             setMastheadDate();
+            initHeadlineCarousel();
             paintSparklines();
             configurarScrollInfinito();
 

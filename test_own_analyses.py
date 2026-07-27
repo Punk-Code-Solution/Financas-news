@@ -22,6 +22,39 @@ def test_slugify_and_link():
     assert "cripto" in link
 
 
+def test_macro_relevance_avoids_selic_for_crypto():
+    rel = core._macro_topic_relevance(
+        "Bitcoin rompe resistência após ETF",
+        "Criptoativos sobem com dólar estável",
+        "Cripto",
+    )
+    assert rel["selic"] is False
+    assert rel["dolar"] is True
+
+
+def test_macro_relevance_flags_selic_for_copom():
+    rel = core._macro_topic_relevance(
+        "Copom mantém Selic em 14,25%",
+        "Comunicado do Banco Central",
+        "Juros",
+    )
+    assert rel["selic"] is True
+
+
+def test_select_analysis_lenses_returns_two_distinct():
+    lenses = core.select_analysis_lenses(
+        "Bitcoin em alta com fluxo estrangeiro",
+        "Criptoativos sobem com dólar estável",
+        "Cripto",
+        count=2,
+    )
+    assert len(lenses) == 2
+    assert lenses[0]["id"] != lenses[1]["id"]
+    block = core._build_lens_prompt_block(lenses)
+    assert "LENTES ANALÍTICAS" in block
+    assert "PROIBIDO" in block
+
+
 def test_pick_angles_diverse_tags():
     rows = []
     for i, tag in enumerate(["Cripto", "Cripto", "Dólar", "Dólar", "Ações", "Ações", "Juros", "Juros"]):
@@ -70,6 +103,9 @@ def test_generate_skips_without_api_key():
 
 def main() -> int:
     test_slugify_and_link()
+    test_macro_relevance_avoids_selic_for_crypto()
+    test_macro_relevance_flags_selic_for_copom()
+    test_select_analysis_lenses_returns_two_distinct()
     test_pick_angles_diverse_tags()
     test_generate_respects_daily_meta()
     test_generate_skips_without_api_key()

@@ -1151,6 +1151,7 @@ def build_article_enrichment(
         "glossario": market_data.get("glossario") or [],
         "faq": faq_items,
         "tabela_comparativa": market_data.get("tabela_comparativa"),
+        "lentes_analiticas": market_data.get("lentes_analiticas") or [],
         "atualizacao": market_data.get("atualizacao"),
         "related_entities": build_related_entities(market_data, tag),
         "cross_links": build_cross_links(market_data, related_articles, tag),

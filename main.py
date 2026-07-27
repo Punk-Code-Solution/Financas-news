@@ -58,6 +58,7 @@ FEATURED_COUNT = 4
 # Chamadas de texto ("Leia também") logo abaixo da manchete principal.
 HEADLINE_TRAIL = 3
 HOME_TOP_COUNT = FEATURED_COUNT + HEADLINE_TRAIL
+HOME_HEADLINE_MAX = 5
 
 
 class CachedStaticFiles(StarletteStaticFiles):
@@ -80,6 +81,7 @@ async def _lifespan(_app: FastAPI):
             if n:
                 print(f"Guias educativos sincronizados: {n}")
                 _invalidate_home_cache()
+            core.backfill_home_priority(client)
         except Exception as exc:
             print(f"Aviso: schema/DB no startup: {exc}")
         try:
@@ -235,7 +237,8 @@ NEWS_LIST_SELECT = """
     SELECT id, titulo, resumo, impacto, link, tag, sentimento,
            COALESCE(NULLIF(published_at, ''), created_at) AS data_publicacao,
            fonte, NULL AS dados_mercado, NULL AS contexto_editorial, imagem_url,
-           NULL AS conteudo_extra, updated_at, versao_analise
+           NULL AS conteudo_extra, updated_at, versao_analise,
+           COALESCE(home_priority, 0) AS home_priority
     FROM news
 """
 
@@ -364,6 +367,48 @@ def _load_home_listing(
     return payload
 
 
+def _load_headline_news(categoria: str | None) -> list[Any]:
+    """Manchetes importantes (urgência Alta) para o hero da home."""
+    client = get_db()
+    where = "WHERE COALESCE(home_priority, 0) >= ?"
+    params: list[Any] = [core.HOME_HEADLINE_MIN_PRIORITY]
+    if categoria:
+        where += " AND tag = ?"
+        params.append(categoria)
+    params.append(HOME_HEADLINE_MAX)
+    result = client.execute(
+        NEWS_LIST_SELECT + where + " ORDER BY home_priority DESC, id DESC LIMIT ?",
+        params,
+    )
+    return list(result.rows) if result else []
+
+
+def _split_home_editorial(
+    news: list[Any],
+    headline_news: list[Any],
+) -> dict[str, list[Any]]:
+    """Separa manchetes, cards laterais, trilha e feed sem duplicar IDs."""
+    headline_ids = {row[0] for row in headline_news}
+    top_pool = [row for row in news[:HOME_TOP_COUNT] if row[0] not in headline_ids]
+    feed_pool = [row for row in news[HOME_TOP_COUNT:] if row[0] not in headline_ids]
+
+    headlines = list(headline_news)
+    if not headlines and top_pool:
+        headlines = [top_pool[0]]
+        top_pool = top_pool[1:]
+
+    secondary = top_pool[:3]
+    trilha = top_pool[3 : 3 + HEADLINE_TRAIL]
+    feed_news = top_pool[3 + HEADLINE_TRAIL :] + feed_pool
+
+    return {
+        "headline_news": headlines,
+        "secondary_news": secondary,
+        "trilha_news": trilha,
+        "feed_news": feed_news,
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, categoria: str | None = None, q: str | None = None):
     # Sem busca: 4 destaques + 3 chamadas + 8 no feed. Com busca: só o feed de 8.
@@ -371,11 +416,25 @@ def index(request: Request, categoria: str | None = None, q: str | None = None):
     listing = _load_home_listing(categoria, 0, initial_limit, q)
     sparklines = core.fetch_sparkline_data(blocking=False)
 
+    editorial: dict[str, list[Any]] = {
+        "headline_news": [],
+        "secondary_news": [],
+        "trilha_news": [],
+        "feed_news": list(listing["news"]) if q else [],
+    }
+    if listing["news"] and not q:
+        headlines = _load_headline_news(categoria)
+        editorial = _split_home_editorial(list(listing["news"]), headlines)
+
     response = _render(
         request,
         "index.html",
         {
             "news": listing["news"],
+            "headline_news": editorial["headline_news"],
+            "secondary_news": editorial["secondary_news"],
+            "trilha_news": editorial["trilha_news"],
+            "feed_news": editorial["feed_news"] if not q else listing["news"],
             "categoria_ativa": categoria,
             "categorias": CATEGORIAS,
             "q": q,
@@ -810,13 +869,15 @@ def _persist_generated_news(noticias_geradas: list[dict[str, Any]]) -> int:
             except json.JSONDecodeError:
                 pass
 
+        priority = core.compute_home_priority(n)
         client.execute(
             """
             INSERT INTO news (
                 titulo, resumo, impacto, link, tag, sentimento, published_at,
-                fonte, dados_mercado, contexto_editorial, created_at, imagem_url, versao_analise
+                fonte, dados_mercado, contexto_editorial, created_at, imagem_url, versao_analise,
+                home_priority
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 n["titulo_viral"],
@@ -832,6 +893,7 @@ def _persist_generated_news(noticias_geradas: list[dict[str, Any]]) -> int:
                 agora,
                 n.get("imagem_url"),
                 n.get("versao_analise", 1),
+                priority,
             ],
         )
         existing.add(link)

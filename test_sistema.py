@@ -94,6 +94,8 @@ def run() -> int:
         check("Home: ticker sem loading", "Carregando mercado" not in r.text and "Loading markets" not in r.text)
         check("Home: ticker cache-bust", "market-ticker.js?v=" in r.text)
         check("Home: categorias", all(t in r.text for t in VALID_TAGS[:3]))
+        check("Home: carrossel manchete", "data-headline-carousel" in r.text)
+        check("Home: init carrossel JS", "initHeadlineCarousel" in r.text)
         check("Home: CSS estático", "/static/css/app.css" in r.text)
         check("Home: sem Tailwind CDN", "cdn.tailwindcss.com" not in r.text)
         check("Home: google-site-verification meta", "google-site-verification" in r.text)

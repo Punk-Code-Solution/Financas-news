@@ -1077,11 +1077,176 @@ def _format_delta_line(delta: dict[str, Any] | None, suffix: str = "") -> str:
     return " ".join(bits)
 
 
+# Escolas analíticas para enriquecer o texto — paráfrase original; sem citações literais.
+ANALYTICAL_LENSES: list[dict[str, Any]] = [
+    {
+        "id": "valor_margem",
+        "label": "Valor e margem de segurança",
+        "school": "Tradição Graham/Buffett",
+        "tags": ("Economia", "Ações", "Juros", "Inflação", "Imóveis", "Fintech"),
+        "keywords": ("ação", "bolsa", "empresa", "lucro", "dividendo", "valuation", "balanço"),
+        "hint": (
+            "Enquadre preço versus valor, proteção de capital e paciência. "
+            "Evite perseguir retorno sem entender o risco de perda permanente."
+        ),
+    },
+    {
+        "id": "ciclos_credito",
+        "label": "Ciclos de crédito e liquidez",
+        "school": "Macro estrutural (Ray Dalio)",
+        "tags": ("Economia", "Juros", "Política Econômica", "Dólar", "Inflação"),
+        "keywords": ("juros", "dívida", "copom", "selic", "crédito", "liquidez", "fiscal", "spread"),
+        "hint": (
+            "Situar o fato no estágio do ciclo (expansão, aperto, desaceleração). "
+            "Relacione política monetária, fluxo de capital e apetite a risco sem repetir só a Selic."
+        ),
+    },
+    {
+        "id": "risco_assimetrico",
+        "label": "Risco assimétrico e ciclos de humor",
+        "school": "Crédito/contrarian (Howard Marks)",
+        "tags": ("Cripto", "Ações", "Commodities", "Fintech"),
+        "keywords": ("rally", "crash", "euforia", "medo", "volatilidade", "bolha", "correção", "bear"),
+        "hint": (
+            "Mostre onde o mercado já precifica otimismo ou pessimismo. "
+            "Destaque assimetria risco/retorno e o que invalidaria a tese."
+        ),
+    },
+    {
+        "id": "custo_disciplina",
+        "label": "Disciplina de longo prazo e custos",
+        "school": "Indexação e eficiência (John Bogle)",
+        "tags": ("Economia", "Ações", "Fintech", "Inflação"),
+        "keywords": ("etf", "fundo", "taxa", "diversific", "aposentadoria", "poupança", "carteira"),
+        "hint": (
+            "Priorize diversificação, custos, rebalanceamento e horizonte. "
+            "Evite prometer timing perfeito; foque em processo repetível."
+        ),
+    },
+]
+
+
+def _macro_topic_relevance(title: str, content: str, tag_hint: str) -> dict[str, bool]:
+    """Indica quais indicadores macro são centrais à matéria (evita forçar Selic em tudo)."""
+    text = _fold_label(f"{title} {content[:1500]} {tag_hint}")
+    return {
+        "selic": any(
+            k in text
+            for k in ("selic", "copom", "juros", "taxa basica", "banco central", "credito", "di ")
+        )
+        or tag_hint in ("Juros", "Política Econômica"),
+        "ipca": any(k in text for k in ("ipca", "inflacao", "precos", "custos", "cesta"))
+        or tag_hint in ("Inflação", "Economia"),
+        "dolar": any(k in text for k in ("dolar", "cambio", "usd", "eur", "forex", "real "))
+        or tag_hint in ("Dólar", "Commodities", "Economia"),
+    }
+
+
+def _score_analysis_lens(lens: dict[str, Any], text_fold: str, tag_hint: str) -> int:
+    score = 0
+    if tag_hint in lens.get("tags", ()):
+        score += 2
+    for kw in lens.get("keywords", ()):
+        if kw in text_fold:
+            score += 3
+    return score
+
+
+def select_analysis_lenses(
+    title: str,
+    content: str,
+    tag_hint: str,
+    count: int = 2,
+) -> list[dict[str, Any]]:
+    """Escolhe lentes analíticas diversas para a matéria (sem repetir sempre a mesma dupla)."""
+    text_fold = _fold_label(f"{title} {content[:1200]} {tag_hint}")
+    ranked = sorted(
+        ANALYTICAL_LENSES,
+        key=lambda lens: _score_analysis_lens(lens, text_fold, tag_hint),
+        reverse=True,
+    )
+    selected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for lens in ranked:
+        if lens["id"] in seen:
+            continue
+        selected.append(lens)
+        seen.add(lens["id"])
+        if len(selected) >= count:
+            break
+    for lens in ANALYTICAL_LENSES:
+        if len(selected) >= count:
+            break
+        if lens["id"] not in seen:
+            selected.append(lens)
+            seen.add(lens["id"])
+    # Rotaciona a ordem por matéria para variar o ângulo dominante.
+    if len(selected) > 1:
+        pivot = sum(ord(c) for c in (title or "")[:48]) % len(selected)
+        selected = selected[pivot:] + selected[:pivot]
+    return selected[:count]
+
+
+def _build_lens_prompt_block(lenses: list[dict[str, Any]]) -> str:
+    lines = [
+        "## LENTES ANALÍTICAS (incorpore 2 escolas — texto ORIGINAL)",
+        "Use as ideias abaixo como enquadramento editorial. PROIBIDO: aspas atribuídas a pessoas, "
+        "trechos de livros/discursos ou frases registradas. Pode mencionar a ESCOLA (ex.: "
+        "'tradição do valor') sem reproduzir obra protegida.",
+        "",
+    ]
+    for lens in lenses:
+        lines.append(f"- **{lens['label']}** (referência escolar: {lens['school']})")
+        lines.append(f"  {lens['hint']}")
+    lines.extend(
+        [
+            "",
+            "Inclua no JSON o campo `lentes_analiticas`: lista com 2 objetos "
+            '`{"escola": "nome curto da escola", "aplicacao": "2-3 frases originais aplicando a matéria"}`.',
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _build_macro_usage_rules(relevance: dict[str, bool], tag_hint: str) -> str:
+    lines = [
+        "## USO DOS DADOS MACRO (contextual — NÃO repetir Selic em toda matéria)",
+        "- Use APENAS indicadores relevantes ao fato; o painel é referência, não checklist obrigatório.",
+    ]
+    if relevance.get("selic"):
+        lines.append(
+            "- Selic/juros: CENTRAIS nesta matéria — cite com valor e tendência 7d/30d quando disponível."
+        )
+    else:
+        lines.append(
+            "- Selic/juros: PERIFÉRICOS — no máximo 1 menção breve no box `contexto_mercado` "
+            "(ou omita se não agregar). NÃO abra o artigo com Selic."
+        )
+    if relevance.get("ipca"):
+        lines.append("- IPCA/inflação: relevante — use com número concreto.")
+    else:
+        lines.append("- IPCA: só cite se conectar naturalmente ao fato (evite clichê).")
+    if relevance.get("dolar"):
+        lines.append("- Câmbio: relevante — use dólar ou par correlato da tag.")
+    else:
+        lines.append("- Câmbio: cite só se o fato tiver vínculo direto com FX ou commodities.")
+    lines.extend(
+        [
+            f"- Categoria {tag_hint}: priorize cotações e indicadores da tag antes do núcleo macro.",
+            "- Em 6 parágrafos, use números concretos em pelo menos 4 — mas VARIE os indicadores "
+            "(não repita Selic em todos).",
+            "- Se o acervo recente já saturou Selic/juros, traga ângulo novo (setorial, fiscal, "
+            "comportamental ou internacional).",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def format_data_context(market, bcb, db_context, historico=None, tag_hint: str = "Economia"):
     """Monta bloco de dados para injetar no prompt da IA (painel fixo + tendência)."""
     hist = historico or {}
     lines = [
-        "=== PAINEL OBRIGATÓRIO (cite Selic, IPCA 12m e dólar em TODA análise) ===",
+        "=== PAINEL MACRO DE REFERÊNCIA (use só indicadores relevantes à matéria) ===",
         f"Coletado em: {market.get('coletado_em', 'agora')}",
         f"Categoria da matéria: {tag_hint}",
     ]
@@ -2690,6 +2855,11 @@ def process_news_with_ai(title, content, fonte, tag_hint, market_context):
     print(f"   🤖 Enviando para IA: {title[:40]}...")
 
     tags_list = ", ".join(VALID_TAGS)
+    macro_rel = _macro_topic_relevance(title, content, tag_hint)
+    lenses = select_analysis_lenses(title, content, tag_hint, count=2)
+    lens_block = _build_lens_prompt_block(lenses)
+    macro_rules = _build_macro_usage_rules(macro_rel, tag_hint)
+
     prompt = f"""
 Você é o editor-chefe de análise do portal "Finanças News" (financas-news.net.br), especializado em economia brasileira, mercado de capitais e criptoativos.
 
@@ -2697,16 +2867,22 @@ Sua missão é produzir uma ANÁLISE EDITORIAL ORIGINAL de alto valor — não u
 
 ## REGRAS INEGOCIÁVEIS
 - PROIBIDO: resumir a notícia, usar "segundo a matéria", "o texto relata", "conforme publicado".
-- PROIBIDO: parágrafo só com opinião genérica sem número concreto dos DADOS DE MERCADO.
-- OBRIGATÓRIO: citar Selic, IPCA (12 meses) e dólar (pelo menos uma vez no artigo), com o valor fornecido.
-- OBRIGATÓRIO: citar pelo menos 1 cotação extra relevante à categoria (ex.: BTC em Cripto, EUR em Dólar).
-- OBRIGATÓRIO: em CADA um dos 6 parágrafos do resumo_simples, amarrar a interpretação a pelo menos 1 número citado (ex.: "com a Selic a X%...", "o dólar a R$ Y...").
-- OBRIGATÓRIO: quando houver tendência 7d/30d nos dados, usar em pelo menos 2 parágrafos (mostrar direção, não só o print do dia).
-- OBRIGATÓRIO: conectar o fato da notícia com o cenário macro brasileiro (inflação, juros, câmbio, bolsa).
+- PROIBIDO: parágrafo só com opinião genérica sem número concreto dos DADOS DE MERCADO ou do acervo.
+- PROIBIDO: abrir toda matéria com Selic/juros quando o fato for de outro tema (cripto, política local, consumo, etc.).
+- PROIBIDO: repetir a mesma fórmula macro (Selic + IPCA + dólar) em todos os parágrafos — varie os indicadores.
+- OBRIGATÓRIO: usar números concretos do painel em pelo menos 4 dos 6 parágrafos (indicadores VARIADOS).
+- OBRIGATÓRIO: citar pelo menos 1 cotação ou indicador alinhado à categoria `{tag_hint}`.
+- OBRIGATÓRIO: quando houver tendência 7d/30d nos dados, usar em pelo menos 2 parágrafos (direção, não só o print do dia).
+- OBRIGATÓRIO: conectar o fato da notícia com o cenário macro brasileiro SOMENTE quando fizer sentido editorial.
 - OBRIGATÓRIO: cruzar com o ACERVO EDITORIAL — mencione se há tendência (ex.: "terceira notícia negativa sobre X esta semana").
+- OBRIGATÓRIO: incorporar as 2 lentes analíticas abaixo em paráfrase original (sem citações literais de especialistas).
 - OBRIGATÓRIO: dar orientação prática para o leitor comum (investidor iniciante ou chefe de família).
 - Mínimo de 500 palavras no campo resumo_simples.
 - Tom: jornalístico, analítico, acessível. Você domina tecnologia e finanças, com visão de livre mercado e empreendedorismo.
+
+{macro_rules}
+
+{lens_block}
 
 ## NOTÍCIA FONTE
 Fonte RSS: {fonte}
@@ -2719,25 +2895,28 @@ Conteúdo base (use como ponto de partida, não como texto a reescrever):
 {market_context}
 
 ## ESTRUTURA DO ARTIGO (campo resumo_simples — 6 parágrafos separados por \\n\\n)
-1. **Abertura**: O fato em uma frase forte + por que importa AGORA — cite 1 número do painel.
-2. **Contexto com dados**: Selic + IPCA e/ou câmbio — valores e tendência 7d/30d quando disponível.
-3. **Cruzamento de fontes**: Relacione com o acervo editorial + 1 cotação/indicador.
+1. **Abertura**: O fato em uma frase forte + por que importa AGORA — número ligado ao TEMA (não force Selic se irrelevante).
+2. **Contexto com dados**: Indicadores macro/cotações RELEVANTES — valores e tendência 7d/30d quando disponível.
+3. **Cruzamento de fontes**: Relacione com o acervo editorial + 1 lente analítica aplicada ao caso.
 4. **Análise aprofundada**: Causas e riscos — cada afirmação forte amarrada a um dado citado.
-5. **Cenários**: 30/90/180 dias com âncoras numéricas (juros, inflação ou câmbio).
-6. **Guia prático**: 2-3 ações concretas ligadas aos números do cenário atual.
+5. **Cenários**: 30/90/180 dias com âncoras numéricas variadas (não só juros).
+6. **Guia prático**: 2-3 ações concretas + segunda lente analítica (disciplina, risco ou ciclo).
 
 Retorne APENAS JSON válido (sem ```json):
 {{
     "titulo_viral": "Título jornalístico, informativo e específico (máx. 90 caracteres). Evite clickbait vazio.",
     "resumo_simples": "Artigo completo de 6 parágrafos com \\n\\n entre eles. Mínimo 500 palavras.",
-    "contexto_mercado": "Box de 3-4 frases com os principais números citados (cotações, Selic, IPCA) formatados para leitura rápida.",
+    "contexto_mercado": "Box de 3-4 frases com os principais números citados (variados; não só Selic).",
     "impacto_bolso": "3 frases diretas: impacto no bolso, na poupança/investimentos e no custo de vida.",
     "tag": "UMA de: {tags_list}",
     "sentimento": "UM de: Positivo, Negativo, Neutro",
     "dados_citados": ["lista dos dados numéricos que você efetivamente usou no texto"],
+    "lentes_analiticas": [
+        {{"escola": "nome curto da escola", "aplicacao": "2-3 frases originais aplicando a matéria"}}
+    ],
     "pontos_chave": [
         {{
-            "titulo": "Nome curto do ponto (ex: Selic 14,25%)",
+            "titulo": "Nome curto do ponto (ex: volatilidade do BTC)",
             "descricao": "Uma frase explicando por que esse dado importa para o leitor",
             "categoria": "UMA de: {tags_list} — categoria para link interno"
         }}
@@ -2796,7 +2975,7 @@ def _build_dados_mercado_payload(market, bcb, ai_data, historico=None) -> str:
     extra_keys = (
         "timeline", "cenarios", "perfil_investidor", "glossario", "faq",
         "urgencia", "publico_alvo", "horizonte", "confianca_dados",
-        "tabela_comparativa", "referencias_internas",
+        "tabela_comparativa", "referencias_internas", "lentes_analiticas",
     )
     payload = {
         "cotacoes": market,
@@ -2809,6 +2988,68 @@ def _build_dados_mercado_payload(market, bcb, ai_data, historico=None) -> str:
         if ai_data.get(key):
             payload[key] = ai_data[key]
     return json.dumps(payload, ensure_ascii=False)
+
+
+HOME_PRIORITY_ALTA = 100
+HOME_PRIORITY_MEDIA = 50
+HOME_PRIORITY_BAIXA = 20
+HOME_HEADLINE_MIN_PRIORITY = 80
+
+
+def compute_home_priority(ai_data: dict[str, Any] | None) -> int:
+    """Pontuação editorial para manchete da home (maior = mais importante)."""
+    if not ai_data:
+        return 0
+    urgencia = str(ai_data.get("urgencia") or "Média").strip().lower()
+    if urgencia == "alta":
+        score = HOME_PRIORITY_ALTA
+    elif urgencia in ("média", "media"):
+        score = HOME_PRIORITY_MEDIA
+    else:
+        score = HOME_PRIORITY_BAIXA
+    if ai_data.get("imagem_url"):
+        score += 5
+    return min(score, HOME_PRIORITY_ALTA)
+
+
+def compute_home_priority_from_json(raw: str | dict[str, Any] | None) -> int:
+    if not raw:
+        return 0
+    try:
+        obj = json.loads(raw) if isinstance(raw, str) else raw
+    except (json.JSONDecodeError, TypeError):
+        return 0
+    if not isinstance(obj, dict):
+        return 0
+    return compute_home_priority(obj)
+
+
+def backfill_home_priority(client, limit: int = 300) -> int:
+    """Preenche home_priority em matérias antigas a partir de dados_mercado.urgencia."""
+    try:
+        result = client.execute(
+            """
+            SELECT id, dados_mercado FROM news
+            WHERE COALESCE(home_priority, 0) = 0
+              AND dados_mercado IS NOT NULL AND dados_mercado != ''
+            ORDER BY id DESC LIMIT ?
+            """,
+            [max(1, limit)],
+        )
+    except Exception as exc:
+        print(f"   [home_priority] backfill ignorado: {exc}")
+        return 0
+
+    updated = 0
+    for row in result.rows or []:
+        priority = compute_home_priority_from_json(row[1])
+        if priority <= 0:
+            continue
+        client.execute("UPDATE news SET home_priority = ? WHERE id = ?", [priority, row[0]])
+        updated += 1
+    if updated:
+        print(f"   [home_priority] backfill: {updated} matéria(s) atualizada(s).")
+    return updated
 
 
 def refresh_article_market_data(article_id: int, add_update_note: bool = True) -> dict[str, Any] | None:
@@ -3118,7 +3359,9 @@ def _build_own_analysis_brief(angle: dict[str, Any]) -> tuple[str, str]:
             "",
             "INSTRUÇÃO ESPECIAL PARA ANÁLISE PRÓPRIA:",
             "- Produza um texto AUTORAL que une esses fios em uma tese editorial clara.",
-            "- Cite Selic, IPCA e dólar do painel; amarre cada parágrafo a um número.",
+            "- Use indicadores do painel SOMENTE quando relevantes; não repita Selic em toda análise.",
+            "- Incorpore 2 lentes analíticas (escolas clássicas) em paráfrase original — sem citações literais.",
+            "- Em cada parágrafo, amarre a interpretação a números variados (não só juros).",
             "- Explique o que muda para o investidor comum à luz do conjunto (não de uma só manchete).",
             "- Evite repetir títulos do acervo; sintetize e avance a análise.",
         ]

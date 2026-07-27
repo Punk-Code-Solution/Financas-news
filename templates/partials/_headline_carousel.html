@@ -1,0 +1,26 @@
+{# Hero editorial: 1 manchete ou carrossel simples quando há várias importantes. #}
+<div class="headline-carousel relative min-h-[380px] md:min-h-[480px] rounded-2xl overflow-hidden bg-slate-900 grow" data-headline-carousel>
+    <div class="headline-carousel__viewport overflow-hidden h-full">
+        <div class="headline-carousel__track flex h-full transition-transform duration-500 ease-out" data-headline-track>
+            {% for item in headline_news %}
+            {% with item=item %}
+            {% include "partials/_headline_slide.html" %}
+            {% endwith %}
+            {% endfor %}
+        </div>
+    </div>
+
+    {% if headline_news|length > 1 %}
+    <button type="button" class="headline-carousel__btn headline-carousel__btn--prev" data-headline-prev aria-label="{{ t('headline_carousel_prev') }}">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"></path></svg>
+    </button>
+    <button type="button" class="headline-carousel__btn headline-carousel__btn--next" data-headline-next aria-label="{{ t('headline_carousel_next') }}">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"></path></svg>
+    </button>
+    <div class="headline-carousel__dots absolute bottom-4 left-0 right-0 flex justify-center gap-2 z-10" data-headline-dots role="tablist" aria-label="{{ t('headline_carousel_aria') }}">
+        {% for item in headline_news %}
+        <button type="button" class="headline-carousel__dot{% if loop.first %} is-active{% endif %}" data-headline-dot="{{ loop.index0 }}" role="tab" aria-label="{{ t('headline_carousel_go', n=loop.index) }}" aria-selected="{{ 'true' if loop.first else 'false' }}"></button>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>

@@ -1,0 +1,16 @@
+{# Slide da manchete principal — item = tupla news (índices padrão da listagem). #}
+<article class="headline-carousel__slide relative min-h-[380px] md:min-h-[480px] shrink-0 w-full bg-slate-900 group" data-headline-slide>
+    <img src="{{ article_cover(item[11], item[5]) }}" data-fallback="{{ category_image(item[5]) }}" alt="{{ item[1] }}" {% if not loop.first %}loading="lazy"{% endif %} class="absolute inset-0 w-full h-full object-cover object-center transition duration-500 group-hover:scale-105">
+    <div class="featured-gradient absolute inset-0"></div>
+    <a href="/noticia/{{ item[0] }}?lang={{ lang }}" class="absolute inset-0 flex flex-col justify-end p-6 md:p-8">
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
+            {% if item|length > 15 and item[15] >= 80 %}
+            <span class="bg-amber-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">{{ t('headline_badge') }}</span>
+            {% endif %}
+            <span class="bg-[#4ade80] text-slate-950 text-[11px] font-black px-2.5 py-1 rounded-full uppercase">{{ tr_tag(item[5]) }}</span>
+            {% if item[8] %}<span class="text-xs text-slate-300">{{ item[8] }}</span>{% endif %}
+        </div>
+        <h2 class="font-serif text-3xl md:text-5xl font-black text-white leading-[1.08] group-hover:text-[#4ade80] transition">{{ item[1] }}</h2>
+        <p class="mt-4 text-sm md:text-base text-slate-200 line-clamp-2 max-w-2xl">{{ item[2] }}</p>
+    </a>
+</article>

@@ -312,6 +312,7 @@ def ensure_schema(client: DbClient) -> None:
             ("conteudo_extra", "TEXT"),
             ("updated_at", "TEXT"),
             ("versao_analise", "INTEGER"),
+            ("home_priority", "INTEGER"),
         ]:
             try:
                 _ = client.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
@@ -489,18 +490,29 @@ def get_editorial_context(tag_hint=None, limit=6):
 
         lines = []
         recent_counts: dict[str, int] = {}
+        selic_hook_count = 0
         for row in rows:
             titulo, tag, sentimento, impacto = row[0], row[1], row[2] or "Neutro", row[3] or ""
+            titulo_l = (titulo or "").lower()
+            if any(k in titulo_l for k in ("selic", "copom", "juros", "taxa de juros")):
+                selic_hook_count += 1
             lines.append(f"- [{tag}] {titulo} (sentimento: {sentimento})")
             recent_counts[sentimento] = recent_counts.get(sentimento, 0) + 1
 
         # Usa o mesmo lote já carregado — evita 2ª round-trip ao Turso.
         panorama = ", ".join(f"{s}: {c}" for s, c in recent_counts.items())
-        return (
+        out = (
             "NOTÍCIAS RECENTES JÁ PUBLICADAS NO PORTAL (use para contextualizar tendências, NÃO repita):\n"
             + "\n".join(lines)
             + f"\n\nPANORAMA DE SENTIMENTO RECENTE: {panorama}"
         )
+        if selic_hook_count >= 3:
+            out += (
+                "\n\nALERTA ANTI-REPETIÇÃO: várias matérias recentes já abriram com Selic/juros. "
+                "Nesta análise, só use Selic se for CENTRAL ao fato; prefira ângulo setorial, "
+                "comportamental, fiscal ou internacional."
+            )
+        return out
     except Exception as e:
         return f"Histórico do portal indisponível: {e}"
 
