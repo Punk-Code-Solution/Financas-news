@@ -1,7 +1,7 @@
 {# Hero editorial: 1 manchete ou carrossel simples quando há várias importantes. #}
 <div class="headline-carousel relative min-h-[380px] md:min-h-[480px] rounded-2xl overflow-hidden bg-slate-900 grow" data-headline-carousel>
     <div class="headline-carousel__viewport overflow-hidden h-full">
-        <div class="headline-carousel__track flex h-full transition-transform duration-500 ease-out" data-headline-track>
+        <div class="headline-carousel__track h-full transition-transform duration-500 ease-out" data-headline-track>
             {% for item in headline_news %}
             {% with item=item %}
             {% include "partials/_headline_slide.html" %}
