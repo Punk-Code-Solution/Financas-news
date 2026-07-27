@@ -525,3 +525,32 @@ def find_guide_noticia_id(client: DbClient, slug: str) -> int | None:
     if not result.rows:
         return None
     return int(result.rows[0][0])
+
+
+# Guias evergreen relacionados por categoria editorial.
+CATEGORY_GUIDE_SLUGS: dict[str, tuple[str, ...]] = {
+    "Juros": ("selic", "renda-fixa"),
+    "Inflação": ("ipca",),
+    "Dólar": ("cambio",),
+    "Economia": ("selic", "ipca"),
+    "Ações": ("renda-fixa",),
+    "Fintech": ("renda-fixa",),
+    "Imóveis": ("renda-fixa",),
+    "Commodities": ("cambio",),
+    "Política Econômica": ("selic", "ipca"),
+}
+
+
+def guides_for_tag(tag: str) -> list[dict[str, Any]]:
+    """Retorna guias educativos vinculados à categoria (slug + metadados)."""
+    slugs = CATEGORY_GUIDE_SLUGS.get(str(tag or "").strip(), ())
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for slug in slugs:
+        if slug in seen:
+            continue
+        guide = get_guide_by_slug(slug)
+        if guide:
+            seen.add(slug)
+            out.append(guide)
+    return out

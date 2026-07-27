@@ -81,6 +81,18 @@ def run() -> int:
         check("robots: Disallow busca ?q=", "Disallow: /*?q=" in r.text)
         check("robots: Disallow paginação ?page=", "Disallow: /*?page=" in r.text)
         check("robots: Sitemap", "Sitemap: https://financas-news.net.br/sitemap.xml" in r.text)
+        check("robots: feed.xml", "/feed.xml" in r.text)
+
+        r = client.get("/feed.xml")
+        check("GET /feed.xml", r.status_code == 200 and "<rss" in r.text, f"status={r.status_code}")
+        check("Feed RSS: channel", "<channel>" in r.text)
+
+        r = client.get("/feed.atom")
+        check("GET /feed.atom", r.status_code == 200 and "<feed" in r.text, f"status={r.status_code}")
+
+        r = client.get("/")
+        csp = r.headers.get("content-security-policy", "")
+        check("CSP header", "default-src 'self'" in csp and "cdn.jsdelivr.net" in csp)
 
         # Páginas
         for path in ["/", "/quem-somos", "/privacidade", "/termos"]:
@@ -120,6 +132,9 @@ def run() -> int:
             "Cripto" in r.text and "Finanças News" in r.text and "<title>" in r.text,
         )
         check("Categoria: indexável (sem noindex)", 'name="robots" content="noindex' not in r.text)
+        check("Categoria: CollectionPage JSON-LD", "CollectionPage" in r.text and "ItemList" in r.text)
+        check("Categoria: intro editorial", "Selic" in r.text or "Copom" in r.text)
+        check("Categoria: guia relacionado", "/artigo/selic" in r.text)
 
         r = client.get("/", params={"q": "selic", "lang": "en"})
         check("Busca: noindex", 'name="robots" content="noindex, follow"' in r.text)

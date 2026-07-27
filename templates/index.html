@@ -82,6 +82,32 @@
         ]
     }
     </script>
+    {% if categoria_ativa and not q and news %}
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "CollectionPage",
+        "name": {{ t('meta_category_og_title', tag=tr_tag(categoria_ativa)) | tojson }},
+        "description": {{ t('meta_category_description', tag=tr_tag(categoria_ativa)) | tojson }},
+        "url": {{ canonical_url | tojson }},
+        "inLanguage": {{ html_lang | tojson }},
+        "isPartOf": {"@id": {{ (site_origin ~ '/#website') | tojson }}},
+        "mainEntity": {
+            "@type": "ItemList",
+            "itemListElement": [
+                {% for item in news[:12] %}
+                {
+                    "@type": "ListItem",
+                    "position": {{ loop.index }},
+                    "url": {{ (site_origin ~ '/noticia/' ~ item[0]) | tojson }},
+                    "name": {{ (item[1] or '') | tojson }}
+                }{% if not loop.last %},{% endif %}
+                {% endfor %}
+            ]
+        }
+    }
+    </script>
+    {% endif %}
 
     {% include "partials/_styles.html" %}
     {% include "partials/_adsense_styles.html" %}
@@ -319,6 +345,26 @@
         <div class="mb-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 text-center">
             <p class="text-green-800 dark:text-green-300 font-semibold text-sm">{{ t('newsletter_ok') }}</p>
         </div>
+        {% endif %}
+
+        {% if categoria_ativa and not q and category_intro(categoria_ativa) %}
+        <section class="mb-8 rounded-2xl border border-blue-100 dark:border-slate-700 bg-gradient-to-br from-blue-50/80 to-white dark:from-slate-800/60 dark:to-[#0f172a] p-5 md:p-6">
+            <p class="text-xs font-bold uppercase tracking-[0.2em] text-blue-600 dark:text-[#4ade80] mb-2">{{ t('category_hub_heading', tag=tr_tag(categoria_ativa)) }}</p>
+            <p class="text-base md:text-lg text-gray-700 dark:text-slate-300 leading-relaxed max-w-4xl">{{ category_intro(categoria_ativa) }}</p>
+            {% if category_guides %}
+            <div class="mt-4 pt-4 border-t border-blue-100 dark:border-slate-700">
+                <p class="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-2">{{ t('category_related_guides', tag=tr_tag(categoria_ativa)) }}</p>
+                <div class="flex flex-wrap gap-2">
+                    {% for guide in category_guides %}
+                    <a href="/artigo/{{ guide.slug }}?lang={{ lang }}"
+                       class="text-xs font-bold px-3 py-1.5 rounded-full border border-blue-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-blue-700 dark:text-[#4ade80] hover:border-blue-400 transition">
+                        {{ guide.titulo[:72] }}{% if guide.titulo|length > 72 %}…{% endif %}
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </section>
         {% endif %}
 
         {% if news and not q %}

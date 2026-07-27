@@ -135,6 +135,123 @@ TAG_LABELS = {
     },
 }
 
+# Textos introdutórios editoriais por categoria (home com ?categoria=).
+CATEGORY_INTROS: dict[str, dict[str, str]] = {
+    "pt": {
+        "Cripto": (
+            "Bitcoin, altcoins, ETFs e regulação cripto no Brasil — com contexto de mercado, "
+            "risco e impacto no bolso, sem hype."
+        ),
+        "Economia": (
+            "PIB, emprego, fiscal e indicadores que movem o dia a dia da economia brasileira, "
+            "com leitura clara para investidor e consumidor."
+        ),
+        "Dólar": (
+            "Câmbio, fluxo externo e dólar no bolso: entenda o que pressiona o USD/BRL "
+            "e como isso afeta preços e investimentos."
+        ),
+        "Ações": (
+            "Bolsa, empresas listadas, resultados e setores em destaque — análises com "
+            "dados de mercado e contexto macro."
+        ),
+        "Juros": (
+            "Selic, Copom e curva de juros: acompanhe decisões do Banco Central e o efeito "
+            "no crédito, na poupança e na renda fixa."
+        ),
+        "Inflação": (
+            "IPCA, preços ao consumidor e expectativas de inflação — o termômetro que orienta "
+            "juros, salários e planejamento financeiro."
+        ),
+        "Imóveis": (
+            "Financiamento, aluguel, crédito imobiliário e tendências do mercado de moradia "
+            "no Brasil."
+        ),
+        "Fintech": (
+            "Bancos digitais, pagamentos, open finance e inovação financeira com impacto "
+            "direto na sua carteira."
+        ),
+        "Commodities": (
+            "Petróleo, minério, agronegócio e commodities que influenciam exportações, "
+            "câmbio e inflação no país."
+        ),
+        "Política Econômica": (
+            "Reformas, arcabouço fiscal, gastos públicos e decisões de Brasília que "
+            "repercutem nos mercados."
+        ),
+    },
+    "en": {
+        "Cripto": (
+            "Bitcoin, altcoins, ETFs and crypto regulation in Brazil — market context, "
+            "risk and real-world impact, without hype."
+        ),
+        "Economia": (
+            "GDP, jobs, fiscal policy and indicators shaping the Brazilian economy, "
+            "explained for investors and consumers."
+        ),
+        "Dólar": (
+            "FX flows and USD/BRL drivers — what moves the exchange rate and how it "
+            "affects prices and portfolios."
+        ),
+        "Ações": (
+            "Equities, earnings and sectors in focus — analysis with market data and "
+            "macro context."
+        ),
+        "Juros": (
+            "Selic, Copom and the yield curve — Central Bank decisions and their effect "
+            "on credit, savings and fixed income."
+        ),
+        "Inflação": (
+            "IPCA, consumer prices and inflation expectations — the gauge behind rates, "
+            "wages and financial planning."
+        ),
+        "Imóveis": (
+            "Mortgages, rents and housing market trends across Brazil."
+        ),
+        "Fintech": (
+            "Digital banks, payments, open finance and financial innovation that affects "
+            "your wallet."
+        ),
+        "Commodities": (
+            "Oil, metals, agribusiness and commodities that sway exports, FX and inflation."
+        ),
+        "Política Econômica": (
+            "Reforms, fiscal rules and policy decisions from Brasília that ripple through markets."
+        ),
+    },
+    "ja": {
+        "Cripto": (
+            "ビットコイン、オルトコイン、ETF、ブラジルの暗号資産規制を市場文脈とリスクの観点から解説します。"
+        ),
+        "Economia": (
+            "GDP、雇用、財政、ブラジル経済の主要指標を投資家と消費者向けにわかりやすくまとめます。"
+        ),
+        "Dólar": (
+            "為替フローとUSD/BRLの要因、物価と投資への影響を追います。"
+        ),
+        "Ações": (
+            "株式、決算、注目セクターをマクロ文脈と市場データで分析します。"
+        ),
+        "Juros": (
+            "セリック、コポム、イールドカーブと金融政策が与えるクレジット・貯蓄への影響を解説します。"
+        ),
+        "Inflação": (
+            "IPCA、消費者物価、インフレ期待が金利と家計に与える影響を追跡します。"
+        ),
+        "Imóveis": (
+            "住宅ローン、賃貸、ブラジルの不動産市場トレンドをカバーします。"
+        ),
+        "Fintech": (
+            "デジタルバンク、決済、オープンファイナンスなど金融イノベーションを紹介します。"
+        ),
+        "Commodities": (
+            "原油、金属、農産物など輸出・為替・インフレに効くコモディティを追います。"
+        ),
+        "Política Econômica": (
+            "改革、財政ルール、政府の経済政策が市場に与える影響を解説します。"
+        ),
+    },
+}
+
 SENTIMENT_LABELS = {
     "pt": {"Positivo": "Positivo", "Negativo": "Negativo", "Neutro": "Neutro"},
     "en": {"Positivo": "Positive", "Negativo": "Negative", "Neutro": "Neutral"},
@@ -231,6 +348,8 @@ UI: dict[str, dict[str, str]] = {
         "newsletter_subscribe": "Inscrever-se",
         "newsletter_cta": "Quero receber análises",
         "premium_teaser": "Inscreva-se na newsletter para ser avisado no lançamento.",
+        "category_related_guides": "Guias para entender {tag}",
+        "category_hub_heading": "Cobertura de {tag}",
         "about_title": "Quem Somos",
         "about_meta_title": "Quem Somos | Finanças News — Economia e Mercado",
         "about_meta_description": "Conheça o Finanças News (financas news / financas-news): notícias financeiras, economia Brasil, Selic, IPCA, dólar, ações e criptomoedas com dados do Banco Central.",
@@ -413,6 +532,8 @@ UI: dict[str, dict[str, str]] = {
         "newsletter_subscribe": "Subscribe",
         "newsletter_cta": "Send me analyses",
         "premium_teaser": "Subscribe to the newsletter to get launch updates.",
+        "category_related_guides": "Guides to understand {tag}",
+        "category_hub_heading": "{tag} coverage",
         "about_title": "About Us",
         "about_meta_title": "About Us | Finanças News — Markets and Economy",
         "about_meta_description": "About Finanças News (financas news / financas-news): financial news, Brazilian economy, FX, rates, stocks and crypto with official market data.",
@@ -595,6 +716,8 @@ UI: dict[str, dict[str, str]] = {
         "newsletter_subscribe": "登録する",
         "newsletter_cta": "分析を受け取る",
         "premium_teaser": "ローンチ情報を受け取るにはニュースレターに登録してください。",
+        "category_related_guides": "{tag}を理解するためのガイド",
+        "category_hub_heading": "{tag}の特集",
         "about_title": "私たちについて",
         "about_meta_title": "私たちについて | Finanças News — 経済と市場",
         "about_meta_description": "Finanças News（financas news / financas-news）：ブラジル経済、為替、金利、株式、暗号資産のニュースと公式データに基づく分析。",
@@ -751,6 +874,15 @@ def translate_tag(lang: str, tag: object) -> str:
     return TAG_LABELS.get(lang, TAG_LABELS[DEFAULT_LANG]).get(raw, raw)
 
 
+def category_intro(lang: str, tag: object) -> str | None:
+    """Texto introdutório editorial da categoria ativa na home."""
+    raw = str(tag or "").strip()
+    if not raw:
+        return None
+    bundle = CATEGORY_INTROS.get(lang) or CATEGORY_INTROS[DEFAULT_LANG]
+    return bundle.get(raw) or CATEGORY_INTROS[DEFAULT_LANG].get(raw)
+
+
 def translate_sentiment(lang: str, sentiment: object) -> str:
     raw = str(sentiment or "Neutro").strip()
     # Aceita variações já traduzidas ou minúsculas.
@@ -888,6 +1020,7 @@ def build_i18n_context(request: Request) -> dict[str, Any]:
         "hreflang_full": True,
         "t": t,
         "tr_tag": lambda tag: translate_tag(lang, tag),
+        "category_intro": lambda tag: category_intro(lang, tag),
         "tr_sentiment": lambda s: translate_sentiment(lang, s),
         "tr_market_sentiment": lambda s: market_sentiment_label(lang, s),
         "tr_prob": lambda v: translate_probability(lang, v),

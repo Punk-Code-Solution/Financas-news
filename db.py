@@ -1,4 +1,5 @@
 import os
+import random
 import re
 import sqlite3
 import ssl
@@ -217,7 +218,7 @@ class PooledClient:
                 if self._inner is not inner:
                     # Outra thread já trocou o client — repete direto no novo.
                     continue
-                wait = delay * (2 ** (attempt - 1))
+                wait = delay * (2 ** (attempt - 1)) + random.uniform(0, 0.35)
                 print(
                     f"   [db] Turso instável ({type(exc).__name__}): "
                     + f"retry {attempt}/{attempts} em {wait:.1f}s…",
@@ -331,6 +332,14 @@ def ensure_schema(client: DbClient) -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT UNIQUE NOT NULL,
                 created_at TEXT NOT NULL
+            )
+        """)
+
+        _ = client.execute("""
+            CREATE TABLE IF NOT EXISTS newsletter_alert_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                news_id INTEGER NOT NULL UNIQUE,
+                sent_at TEXT NOT NULL
             )
         """)
 

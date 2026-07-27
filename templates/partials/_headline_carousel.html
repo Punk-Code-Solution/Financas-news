@@ -3,7 +3,7 @@
     <div class="headline-carousel__viewport overflow-hidden h-full">
         <div class="headline-carousel__track h-full transition-transform duration-500 ease-out" data-headline-track>
             {% for item in headline_news %}
-            {% with item=item %}
+            {% with item=item, headline_lazy=(not loop.first) %}
             {% include "partials/_headline_slide.html" %}
             {% endwith %}
             {% endfor %}

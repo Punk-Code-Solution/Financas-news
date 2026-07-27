@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 from fastapi import FastAPI, Request, Response, HTTPException, Form
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 import uvicorn
 from dotenv import load_dotenv
@@ -31,7 +31,9 @@ from educational_guides import (
     ensure_educational_guides,
     find_guide_noticia_id,
     get_guide_by_slug,
+    guides_for_tag,
 )
+from newsletter_service import enqueue_urgency_alert, is_send_configured, send_urgency_alert, send_weekly_digest
 from monetization import get_monetization_config, get_contextual_affiliate
 from article_enrichment import (
     build_article_enrichment,
@@ -59,6 +61,35 @@ FEATURED_COUNT = 4
 HEADLINE_TRAIL = 3
 HOME_TOP_COUNT = FEATURED_COUNT + HEADLINE_TRAIL
 HOME_HEADLINE_MAX = 5
+RSS_FEED_LIMIT = 50
+
+
+def _content_security_policy() -> str:
+    """CSP compatível com AdSense, Google Fonts, Chart.js CDN e scripts inline do portal."""
+    directives = [
+        "default-src 'self'",
+        "base-uri 'self'",
+        "object-src 'none'",
+        "frame-ancestors 'self'",
+        (
+            "script-src 'self' 'unsafe-inline' "
+            "https://pagead2.googlesyndication.com https://cdn.jsdelivr.net "
+            "https://www.googletagmanager.com https://www.google-analytics.com"
+        ),
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' https://fonts.gstatic.com data:",
+        "img-src 'self' data: https: blob:",
+        (
+            "connect-src 'self' https://economia.awesomeapi.com.br "
+            "https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net "
+            "https://www.google.com https://ep1.adtrafficquality.google"
+        ),
+        (
+            "frame-src https://googleads.g.doubleclick.net "
+            "https://tpc.googlesyndication.com https://www.google.com"
+        ),
+    ]
+    return "; ".join(directives)
 
 
 class CachedStaticFiles(StarletteStaticFiles):
@@ -114,6 +145,7 @@ async def security_and_cache_headers(request: Request, call_next):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Content-Security-Policy", _content_security_policy())
     if request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https":
         response.headers.setdefault(
             "Strict-Transport-Security",
@@ -436,6 +468,7 @@ def index(request: Request, categoria: str | None = None, q: str | None = None):
             "trilha_news": editorial["trilha_news"],
             "feed_news": editorial["feed_news"] if not q else listing["news"],
             "categoria_ativa": categoria,
+            "category_guides": guides_for_tag(categoria) if categoria and not q else [],
             "categorias": CATEGORIAS,
             "q": q,
             "has_more": listing["has_more"],
@@ -723,8 +756,117 @@ def get_robots_txt():
         + "Disallow: /*?page=\n"
         + "Disallow: /*?*page=\n"
         + f"Sitemap: {SITE_ORIGIN}/sitemap.xml\n"
+        + f"Sitemap: {SITE_ORIGIN}/feed.xml\n"
     )
     return Response(content=content, media_type="text/plain")
+
+
+def _xml_escape(text: object) -> str:
+    raw = str(text or "")
+    return (
+        raw.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
+
+
+def _feed_rows(limit: int = RSS_FEED_LIMIT) -> list[Any]:
+    client = get_db()
+    result = client.execute(
+        NEWS_LIST_SELECT + " ORDER BY id DESC LIMIT ?",
+        [max(1, min(limit, 100))],
+    )
+    return list(result.rows or [])
+
+
+def _row_pub_iso(row: tuple | list) -> str:
+    iso = _to_iso8601(row[7] if len(row) > 7 else None)
+    return iso or datetime.now().isoformat()
+
+
+def _build_rss_xml(rows: list[Any]) -> str:
+    parts = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">',
+        "<channel>",
+        f"<title>{_xml_escape('Finanças News')}</title>",
+        f"<link>{_xml_escape(SITE_ORIGIN)}</link>",
+        f"<description>{_xml_escape('Notícias financeiras, economia e mercado em tempo real.')}</description>",
+        f'<atom:link href="{_xml_escape(absolute_url(SITE_ORIGIN, "/feed.xml"))}" rel="self" type="application/rss+xml" />',
+        "<language>pt-BR</language>",
+    ]
+    for row in rows:
+        nid = int(row[0])
+        titulo = _xml_escape(row[1])
+        resumo = _xml_escape((str(row[2] or ""))[:500])
+        pub = _xml_escape(_row_pub_iso(row))
+        link = _xml_escape(absolute_url(SITE_ORIGIN, f"/noticia/{nid}"))
+        parts.extend(
+            [
+                "<item>",
+                f"<title>{titulo}</title>",
+                f"<link>{link}</link>",
+                f"<guid isPermaLink=\"true\">{link}</guid>",
+                f"<pubDate>{pub}</pubDate>",
+                f"<description>{resumo}</description>",
+                "</item>",
+            ]
+        )
+    parts.extend(["</channel>", "</rss>"])
+    return "\n".join(parts)
+
+
+def _build_atom_xml(rows: list[Any]) -> str:
+    updated = _row_pub_iso(rows[0]) if rows else datetime.now().isoformat()
+    parts = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<feed xmlns="http://www.w3.org/2005/Atom">',
+        f"<title>{_xml_escape('Finanças News')}</title>",
+        f"<link href=\"{_xml_escape(SITE_ORIGIN)}\" />",
+        f"<id>{_xml_escape(SITE_ORIGIN + '/')}</id>",
+        f"<updated>{_xml_escape(updated)}</updated>",
+    ]
+    for row in rows:
+        nid = int(row[0])
+        titulo = _xml_escape(row[1])
+        resumo = _xml_escape((str(row[2] or ""))[:500])
+        pub = _xml_escape(_row_pub_iso(row))
+        link = _xml_escape(absolute_url(SITE_ORIGIN, f"/noticia/{nid}"))
+        parts.extend(
+            [
+                "<entry>",
+                f"<title>{titulo}</title>",
+                f"<link href=\"{link}\" />",
+                f"<id>{link}</id>",
+                f"<updated>{pub}</updated>",
+                f"<summary>{resumo}</summary>",
+                "</entry>",
+            ]
+        )
+    parts.append("</feed>")
+    return "\n".join(parts)
+
+
+@app.get("/feed.xml", response_class=Response)
+def get_feed_rss():
+    xml = _build_rss_xml(_feed_rows())
+    return Response(
+        content=xml,
+        media_type="application/rss+xml; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=300, stale-while-revalidate=600"},
+    )
+
+
+@app.get("/feed.atom", response_class=Response)
+def get_feed_atom():
+    xml = _build_atom_xml(_feed_rows())
+    return Response(
+        content=xml,
+        media_type="application/atom+xml; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=300, stale-while-revalidate=600"},
+    )
 
 
 @app.get("/sitemap.xml", response_class=Response)
@@ -899,7 +1041,70 @@ def _persist_generated_news(noticias_geradas: list[dict[str, Any]]) -> int:
         existing.add(link)
         salvas += 1
 
+        if priority >= core.HOME_HEADLINE_MIN_PRIORITY:
+            try:
+                id_row = client.execute("SELECT id FROM news WHERE link = ? LIMIT 1", [link])
+                if id_row.rows:
+                    news_id = int(id_row.rows[0][0])
+                    enqueue_urgency_alert(
+                        client,
+                        news_id,
+                        str(n.get("titulo_viral") or ""),
+                        str(n.get("tag") or "Economia"),
+                        str(n.get("resumo_simples") or ""),
+                        priority,
+                    )
+            except Exception as exc:
+                print(f"   [newsletter] fila alerta urgencia ignorada: {exc}")
+
     return salvas
+
+
+@app.get("/api/newsletter-digest")
+def newsletter_digest(request: Request, token: str | None = None):
+    """Digest semanal: top 5 + painel macro para inscritos (cron com ROBO_TOKEN)."""
+    require_robo_auth(request, token)
+    if not is_send_configured():
+        raise HTTPException(status_code=503, detail="Provedor de envio nao configurado")
+    client = get_db()
+    result = send_weekly_digest(client)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Falha no envio"))
+    return {"status": "Sucesso", **result}
+
+
+@app.get("/api/newsletter-alerta")
+def newsletter_alerta(
+    request: Request,
+    token: str | None = None,
+    news_id: int | None = None,
+):
+    """Reenvio manual de alerta de urgência para uma notícia (auth robô)."""
+    require_robo_auth(request, token)
+    if news_id is None:
+        raise HTTPException(status_code=400, detail="news_id obrigatorio")
+    if not is_send_configured():
+        raise HTTPException(status_code=503, detail="Provedor de envio nao configurado")
+
+    client = get_db()
+    row = client.execute(
+        "SELECT id, titulo, resumo, tag, COALESCE(home_priority, 0) FROM news WHERE id = ?",
+        [news_id],
+    )
+    if not row.rows:
+        raise HTTPException(status_code=404, detail="Noticia nao encontrada")
+    data = row.rows[0]
+    result = send_urgency_alert(
+        client,
+        int(data[0]),
+        str(data[1] or ""),
+        str(data[3] or "Economia"),
+        str(data[2] or ""),
+        int(data[4] or 0),
+    )
+    if not result.get("ok") and not result.get("skipped"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Falha no envio"))
+    return {"status": "Sucesso", **result}
 
 
 @app.get("/ping")

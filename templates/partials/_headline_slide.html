@@ -1,6 +1,6 @@
 {# Slide da manchete principal — item = tupla news (índices padrão da listagem). #}
 <article class="headline-carousel__slide relative min-h-[380px] md:min-h-[480px] bg-slate-900 group" data-headline-slide>
-    <img src="{{ article_cover(item[11], item[5]) }}" data-fallback="{{ category_image(item[5]) }}" alt="{{ item[1] }}" {% if not loop.first %}loading="lazy"{% endif %} class="absolute inset-0 w-full h-full object-cover object-center transition duration-500 group-hover:scale-105">
+    <img src="{{ article_cover(item[11], item[5]) }}" data-fallback="{{ category_image(item[5]) }}" alt="{{ item[1] }}" {% if headline_lazy %}loading="lazy"{% endif %} class="absolute inset-0 w-full h-full object-cover object-center transition duration-500 group-hover:scale-105">
     <div class="featured-gradient absolute inset-0"></div>
     <a href="/noticia/{{ item[0] }}?lang={{ lang }}" class="absolute inset-0 flex flex-col justify-end p-6 md:p-8">
         <div class="flex items-center gap-2 mb-3 flex-wrap">
