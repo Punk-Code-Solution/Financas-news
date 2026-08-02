@@ -317,7 +317,9 @@ Snapshot anterior de indicadores macro (Selic, IPCA) para detectar mudanças e g
 | `/feed.atom` | Feed Atom equivalente |
 | `/ads.txt` | Verificação Google AdSense |
 
-Sinais on-page: `rel=canonical`, meta description, JSON-LD (`WebSite` na home, `NewsArticle` + `FAQPage` nos artigos), OG/Twitter, guias no rodapé e redirect 301 de `/noticia/{id}` → `/artigo/{slug}` quando for guia evergreen.
+Sinais on-page: `rel=canonical`, meta description, JSON-LD (`WebSite` + `NewsMediaOrganization` na home, `NewsArticle` + `FAQPage` nos artigos), OG/Twitter, guias no rodapé e redirect 301 de `/noticia/{id}` → `/artigo/{slug}` quando for guia evergreen.
+
+**Marca SEO:** nome oficial **Clareza Capital** (logo CLAREZA + CAPITAL). Domínio e `SITE_ORIGIN` permanecem `financas-news.net.br`. Equity de busca legado via `alternateName` / keywords leves (**Finanças News** / financas-news) — sem stuffing nas meta descriptions.
 
 ### Segurança HTTP (middleware)
 

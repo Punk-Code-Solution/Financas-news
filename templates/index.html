@@ -33,6 +33,15 @@
     <meta property="og:site_name" content="{{ t('site_name') }}" />
     <meta property="og:locale" content="pt_BR" />
     <meta property="og:image" content="{{ default_og_image }}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    {% if categoria_ativa and not q %}
+    <meta name="twitter:title" content="{{ t('meta_category_og_title', tag=tr_tag(categoria_ativa)) }}" />
+    <meta name="twitter:description" content="{{ t('meta_category_description', tag=tr_tag(categoria_ativa)) }}" />
+    {% else %}
+    <meta name="twitter:title" content="{{ t('meta_home_og_title') }}" />
+    <meta name="twitter:description" content="{{ t('meta_home_description') }}" />
+    {% endif %}
+    <meta name="twitter:image" content="{{ default_og_image }}" />
     {% if categoria_ativa and not q %}
     <meta name="description" content="{{ t('meta_category_description', tag=tr_tag(categoria_ativa)) }}" />
     {% else %}
@@ -69,6 +78,7 @@
                 "name": {{ t('site_name') | tojson }},
                 "alternateName": {{ site_brand_alternate_names | tojson }},
                 "url": {{ site_origin | tojson }},
+                "description": {{ t('meta_home_description') | tojson }},
                 "logo": {
                     "@type": "ImageObject",
                     "url": {{ (site_origin ~ '/static/favicon.svg?v=2') | tojson }}
@@ -77,7 +87,7 @@
                     "https://www.punkcodesolution.com.br/"
                 ],
                 "knowsAbout": {{ site_topic_keywords | tojson }},
-                "publishingPrinciples": {{ (site_origin ~ '/quem-somos') | tojson }}
+                "publishingPrinciples": {{ (site_origin ~ '/metodologia') | tojson }}
             }
         ]
     }

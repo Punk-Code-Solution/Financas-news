@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ t('meta_market_title') }}</title>
     <meta name="description" content="{{ t('meta_market_description') }}">
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="{{ t('meta_market_title') }}" />
+    <meta property="og:description" content="{{ t('meta_market_description') }}" />
+    <meta property="og:site_name" content="{{ t('site_name') }}" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="{{ t('meta_market_title') }}" />
+    <meta name="twitter:description" content="{{ t('meta_market_description') }}" />
     {% include "partials/_seo_brand.html" %}
     <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
     <link rel="dns-prefetch" href="https://fonts.googleapis.com">
