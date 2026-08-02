@@ -1038,7 +1038,16 @@ async def cadastro_submit(
         user = community.create_user(client, name=name, email=email, password=password)
     except ValueError as exc:
         return RedirectResponse(url=f"/cadastro?erro={quote(str(exc))}", status_code=303)
-    except Exception:
+    except Exception as exc:
+        from db import _is_transient_db_error
+
+        if _is_transient_db_error(exc):
+            return RedirectResponse(
+                url="/cadastro?erro="
+                + quote("Banco temporariamente indisponível. Tente de novo em instantes."),
+                status_code=303,
+            )
+        print(f"   [auth] falha no cadastro: {type(exc).__name__}: {exc}", flush=True)
         return RedirectResponse(url="/cadastro?erro=Não+foi+possível+criar+a+conta", status_code=303)
 
     token = user.get("email_verify_token")
