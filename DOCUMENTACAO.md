@@ -365,6 +365,9 @@ GOOGLE_OAUTH_CLIENT_ID=   # opcional: login Google
 GOOGLE_OAUTH_CLIENT_SECRET=
 GOOGLE_OAUTH_REDIRECT_URI=  # ex.: https://financas-news.net.br/auth/google/callback
 # SESSION_HTTPS_ONLY=false  # local HTTP; em produção/Render cookies Secure
+SITE_ORIGIN=https://financas-news.net.br  # links de verificação de e-mail e newsletter
+# EMAIL_VERIFY_TTL_HOURS=48
+# EMAIL_VERIFY_RESEND_COOLDOWN_SEC=120
 ROBOT_MAX_PER_FEED=3
 ROBOT_MAX_ARTICLES=36
 ROBOT_OWN_ANALYSES=3      # mínimo diário de análises próprias a partir do acervo (0=desliga)
@@ -465,7 +468,7 @@ Pelo menos um provedor precisa estar configurado para `/api/newsletter-digest` e
 
 ```env
 NEWSLETTER_FROM=newsletter@financas-news.net.br
-RESEND_API_KEY=                 # preferencial (API Resend)
+RESEND_API_KEY=                 # preferencial (API Resend) — também usado no e-mail de verificação de conta
 NEWSLETTER_WEBHOOK_URL=         # alternativa: POST JSON {subject,html,text,to,from}
 SMTP_HOST=
 SMTP_PORT=587
@@ -474,6 +477,8 @@ SMTP_PASSWORD=
 SMTP_FROM=
 SMTP_TLS=true
 ```
+
+Cadastro local cria `email_verified=0`, gera `email_verify_token` (TTL 48h, uso único) e envia link `SITE_ORIGIN/verificar-email?token=...`. Login bloqueia até confirmar; reenvio em `POST /reenviar-verificacao` (cooldown ~2 min). Google OAuth marca o e-mail como já verificado. Contas existentes são grandfathered (`email_verified=1` no `ALTER`).
 
 Não documente nem versione o valor real das chaves — só os nomes das variáveis no painel do host (`sync: false`).
 

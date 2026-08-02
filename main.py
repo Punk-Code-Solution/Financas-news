@@ -975,6 +975,9 @@ def login_page(request: Request):
         {
             "next_url": _safe_next_url(request.query_params.get("next")),
             "auth_error": request.query_params.get("erro"),
+            "auth_success": request.query_params.get("msg"),
+            "needs_verification": request.query_params.get("verificar") == "1",
+            "verify_email": (request.query_params.get("email") or "").strip().lower(),
             "robots_noindex": True,
         },
     )
@@ -987,9 +990,19 @@ async def login_submit(
     password: str = Form(...),
     next: str = Form("/"),
 ):
+    from urllib.parse import quote
+
     user = community.authenticate_local(get_db(), email, password)
     if not user:
         return RedirectResponse(url="/login?erro=Credenciais+inválidas", status_code=303)
+    if not user.get("email_verified"):
+        return RedirectResponse(
+            url=(
+                f"/login?verificar=1&email={quote(str(user['email']))}"
+                f"&erro={quote(community.EMAIL_NOT_VERIFIED_MSG)}"
+            ),
+            status_code=303,
+        )
     request.session[SESSION_USER_KEY] = int(user["id"])
     return RedirectResponse(url=_safe_next_url(next, "/"), status_code=303)
 
@@ -1001,7 +1014,11 @@ def cadastro_page(request: Request):
     return _render(
         request,
         "cadastro.html",
-        {"auth_error": request.query_params.get("erro"), "robots_noindex": True},
+        {
+            "auth_error": request.query_params.get("erro"),
+            "auth_success": request.query_params.get("msg"),
+            "robots_noindex": True,
+        },
     )
 
 
@@ -1012,19 +1029,90 @@ async def cadastro_submit(
     email: str = Form(...),
     password: str = Form(...),
 ):
+    from urllib.parse import quote
+
     client = get_db()
     try:
         if community.find_user_by_email(client, email):
             return RedirectResponse(url="/cadastro?erro=E-mail+já+cadastrado", status_code=303)
         user = community.create_user(client, name=name, email=email, password=password)
     except ValueError as exc:
-        from urllib.parse import quote
-
         return RedirectResponse(url=f"/cadastro?erro={quote(str(exc))}", status_code=303)
     except Exception:
         return RedirectResponse(url="/cadastro?erro=Não+foi+possível+criar+a+conta", status_code=303)
-    request.session[SESSION_USER_KEY] = int(user["id"])
-    return RedirectResponse(url="/perfil", status_code=303)
+
+    token = user.get("email_verify_token")
+    if token:
+        try:
+            from newsletter_service import send_verification_email
+
+            send_verification_email(
+                email=str(user["email"]),
+                name=str(user.get("name") or ""),
+                token=str(token),
+                ttl_hours=community.EMAIL_VERIFY_TTL_HOURS,
+            )
+        except Exception as exc:
+            print(f"Aviso: falha ao enviar e-mail de verificação: {exc}", flush=True)
+
+    msg = quote(
+        "Conta criada. Verifique seu e-mail pelo link enviado antes de entrar."
+    )
+    return RedirectResponse(
+        url=f"/login?verificar=1&email={quote(str(user['email']))}&msg={msg}",
+        status_code=303,
+    )
+
+
+@app.get("/verificar-email", response_class=HTMLResponse)
+def verificar_email(request: Request, token: str | None = None):
+    from urllib.parse import quote
+
+    result = community.verify_email_token(get_db(), token or "")
+    if result.get("ok"):
+        msg = quote("E-mail confirmado! Agora você já pode entrar.")
+        return RedirectResponse(url=f"/login?msg={msg}", status_code=303)
+    err = quote(str(result.get("error") or "Link inválido ou expirado."))
+    return RedirectResponse(url=f"/login?verificar=1&erro={err}", status_code=303)
+
+
+@app.post("/reenviar-verificacao")
+async def reenviar_verificacao(request: Request, email: str = Form(...)):
+    from urllib.parse import quote
+
+    client = get_db()
+    email_n = (email or "").strip().lower()
+    user = community.find_user_by_email(client, email_n) if email_n else None
+    # Resposta genérica anti-enumeração (padrão Gamers League).
+    ok_msg = quote(
+        "Se existir uma conta pendente com este e-mail, enviamos um novo link de verificação."
+    )
+    if user and not user.get("email_verified"):
+        issued = community.issue_email_verification(client, int(user["id"]))
+        if issued.get("rate_limited"):
+            return RedirectResponse(
+                url=(
+                    f"/login?verificar=1&email={quote(email_n)}"
+                    f"&erro={quote(str(issued.get('error') or 'Aguarde antes de reenviar.'))}"
+                ),
+                status_code=303,
+            )
+        if issued.get("ok") and issued.get("token"):
+            try:
+                from newsletter_service import send_verification_email
+
+                send_verification_email(
+                    email=str(issued["email"]),
+                    name=str(issued.get("name") or ""),
+                    token=str(issued["token"]),
+                    ttl_hours=community.EMAIL_VERIFY_TTL_HOURS,
+                )
+            except Exception as exc:
+                print(f"Aviso: falha ao reenviar verificação: {exc}", flush=True)
+    return RedirectResponse(
+        url=f"/login?verificar=1&email={quote(email_n)}&msg={ok_msg}",
+        status_code=303,
+    )
 
 
 @app.post("/logout")
@@ -1234,6 +1322,8 @@ def get_robots_txt():
         + "Disallow: /login\n"
         + "Disallow: /cadastro\n"
         + "Disallow: /perfil\n"
+        + "Disallow: /verificar-email\n"
+        + "Disallow: /reenviar-verificacao\n"
         + "Disallow: /auth/\n"
         + "Disallow: /*?q=\n"
         + "Disallow: /*?*q=\n"

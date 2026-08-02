@@ -27,14 +27,30 @@
             <div class="rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-6 md:p-8 shadow-sm">
                 <h1 class="text-2xl font-black text-gray-900 dark:text-white mb-2">Entrar</h1>
                 <p class="text-sm text-gray-600 dark:text-slate-400 mb-6">Comente análises e participe da comunidade.</p>
+                {% if auth_success %}
+                <p class="mb-4 text-sm text-green-700 dark:text-green-400">{{ auth_success }}</p>
+                {% endif %}
                 {% if auth_error %}
                 <p class="mb-4 text-sm text-red-600 dark:text-red-400">{{ auth_error }}</p>
+                {% endif %}
+                {% if needs_verification %}
+                <div class="mb-4 rounded-lg border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 p-3">
+                    <p class="text-sm text-amber-900 dark:text-amber-200 mb-3">Ainda não confirmou o e-mail? Reenvie o link de verificação.</p>
+                    <form method="post" action="/reenviar-verificacao" class="space-y-2">
+                        <label class="block text-xs font-bold uppercase text-gray-500 mb-1" for="verify_email">E-mail</label>
+                        <input id="verify_email" name="email" type="email" required value="{{ verify_email or '' }}"
+                               class="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-[#0f172a] px-3 py-2 text-sm">
+                        <button type="submit" class="w-full py-2 rounded-lg border border-amber-400 dark:border-amber-600 text-sm font-bold text-amber-900 dark:text-amber-100 hover:bg-amber-100 dark:hover:bg-amber-900/40">
+                            Reenviar verificação
+                        </button>
+                    </form>
+                </div>
                 {% endif %}
                 <form method="post" action="/login" class="space-y-4">
                     <input type="hidden" name="next" value="{{ next_url or '/' }}">
                     <div>
                         <label class="block text-xs font-bold uppercase text-gray-500 mb-1" for="email">E-mail</label>
-                        <input id="email" name="email" type="email" required autocomplete="email"
+                        <input id="email" name="email" type="email" required autocomplete="email" value="{{ verify_email or '' }}"
                                class="w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-[#0f172a] px-3 py-2 text-sm">
                     </div>
                     <div>
