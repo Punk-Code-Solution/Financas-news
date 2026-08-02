@@ -548,6 +548,7 @@ uvicorn main:app --reload
 - [x] Mover token do robô para variável de ambiente (`ROBO_TOKEN`)
 - [x] Mitigações anti-spam Google (thin 800, metodologia, mercado editorial, afiliados)
 - [x] Comunidade: users, login/OAuth Google, comentários, cookies LGPD
+- [x] Verificação de e-mail no cadastro local (link + bloqueio de login)
 - [x] Newsletter digest 2x/dia (`/api/newsletter-digest-diario`)
 
 ### Curto prazo (0–30 dias)

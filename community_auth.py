@@ -163,16 +163,30 @@ def create_user(
     if not verified:
         verify_token = generate_verify_token()
         verify_sent_at = agora
-    client.execute(
-        """
-        INSERT INTO users (
-            name, email, password_hash, google_id, avatar_url, created_at, consent_at,
-            email_verified, email_verify_token, email_verify_sent_at
+    try:
+        client.execute(
+            """
+            INSERT INTO users (
+                name, email, password_hash, google_id, avatar_url, created_at, consent_at,
+                email_verified, email_verify_token, email_verify_sent_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
+            """,
+            [name_n, email_n, pw_hash, google_id, avatar, agora, verified, verify_token, verify_sent_at],
         )
-        VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
-        """,
-        [name_n, email_n, pw_hash, google_id, avatar, agora, verified, verify_token, verify_sent_at],
-    )
+    except Exception as exc:
+        # Turso/libSQL HTTP: INSERT pode aplicar e o client ainda estourar KeyError('result').
+        # O retry cego então falha com UNIQUE — recuperar só se o hash/token bater com o nosso.
+        recovered = _recover_created_user(
+            client,
+            email_n,
+            password_hash=pw_hash,
+            google_id=google_id,
+            verify_token=verify_token,
+        )
+        if recovered:
+            return recovered
+        raise exc
     row = client.execute(
         """
         SELECT id, name, email, avatar_url, google_id, email_verified, email_verify_token, email_verify_sent_at
@@ -181,6 +195,32 @@ def create_user(
         [email_n],
     ).rows[0]
     return _user_dict(row, include_verify=True)
+
+
+def _recover_created_user(
+    client,
+    email_n: str,
+    *,
+    password_hash: str | None,
+    google_id: str | None,
+    verify_token: str | None,
+) -> dict[str, Any] | None:
+    try:
+        existing = find_user_by_email(client, email_n)
+    except Exception:
+        return None
+    if not existing:
+        return None
+    if password_hash and existing.get("password_hash") == password_hash:
+        existing.pop("password_hash", None)
+        return existing
+    if google_id and existing.get("google_id") == google_id:
+        existing.pop("password_hash", None)
+        return existing
+    if verify_token and existing.get("email_verify_token") == verify_token:
+        existing.pop("password_hash", None)
+        return existing
+    return None
 
 
 def find_user_by_email(client, email: str) -> dict[str, Any] | None:

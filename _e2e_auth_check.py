@@ -193,18 +193,60 @@ def main() -> None:
     loc = r.getheader("Location") or ""
     set_cookie = r.getheader("Set-Cookie") or ""
     cad_body = r.read().decode("utf-8", errors="replace")
-    cad_ok = r.status in (302, 303) and ("/perfil" in loc or "/login" in loc) and "erro=" not in loc.lower()
-    record("4 POST cadastro válido", cad_ok, f"status={r.status} loc={loc} set-cookie_has_session={'fn_session' in set_cookie}")
-    # capture cookie for session
-    if set_cookie and "fn_session" in set_cookie:
-        # parse into user jar via follow
-        pass
+    cad_ok = (
+        r.status in (302, 303)
+        and ("/login" in loc)
+        and "erro=" not in loc.lower()
+        and "verificar" in loc.lower()
+    )
+    record(
+        "4 POST cadastro válido",
+        cad_ok,
+        f"status={r.status} loc={loc} set-cookie_has_session={'fn_session' in set_cookie}",
+    )
     conn.close()
 
-    # Use requests-like session via urllib with cookie from cadastro
-    # Re-do with opener that doesn't follow... actually use http.client for control then requests for session ops
-    # Better: use urllib opener which stores cookies; but it follows redirects.
-    # Starlette SessionMiddleware sets cookie on response; opener should store it on redirect follow.
+    def _confirm_email(addr: str) -> bool:
+        try:
+            from db import get_db
+
+            row = get_db().execute(
+                "SELECT email_verify_token FROM users WHERE email = ? LIMIT 1",
+                [addr.strip().lower()],
+            ).rows
+            token = str(row[0][0]) if row and row[0][0] else ""
+            if not token:
+                return False
+            c = Client()
+            st_v, html_v, _, _, _ = c.request(
+                "GET", f"/verificar-email?token={token}", allow_redirects=True
+            )
+            return st_v == 200 and (
+                "confirmado" in html_v.lower()
+                or "Entrar" in html_v
+                or "verifique" in html_v.lower()
+            )
+        except Exception as exc:
+            print(f"aviso verify: {exc}")
+            return False
+
+    if cad_ok:
+        conn = http.client.HTTPConnection("127.0.0.1", 8000, timeout=60)
+        body = urlencode({"email": EMAIL, "password": PASSWORD, "next": "/perfil"}).encode()
+        conn.request(
+            "POST",
+            "/login",
+            body=body,
+            headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "e2e"},
+        )
+        r = conn.getresponse()
+        loc_b = r.getheader("Location") or ""
+        r.read()
+        conn.close()
+        block_ok = r.status in (302, 303) and ("verificar=1" in loc_b or "erro=" in loc_b.lower())
+        record("4v login bloqueado sem verificação", block_ok, f"status={r.status} loc={loc_b[:160]}")
+        verified = _confirm_email(EMAIL)
+        record("4w verificar-email token", verified, f"email={EMAIL}")
 
     user2 = Client()
     st, html, hdrs, final, _ = user2.request(
@@ -213,29 +255,24 @@ def main() -> None:
         data={"name": NAME + " B", "email": f"teste.auth.{TS}.b@example.com", "password": PASSWORD},
         allow_redirects=True,
     )
-    # If first cadastro worked, this second is fine; if first failed due to turso, both may fail.
-    # Prefer EMAIL from step 4 — if step4 failed, try with b email for rest
     active_email = EMAIL if cad_ok else f"teste.auth.{TS}.b@example.com"
     active_name = NAME if cad_ok else NAME + " B"
-    cookie = user2.session_cookie()
-    if cad_ok:
-        # Need session from first cadastro — redo login
-        login_c = Client()
-        st, html, hdrs, final, _ = login_c.request(
-            "POST",
-            "/login",
-            data={"email": EMAIL, "password": PASSWORD, "next": "/perfil"},
-            allow_redirects=True,
+    if not cad_ok:
+        _confirm_email(active_email)
+        cad_b_ok = st == 200 and (
+            "Entrar" in html or "verificar" in html.lower() or "login" in final.lower()
         )
-        cookie = login_c.session_cookie()
-        session_client = login_c
-    else:
-        session_client = user2
-        cookie = user2.session_cookie()
-        # check if user2 cadastro landed on perfil
-        cad_b_ok = st == 200 and ("Meu perfil" in html or active_name in html)
-        if not cad_ok:
-            record("4b retry cadastro B", cad_b_ok or (cookie is not None), f"status={st} cookie={cookie is not None} perfil={'Meu perfil' in html}")
+        record("4b retry cadastro B", cad_b_ok, f"status={st} final={final}")
+
+    login_c = Client()
+    st, html, hdrs, final, _ = login_c.request(
+        "POST",
+        "/login",
+        data={"email": active_email, "password": PASSWORD, "next": "/perfil"},
+        allow_redirects=True,
+    )
+    cookie = login_c.session_cookie()
+    session_client = login_c
 
     # 7 avatar
     if cookie or session_client.session_cookie():
