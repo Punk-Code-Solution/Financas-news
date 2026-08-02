@@ -1,4 +1,4 @@
-"""Suíte de testes do sistema Finanças News (com mocks de rede externa)."""
+"""Suíte de testes do sistema Clareza Capital (com mocks de rede externa)."""
 from __future__ import annotations
 
 import os
@@ -145,7 +145,7 @@ def run() -> int:
         )
         check(
             "Categoria: title único",
-            "Cripto" in r.text and "Finanças News" in r.text and "<title>" in r.text,
+            "Cripto" in r.text and "Clareza Capital" in r.text and "<title>" in r.text,
         )
         check("Categoria: indexável (sem noindex)", 'name="robots" content="noindex' not in r.text)
         check("Categoria: CollectionPage JSON-LD", "CollectionPage" in r.text and "ItemList" in r.text)

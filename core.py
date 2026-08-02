@@ -255,7 +255,7 @@ def get_robot_own_analyses_count() -> int:
 
 
 OWN_ANALYSIS_LINK_PREFIX = "internal://analise/"
-OWN_ANALYSIS_FONTE = "Finanças News"
+OWN_ANALYSIS_FONTE = "Clareza Capital"
 
 
 def _api_key_id(api_key: str) -> str:
@@ -1544,7 +1544,7 @@ def _build_image_prompt(title: str, tag: str, resumo: str = "") -> str:
     context = _first_paragraph(resumo, 360)
     scene = _extract_image_scene_cues(headline, context, tag or "Economia")
     return (
-        "Create ONE editorial cover image for a Brazilian financial news site (Finanças News). "
+        "Create ONE editorial cover image for a Brazilian financial news site (Clareza Capital). "
         + "Illustrate the SPECIFIC story below — the reader must recognize the topic without reading text.\n"
         + f"Headline: {headline}\n"
         + f"Category: {tag or 'Economia'}\n"
@@ -2941,7 +2941,7 @@ def process_news_with_ai(title, content, fonte, tag_hint, market_context):
     macro_rules = _build_macro_usage_rules(macro_rel, tag_hint)
 
     prompt = f"""
-Você é o editor-chefe de análise do portal "Finanças News" (financas-news.net.br), especializado em economia brasileira, mercado de capitais e criptoativos.
+Você é o editor-chefe de análise do portal "Clareza Capital" (financas-news.net.br), especializado em economia brasileira, mercado de capitais e criptoativos.
 
 Sua missão é produzir uma ANÁLISE EDITORIAL ORIGINAL de alto valor — não um resumo, não uma paráfrase da notícia fonte. O Google e leitores exigem conteúdo com dados concretos, contexto histórico e utilidade prática.
 
@@ -3424,7 +3424,7 @@ def _build_own_analysis_brief(angle: dict[str, Any]) -> tuple[str, str]:
     title = tone_title.get(tone, f"Análise própria: {tag} — {day_label}")
 
     lines = [
-        f"Esta é uma ANÁLISE EDITORIAL PRÓPRIA do portal Finanças News ({day_label}).",
+        f"Esta é uma ANÁLISE EDITORIAL PRÓPRIA do portal Clareza Capital ({day_label}).",
         "NÃO existe uma única notícia RSS de origem — o editor cruza várias matérias já publicadas no acervo.",
         f"Categoria-foco: {tag}. Tom sugerido: {tone}.",
         "",

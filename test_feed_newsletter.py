@@ -36,7 +36,7 @@ def test_feed_xml_structure():
         r = client.get("/feed.xml")
         assert r.status_code == 200
         assert "<rss" in r.text and "<channel>" in r.text
-        assert "Finanças News" in r.text
+        assert "Clareza Capital" in r.text
         assert r.headers.get("content-type", "").startswith("application/rss+xml")
 
 

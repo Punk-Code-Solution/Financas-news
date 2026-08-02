@@ -1,4 +1,4 @@
-# Finanças News — Documentação do Projeto
+# Clareza Capital — Documentação do Projeto
 
 **Portal:** [financas-news.net.br](https://financas-news.net.br)  
 **Desenvolvedor:** Punk Code Solution  
@@ -9,7 +9,7 @@
 
 ## 1. Resumo executivo
 
-O **Finanças News** é um portal de notícias financeiras **100% automatizado** que transforma matérias de veículos consolidados em **análises editoriais originais**, enriquecidas com dados de mercado em tempo real e indicadores do Banco Central do Brasil.
+O **Clareza Capital** é um portal de notícias financeiras **100% automatizado** que transforma matérias de veículos consolidados em **análises editoriais originais**, enriquecidas com dados de mercado em tempo real e indicadores do Banco Central do Brasil.
 
 O diferencial não é republicar RSS — é produzir conteúdo com **contexto macroeconômico**, **cruzamento de fontes**, **orientação prática ao leitor** e **imagem editorial gerada por IA**, posicionando o portal como mídia de análise, não agregador genérico.
 
@@ -619,7 +619,7 @@ uvicorn main:app --reload
 
 ## 15. Contato e propriedade
 
-**Finanças News** é um projeto da **Punk Code Solution**.  
+**Clareza Capital** é um projeto da **Punk Code Solution**.  
 Liderança técnica: Thiago de Freitas Gonçalves.
 
 - Site: [financas-news.net.br](https://financas-news.net.br)

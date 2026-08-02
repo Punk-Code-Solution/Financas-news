@@ -1507,7 +1507,7 @@ def _build_rss_xml(rows: list[Any]) -> str:
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">',
         "<channel>",
-        f"<title>{_xml_escape('Finanças News')}</title>",
+        f"<title>{_xml_escape('Clareza Capital')}</title>",
         f"<link>{_xml_escape(SITE_ORIGIN)}</link>",
         f"<description>{_xml_escape('Notícias financeiras, economia e mercado em tempo real.')}</description>",
         f'<atom:link href="{_xml_escape(absolute_url(SITE_ORIGIN, "/feed.xml"))}" rel="self" type="application/rss+xml" />',
@@ -1539,7 +1539,7 @@ def _build_atom_xml(rows: list[Any]) -> str:
     parts = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<feed xmlns="http://www.w3.org/2005/Atom">',
-        f"<title>{_xml_escape('Finanças News')}</title>",
+        f"<title>{_xml_escape('Clareza Capital')}</title>",
         f"<link href=\"{_xml_escape(SITE_ORIGIN)}\" />",
         f"<id>{_xml_escape(SITE_ORIGIN + '/')}</id>",
         f"<updated>{_xml_escape(updated)}</updated>",

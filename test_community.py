@@ -98,7 +98,7 @@ def test_daily_digest_payload():
     assert digest["headline"]["titulo"] == "Selic sobe"
     assert any(x["titulo"] == "Dólar cai" for x in digest["links"])
     assert "subject" in digest and "html" in digest and "text" in digest
-    assert "Finanças News" in digest["subject"]
+    assert "Clareza Capital" in digest["subject"]
 
 
 def test_verify_token_entropy_and_expiry():

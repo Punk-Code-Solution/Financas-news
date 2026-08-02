@@ -111,7 +111,8 @@ SOURCE_HOMEPAGES: dict[str, str] = {
     "Yahoo Finance": "https://finance.yahoo.com/",
     "The Guardian Business": "https://www.theguardian.com/uk/business",
     "CoinDesk": "https://www.coindesk.com/",
-    "Finanças News": "https://financas-news.net.br/quem-somos",
+    "Clareza Capital": "https://financas-news.net.br/quem-somos",
+    "Finanças News": "https://financas-news.net.br/quem-somos",  # legado (artigos anteriores)
 }
 
 DATA_SOURCE_LINKS = [

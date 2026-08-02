@@ -16,7 +16,7 @@ from typing import Any
 from db import DbClient
 
 GUIDE_LINK_PREFIX = "internal://artigo/"
-GUIDE_FONTE = "Finanças News"
+GUIDE_FONTE = "Clareza Capital"
 
 # Núcleo fechado — não extrapolar sem decisão editorial explícita.
 GUIDE_SLUGS = ("selic", "ipca", "cambio", "renda-fixa")

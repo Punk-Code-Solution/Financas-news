@@ -172,10 +172,10 @@ def build_verification_email(*, name: str, token: str, ttl_hours: int = 48) -> d
     origin = site_origin()
     verify_url = f"{origin}/verificar-email?token={token}"
     # Assunto sóbrio (menos gatilhos de spam) + preheader no HTML.
-    subject = "Ative sua conta na comunidade Finanças News"
+    subject = "Ative sua conta na comunidade Clareza Capital"
     text = (
         f"Olá, {display_name},\n\n"
-        "Você se cadastrou na comunidade do Finanças News (comentários e perfil).\n"
+        "Você se cadastrou na comunidade do Clareza Capital (comentários e perfil).\n"
         "Para concluir, confirme este endereço de e-mail abrindo o link abaixo:\n\n"
         f"{verify_url}\n\n"
         f"Validade: {ttl_hours} horas · uso único.\n\n"
@@ -184,7 +184,7 @@ def build_verification_email(*, name: str, token: str, ttl_hours: int = 48) -> d
         "• Marque a mensagem como confiável para receber os próximos avisos\n"
         "• Se precisar, use “Reenviar link” na página de entrar\n\n"
         "Não foi você? Ignore este e-mail — nenhuma ação será tomada.\n\n"
-        "Finanças News · análises com dados de mercado\n"
+        "Clareza Capital · análises com dados de mercado\n"
         f"{origin}\n"
         "Este é um e-mail transacional de confirmação de cadastro."
     )
@@ -192,13 +192,13 @@ def build_verification_email(*, name: str, token: str, ttl_hours: int = 48) -> d
 <html lang="pt-BR"><head><meta charset="utf-8"><title>{escape(subject)}</title></head>
 <body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
   <span style="display:none!important;visibility:hidden;opacity:0;height:0;width:0;overflow:hidden;">
-    Confirme seu e-mail para ativar comentários e perfil no Finanças News. Link válido por {ttl_hours}h.
+    Confirme seu e-mail para ativar comentários e perfil no Clareza Capital. Link válido por {ttl_hours}h.
   </span>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;">
     <tr><td align="center">
       <table role="presentation" width="100%" style="max-width:560px;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;">
         <tr><td style="padding:28px 32px;">
-          <p style="margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#16a34a;">Finanças News</p>
+          <p style="margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#16a34a;">Clareza Capital</p>
           <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#0f172a;">Ative sua conta</h1>
           <p style="margin:0 0 12px;font-size:15px;line-height:1.6;">Olá, <strong>{safe_name}</strong>,</p>
           <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#475569;">
@@ -223,9 +223,9 @@ def build_verification_email(*, name: str, token: str, ttl_hours: int = 48) -> d
             marque como confiável. Na página de entrar você também pode solicitar um novo link.
           </p>
           <p style="margin:0;font-size:11px;line-height:1.5;color:#94a3b8;">
-            Você recebeu esta mensagem porque alguém usou este endereço no cadastro do Finanças News.
+            Você recebeu esta mensagem porque alguém usou este endereço no cadastro do Clareza Capital.
             Se não foi você, ignore — nenhuma conta será ativada sem esta confirmação.<br><br>
-            Finanças News · {escape(origin)}
+            Clareza Capital · {escape(origin)}
           </p>
         </td></tr>
       </table>
@@ -293,7 +293,7 @@ def build_weekly_digest(client, *, top_n: int = DIGEST_TOP_N) -> dict[str, Any]:
         url = f"{SITE_ORIGIN}/noticia/{nid}"
         items.append({"titulo": titulo, "resumo": resumo, "tag": tag, "url": url})
 
-    subject = "Finanças News — Resumo semanal do mercado"
+    subject = "Clareza Capital — Resumo semanal do mercado"
     text_parts = [subject, "", f"Painel macro: {macro}", "", "Destaques da semana:"]
     html_parts = [
         f"<h1>{escape(subject)}</h1>",
@@ -388,7 +388,7 @@ def build_daily_digest(client, *, extra_n: int = DAILY_DIGEST_EXTRA) -> dict[str
         )
 
     period = "manhã" if datetime_hour_local() < 14 else "tarde"
-    subject = f"Finanças News — Destaque da {period}"
+    subject = f"Clareza Capital — Destaque da {period}"
     text_parts = [subject, "", f"Painel macro: {macro}", ""]
     html_parts = [
         f"<h1>{escape(subject)}</h1>",
@@ -468,7 +468,7 @@ def build_urgency_alert(
     resumo: str,
     priority: int,
 ) -> dict[str, str]:
-    subject = f"Alerta Finanças News — {titulo[:120]}"
+    subject = f"Alerta Clareza Capital — {titulo[:120]}"
     url = f"{SITE_ORIGIN}/noticia/{news_id}"
     text = (
         f"{subject}\n\n"
