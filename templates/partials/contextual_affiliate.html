@@ -1,5 +1,5 @@
 {# Afiliado contextual por categoria — só renderiza se URL configurada, após conteúdo editorial. #}
-{% if contextual_affiliate %}
+{% if contextual_affiliate and contextual_affiliate.url %}
 <aside class="mt-6 pt-6 border-t border-emerald-200/60 dark:border-emerald-900/40" aria-label="{{ t('affiliate_disclaimer') }}">
     <p class="text-[10px] font-black uppercase text-gray-500 dark:text-slate-400 mb-2">{{ t('next_step_partner') }}</p>
     <p class="text-xs text-gray-600 dark:text-slate-400 mb-3 leading-relaxed">

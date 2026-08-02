@@ -65,8 +65,25 @@ ENV_AFFILIATE_KEYS = {
 }
 
 
+# Valores comuns de "não configurado" em .env (ex.: AFFILIATE_*=null).
+_UNSET_VALUES = frozenset(
+    {"null", "none", "undefined", "nil", "n/a", "na", "-", "#", "todo", "tbd"}
+)
+
+
 def _env(key: str) -> str:
-    return os.getenv(key, "").strip()
+    value = os.getenv(key, "").strip()
+    if not value or value.lower() in _UNSET_VALUES:
+        return ""
+    return value
+
+
+def _env_http_url(key: str) -> str:
+    """Só aceita URL http(s) real — ignora vazio, placeholder e texto solto."""
+    value = _env(key)
+    if value.lower().startswith(("http://", "https://")):
+        return value
+    return ""
 
 
 TAG_AFFILIATE_MAP: dict[str, str] = {
@@ -143,7 +160,7 @@ def get_contextual_affiliate(tag: str) -> dict[str, object] | None:
     env_key = ENV_AFFILIATE_KEYS.get(affiliate_id)
     if not env_key:
         return None
-    url = _env(env_key)
+    url = _env_http_url(env_key)
     if not url:
         return None
     for item in DEFAULT_AFFILIATES:
@@ -185,7 +202,7 @@ def get_monetization_config() -> dict[str, object]:
         env_key = ENV_AFFILIATE_KEYS.get(item["id"])
         if not env_key:
             continue
-        url = _env(env_key)
+        url = _env_http_url(env_key)
         if url:
             affiliates.append({**item, "url": url})
 
@@ -196,10 +213,10 @@ def get_monetization_config() -> dict[str, object]:
         else ""
     )
 
-    newsletter_external = _env("NEWSLETTER_URL")
+    newsletter_external = _env_http_url("NEWSLETTER_URL")
     newsletter_enabled = bool(newsletter_external) or _env("NEWSLETTER_ENABLED").lower() == "true"
 
-    sponsored_url = _env("SPONSORED_SLOT_URL")
+    sponsored_url = _env_http_url("SPONSORED_SLOT_URL")
     sponsored_enabled = bool(sponsored_url)
 
     premium_enabled = _env("PREMIUM_TEASER_ENABLED").lower() == "true"

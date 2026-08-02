@@ -1,4 +1,4 @@
-{% if monetization.sponsored.enabled %}
+{% if monetization.sponsored.enabled and monetization.sponsored.url %}
 <div class="my-8 rounded-xl border border-dashed border-amber-400/60 bg-amber-50/50 dark:bg-amber-900/10 p-6 relative">
     <span class="absolute top-3 right-3 text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded">{{ monetization.sponsored.label }}</span>
     <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-2">{{ monetization.sponsored.titulo }}</h3>

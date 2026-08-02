@@ -145,6 +145,43 @@ def test_contextual_affiliate_copy():
         assert "cripto" in str(item["titulo"]).lower() or "Cripto" in str(item["titulo"])
 
 
+def test_contextual_affiliate_requires_http_url():
+    """Sem URL http(s) real (vazio, null, texto) → None; com URL → aparece."""
+    cleared = {
+        "AFFILIATE_BINANCE_URL": "",
+        "AFFILIATE_XP_URL": "null",
+        "AFFILIATE_MERCADO_BITCOIN_URL": "none",
+        "AFFILIATE_BTG_URL": "  ",
+    }
+    with patch.dict(os.environ, cleared, clear=False):
+        assert monetization.get_contextual_affiliate("Cripto") is None
+        assert monetization.get_contextual_affiliate("Ações") is None
+        assert monetization.get_contextual_affiliate("Juros") is None
+        cfg = monetization.get_monetization_config()
+        assert cfg["affiliates"] == []
+
+    with patch.dict(
+        os.environ,
+        {
+            **cleared,
+            "AFFILIATE_BINANCE_URL": "null",
+            "SPONSORED_SLOT_URL": "null",
+            "AMAZON_AFFILIATE_TAG": "null",
+        },
+        clear=False,
+    ):
+        cfg = monetization.get_monetization_config()
+        assert cfg["affiliates"] == []
+        assert cfg["sponsored"]["enabled"] is False
+        assert cfg["amazon_books_url"] == ""
+
+    with patch.dict(os.environ, {"AFFILIATE_XP_URL": "https://example.com/xp"}, clear=False):
+        item = monetization.get_contextual_affiliate("Economia")
+        assert item is not None
+        assert item["url"] == "https://example.com/xp"
+        assert item["id"] == "xp"
+
+
 def test_home_has_mercado_link():
     with (
         patch.object(core, "fetch_market_snapshot", return_value=FAKE_MARKET),
@@ -213,6 +250,7 @@ if __name__ == "__main__":
         test_traduzir_pendentes_auth,
         test_traduzir_pendentes_mocked,
         test_contextual_affiliate_copy,
+        test_contextual_affiliate_requires_http_url,
         test_home_has_mercado_link,
         test_article_reading_time_and_refs,
     ]
