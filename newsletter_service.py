@@ -103,6 +103,10 @@ def _send_via_smtp(to: list[str], subject: str, html: str, text: str) -> dict[st
     msg["Subject"] = subject
     msg["From"] = from_addr
     msg["To"] = ", ".join(to)
+    msg["Reply-To"] = from_addr
+    # Cabeçalhos leves que ajudam filtros a tratar como transacional.
+    msg["X-Auto-Response-Suppress"] = "OOF, AutoReply"
+    msg["Auto-Submitted"] = "auto-generated"
     msg.attach(MIMEText(text, "plain", "utf-8"))
     msg.attach(MIMEText(html, "html", "utf-8"))
 
@@ -163,37 +167,66 @@ def send_email(to: list[str], subject: str, html: str, text: str) -> dict[str, A
 
 
 def build_verification_email(*, name: str, token: str, ttl_hours: int = 48) -> dict[str, str]:
-    safe_name = escape((name or "olá").strip() or "olá")
+    display_name = (name or "").strip() or "leitor"
+    safe_name = escape(display_name)
     origin = site_origin()
     verify_url = f"{origin}/verificar-email?token={token}"
-    subject = "Confirme seu e-mail — Finanças News"
+    # Assunto sóbrio (menos gatilhos de spam) + preheader no HTML.
+    subject = "Ative sua conta na comunidade Finanças News"
     text = (
-        f"Olá, {name or 'olá'}!\n\n"
-        "Bem-vindo à comunidade Finanças News. Confirme seu e-mail para ativar a conta:\n\n"
+        f"Olá, {display_name},\n\n"
+        "Você se cadastrou na comunidade do Finanças News (comentários e perfil).\n"
+        "Para concluir, confirme este endereço de e-mail abrindo o link abaixo:\n\n"
         f"{verify_url}\n\n"
-        f"O link expira em {ttl_hours} horas e só pode ser usado uma vez.\n"
-        "Se você não criou esta conta, ignore este e-mail.\n\n"
-        "— Equipe Finanças News"
+        f"Validade: {ttl_hours} horas · uso único.\n\n"
+        "Não encontrou o e-mail na caixa de entrada?\n"
+        "• Verifique a pasta Spam / Lixo eletrônico / Promoções\n"
+        "• Marque a mensagem como confiável para receber os próximos avisos\n"
+        "• Se precisar, use “Reenviar link” na página de entrar\n\n"
+        "Não foi você? Ignore este e-mail — nenhuma ação será tomada.\n\n"
+        "Finanças News · análises com dados de mercado\n"
+        f"{origin}\n"
+        "Este é um e-mail transacional de confirmação de cadastro."
     )
     html = f"""<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8"><title>{escape(subject)}</title></head>
 <body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+  <span style="display:none!important;visibility:hidden;opacity:0;height:0;width:0;overflow:hidden;">
+    Confirme seu e-mail para ativar comentários e perfil no Finanças News. Link válido por {ttl_hours}h.
+  </span>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;">
     <tr><td align="center">
       <table role="presentation" width="100%" style="max-width:560px;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;">
         <tr><td style="padding:28px 32px;">
           <p style="margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#16a34a;">Finanças News</p>
-          <h1 style="margin:0 0 16px;font-size:22px;">Confirme seu e-mail</h1>
-          <p style="margin:0 0 16px;font-size:15px;line-height:1.6;">Olá, <strong>{safe_name}</strong>!</p>
-          <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#475569;">
-            Clique no botão abaixo para ativar sua conta na comunidade. O link expira em {ttl_hours} horas.
+          <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#0f172a;">Ative sua conta</h1>
+          <p style="margin:0 0 12px;font-size:15px;line-height:1.6;">Olá, <strong>{safe_name}</strong>,</p>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#475569;">
+            Recebemos seu cadastro na comunidade. Confirme este e-mail para comentar nas análises,
+            gerenciar o perfil e receber avisos da conta.
           </p>
           <p style="margin:0 0 24px;">
             <a href="{escape(verify_url)}" style="display:inline-block;padding:12px 22px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;">
-              Verificar e-mail
+              Confirmar e-mail e ativar conta
             </a>
           </p>
-          <p style="margin:0;font-size:12px;line-height:1.5;color:#64748b;">Se o botão não funcionar, copie e cole este link:<br>{escape(verify_url)}</p>
+          <p style="margin:0 0 16px;font-size:13px;line-height:1.5;color:#64748b;">
+            O link é de uso único e expira em <strong>{ttl_hours} horas</strong>.
+          </p>
+          <p style="margin:0 0 8px;font-size:12px;line-height:1.5;color:#64748b;">
+            Se o botão não abrir, copie e cole no navegador:<br>
+            <a href="{escape(verify_url)}" style="color:#2563eb;word-break:break-all;">{escape(verify_url)}</a>
+          </p>
+          <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0;">
+          <p style="margin:0 0 8px;font-size:12px;line-height:1.55;color:#64748b;">
+            <strong>Não achou este e-mail?</strong> Olhe em Spam, Lixo eletrônico ou Promoções e
+            marque como confiável. Na página de entrar você também pode solicitar um novo link.
+          </p>
+          <p style="margin:0;font-size:11px;line-height:1.5;color:#94a3b8;">
+            Você recebeu esta mensagem porque alguém usou este endereço no cadastro do Finanças News.
+            Se não foi você, ignore — nenhuma conta será ativada sem esta confirmação.<br><br>
+            Finanças News · {escape(origin)}
+          </p>
         </td></tr>
       </table>
     </td></tr>

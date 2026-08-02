@@ -222,9 +222,12 @@ def test_login_blocked_semantics_for_unverified():
 
 def test_verification_email_payload():
     payload = build_verification_email(name="Ana", token="abcTOKEN1234567890", ttl_hours=48)
-    assert "Confirme seu e-mail" in payload["subject"]
+    assert "Ative sua conta" in payload["subject"]
     assert "verificar-email?token=abcTOKEN1234567890" in payload["text"]
     assert "verificar-email?token=abcTOKEN1234567890" in payload["html"]
+    assert "Spam" in payload["text"]
+    assert "transacional" in payload["text"].lower() or "cadastro" in payload["text"].lower()
+    assert "Spam" in payload["html"] or "spam" in payload["html"].lower()
 
 
 def test_send_verification_not_configured_returns_false():

@@ -1,8 +1,10 @@
-{# Comentários estilo lista densa (referência HLTV) — 1 nível de reply. #}
-<section id="comentarios" class="mt-10 border-t border-gray-200 dark:border-slate-700 pt-6" aria-labelledby="comentarios-titulo">
+{# Comentários estilo lista densa (referência HLTV) — 1 nível de reply; envio via fetch sem reload. #}
+<section id="comentarios" class="mt-10 border-t border-gray-200 dark:border-slate-700 pt-6" aria-labelledby="comentarios-titulo"
+         data-news-id="{{ noticia[0] }}"
+         data-can-comment="{{ '1' if current_user else '0' }}">
     <div class="flex items-baseline justify-between gap-3 mb-4">
         <h2 id="comentarios-titulo" class="text-sm font-black uppercase tracking-wider text-gray-800 dark:text-slate-100">
-            Comentários <span class="text-gray-400 dark:text-slate-500 font-bold">({{ comments|length }})</span>
+            Comentários <span id="fn-comments-count" class="text-gray-400 dark:text-slate-500 font-bold">({{ comments|length }})</span>
         </h2>
         {% if not current_user %}
         <a href="/login?next=/noticia/{{ noticia[0] }}#comentarios" class="text-xs font-bold text-blue-600 dark:text-[#4ade80] hover:underline">Entrar para comentar</a>
@@ -10,42 +12,43 @@
     </div>
 
     {% if current_user %}
-    <form method="post" action="/noticia/{{ noticia[0] }}/comentarios" class="mb-6 space-y-2">
+    <form id="fn-comment-form" method="post" action="/noticia/{{ noticia[0] }}/comentarios" class="mb-6 space-y-2">
         <label for="comment-body" class="sr-only">Seu comentário</label>
         <textarea id="comment-body" name="body" rows="3" maxlength="2000" required
                   placeholder="Escreva um comentário objetivo sobre a análise…"
                   class="w-full text-sm rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-[#0f172a] text-gray-900 dark:text-slate-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
         <div class="flex items-center justify-between gap-3">
             <p class="text-[10px] text-gray-500 dark:text-slate-500">Moderação automática. Localização aproximada só com consentimento de cookies.</p>
-            <button type="submit" class="px-4 py-2 text-xs font-bold rounded-lg bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-950">Publicar</button>
+            <button type="submit" id="fn-comment-submit" class="px-4 py-2 text-xs font-bold rounded-lg bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-950 disabled:opacity-60">Publicar</button>
         </div>
-        {% if comment_flash %}
-        <p class="text-xs {% if comment_flash_ok %}text-green-600 dark:text-[#4ade80]{% else %}text-red-600 dark:text-red-400{% endif %}">{{ comment_flash }}</p>
-        {% endif %}
+        <p id="fn-comment-flash" class="text-xs hidden" role="status" aria-live="polite"
+           {% if comment_flash %}data-initial="1"{% endif %}>
+            {% if comment_flash %}{{ comment_flash }}{% endif %}
+        </p>
     </form>
     {% endif %}
 
-    {% if comments %}
-    <ul class="divide-y divide-gray-100 dark:divide-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-[#1e293b]">
+    <div id="fn-comments-empty" class="text-sm text-gray-500 dark:text-slate-500{% if comments %} hidden{% endif %}">
+        Nenhum comentário ainda. Seja o primeiro a opinar com respeito.
+    </div>
+
+    <ul id="fn-comments-list" class="divide-y divide-gray-100 dark:divide-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-[#1e293b]{% if not comments %} hidden{% endif %}">
         {% for c in comments if not c.parent_id %}
-        <li class="px-3 py-2.5 {% if c.status != 'published' %}opacity-70{% endif %}">
+        <li class="px-3 py-2.5 fn-comment-item {% if c.status != 'published' %}opacity-70{% endif %}" data-comment-id="{{ c.id }}">
             <div class="flex items-start gap-2.5">
                 <img src="{{ c.author_avatar }}" alt="" width="28" height="28" class="rounded-full object-cover shrink-0 mt-0.5 bg-slate-700" loading="lazy">
                 <div class="min-w-0 flex-1">
                     <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px] leading-tight">
                         <span class="font-bold text-gray-900 dark:text-white">{{ c.author_name }}</span>
-                        <time class="text-gray-400 dark:text-slate-500" datetime="{{ c.created_at }}">{{ c.created_at }}</time>
+                        <time class="text-gray-400 dark:text-slate-500" datetime="{{ c.created_at }}">{{ c.created_at_label or c.created_at }}</time>
                         {% if c.geo_country %}<span class="text-gray-400 dark:text-slate-500">{{ c.geo_country }}</span>{% endif %}
                         {% if c.status != 'published' %}<span class="text-amber-600 dark:text-amber-400 font-semibold">{{ c.status }}</span>{% endif %}
-                        {% if c.upvotes %}<span class="text-gray-400">▲ {{ c.upvotes }}</span>{% endif %}
+                        <span class="text-gray-400 fn-upvote-count{% if not c.upvotes %} hidden{% endif %}">▲ <span data-upvotes>{{ c.upvotes }}</span></span>
                     </div>
                     <p class="mt-1 text-[13px] leading-snug text-gray-800 dark:text-slate-200 whitespace-pre-wrap">{{ c.body }}</p>
                     <div class="mt-1.5 flex items-center gap-3">
                         {% if current_user %}
-                        <form method="post" action="/comentarios/{{ c.id }}/upvote" class="inline">
-                            <input type="hidden" name="news_id" value="{{ noticia[0] }}">
-                            <button type="submit" class="text-[10px] font-bold uppercase text-gray-500 hover:text-blue-600 dark:hover:text-[#4ade80]">Upvote</button>
-                        </form>
+                        <button type="button" class="text-[10px] font-bold uppercase text-gray-500 hover:text-blue-600 dark:hover:text-[#4ade80] fn-upvote-btn" data-comment-id="{{ c.id }}">Upvote</button>
                         <button type="button" class="text-[10px] font-bold uppercase text-gray-500 hover:text-blue-600 dark:hover:text-[#4ade80] fn-reply-toggle" data-parent="{{ c.id }}">Responder</button>
                         {% endif %}
                     </div>
@@ -57,14 +60,15 @@
                         <button type="submit" class="mt-1 px-3 py-1 text-[10px] font-bold rounded bg-gray-800 dark:bg-slate-200 text-white dark:text-slate-900">Enviar resposta</button>
                     </form>
                     {% endif %}
+                    <div class="fn-replies" data-parent-id="{{ c.id }}">
                     {% for r in comments if r.parent_id == c.id %}
-                    <div class="mt-2 ml-3 pl-3 border-l-2 border-gray-200 dark:border-slate-600">
+                    <div class="mt-2 ml-3 pl-3 border-l-2 border-gray-200 dark:border-slate-600 fn-reply-item" data-comment-id="{{ r.id }}">
                         <div class="flex items-start gap-2">
                             <img src="{{ r.author_avatar }}" alt="" width="22" height="22" class="rounded-full object-cover shrink-0 bg-slate-700" loading="lazy">
                             <div class="min-w-0">
                                 <div class="flex flex-wrap gap-x-2 text-[11px]">
                                     <span class="font-bold text-gray-900 dark:text-white">{{ r.author_name }}</span>
-                                    <time class="text-gray-400 dark:text-slate-500">{{ r.created_at }}</time>
+                                    <time class="text-gray-400 dark:text-slate-500" datetime="{{ r.created_at }}">{{ r.created_at_label or r.created_at }}</time>
                                     {% if r.status != 'published' %}<span class="text-amber-600 text-[10px]">{{ r.status }}</span>{% endif %}
                                 </div>
                                 <p class="mt-0.5 text-[13px] leading-snug text-gray-800 dark:text-slate-200 whitespace-pre-wrap">{{ r.body }}</p>
@@ -72,21 +76,215 @@
                         </div>
                     </div>
                     {% endfor %}
+                    </div>
                 </div>
             </div>
         </li>
         {% endfor %}
     </ul>
-    {% else %}
-    <p class="text-sm text-gray-500 dark:text-slate-500">Nenhum comentário ainda. Seja o primeiro a opinar com respeito.</p>
-    {% endif %}
 </section>
 <script>
-document.querySelectorAll('.fn-reply-toggle').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-        var id = btn.getAttribute('data-parent');
-        var form = document.querySelector('.fn-reply-form[data-parent-form="' + id + '"]');
-        if (form) form.classList.toggle('hidden');
+(function () {
+    var root = document.getElementById('comentarios');
+    if (!root) return;
+    var newsId = root.getAttribute('data-news-id');
+    var list = document.getElementById('fn-comments-list');
+    var empty = document.getElementById('fn-comments-empty');
+    var countEl = document.getElementById('fn-comments-count');
+    var flash = document.getElementById('fn-comment-flash');
+    var canComment = root.getAttribute('data-can-comment') === '1';
+
+    function setFlash(msg, ok) {
+        if (!flash) return;
+        flash.textContent = msg || '';
+        flash.classList.remove('hidden', 'text-green-600', 'dark:text-[#4ade80]', 'text-red-600', 'dark:text-red-400');
+        if (!msg) {
+            flash.classList.add('hidden');
+            return;
+        }
+        flash.classList.add(ok ? 'text-green-600' : 'text-red-600');
+        flash.classList.add(ok ? 'dark:text-[#4ade80]' : 'dark:text-red-400');
+    }
+
+    if (flash && flash.getAttribute('data-initial') === '1' && flash.textContent.trim()) {
+        var okInit = {{ 'true' if comment_flash_ok else 'false' }};
+        setFlash(flash.textContent.trim(), okInit);
+    }
+
+    function updateCount(n) {
+        if (countEl) countEl.textContent = '(' + n + ')';
+        if (n > 0) {
+            if (list) list.classList.remove('hidden');
+            if (empty) empty.classList.add('hidden');
+        }
+    }
+
+    function esc(s) {
+        var d = document.createElement('div');
+        d.textContent = s == null ? '' : String(s);
+        return d.innerHTML;
+    }
+
+    function buildCommentLi(c, isReply) {
+        var statusBadge = c.status && c.status !== 'published'
+            ? '<span class="text-amber-600 dark:text-amber-400 font-semibold">' + esc(c.status) + '</span>'
+            : '';
+        var geo = c.geo_country ? '<span class="text-gray-400 dark:text-slate-500">' + esc(c.geo_country) + '</span>' : '';
+        var upvotes = Number(c.upvotes || 0);
+        var upvoteHtml = '<span class="text-gray-400 fn-upvote-count' + (upvotes ? '' : ' hidden') + '">▲ <span data-upvotes>' + upvotes + '</span></span>';
+        var actions = '';
+        if (canComment && !isReply) {
+            actions =
+                '<div class="mt-1.5 flex items-center gap-3">' +
+                '<button type="button" class="text-[10px] font-bold uppercase text-gray-500 hover:text-blue-600 dark:hover:text-[#4ade80] fn-upvote-btn" data-comment-id="' + esc(c.id) + '">Upvote</button>' +
+                '<button type="button" class="text-[10px] font-bold uppercase text-gray-500 hover:text-blue-600 dark:hover:text-[#4ade80] fn-reply-toggle" data-parent="' + esc(c.id) + '">Responder</button>' +
+                '</div>' +
+                '<form method="post" action="/noticia/' + esc(newsId) + '/comentarios" class="mt-2 hidden fn-reply-form" data-parent-form="' + esc(c.id) + '">' +
+                '<input type="hidden" name="parent_id" value="' + esc(c.id) + '">' +
+                '<textarea name="body" rows="2" maxlength="2000" required placeholder="Resposta…" class="w-full text-xs rounded border border-gray-300 dark:border-slate-600 bg-gray-50 dark:bg-[#0f172a] px-2 py-1.5"></textarea>' +
+                '<button type="submit" class="mt-1 px-3 py-1 text-[10px] font-bold rounded bg-gray-800 dark:bg-slate-200 text-white dark:text-slate-900">Enviar resposta</button>' +
+                '</form>' +
+                '<div class="fn-replies" data-parent-id="' + esc(c.id) + '"></div>';
+        }
+        if (isReply) {
+            return (
+                '<div class="mt-2 ml-3 pl-3 border-l-2 border-gray-200 dark:border-slate-600 fn-reply-item" data-comment-id="' + esc(c.id) + '">' +
+                '<div class="flex items-start gap-2">' +
+                '<img src="' + esc(c.author_avatar) + '" alt="" width="22" height="22" class="rounded-full object-cover shrink-0 bg-slate-700">' +
+                '<div class="min-w-0">' +
+                '<div class="flex flex-wrap gap-x-2 text-[11px]">' +
+                '<span class="font-bold text-gray-900 dark:text-white">' + esc(c.author_name) + '</span>' +
+                '<time class="text-gray-400 dark:text-slate-500" datetime="' + esc(c.created_at) + '">' + esc(c.created_at_label || c.created_at) + '</time>' +
+                statusBadge +
+                '</div>' +
+                '<p class="mt-0.5 text-[13px] leading-snug text-gray-800 dark:text-slate-200 whitespace-pre-wrap">' + esc(c.body) + '</p>' +
+                '</div></div></div>'
+            );
+        }
+        return (
+            '<li class="px-3 py-2.5 fn-comment-item' + (c.status !== 'published' ? ' opacity-70' : '') + '" data-comment-id="' + esc(c.id) + '">' +
+            '<div class="flex items-start gap-2.5">' +
+            '<img src="' + esc(c.author_avatar) + '" alt="" width="28" height="28" class="rounded-full object-cover shrink-0 mt-0.5 bg-slate-700">' +
+            '<div class="min-w-0 flex-1">' +
+            '<div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px] leading-tight">' +
+            '<span class="font-bold text-gray-900 dark:text-white">' + esc(c.author_name) + '</span>' +
+            '<time class="text-gray-400 dark:text-slate-500" datetime="' + esc(c.created_at) + '">' + esc(c.created_at_label || c.created_at) + '</time>' +
+            geo + statusBadge + upvoteHtml +
+            '</div>' +
+            '<p class="mt-1 text-[13px] leading-snug text-gray-800 dark:text-slate-200 whitespace-pre-wrap">' + esc(c.body) + '</p>' +
+            actions +
+            '</div></div></li>'
+        );
+    }
+
+    function prependComment(c) {
+        if (!list || !c) return;
+        list.classList.remove('hidden');
+        if (empty) empty.classList.add('hidden');
+        if (c.parent_id) {
+            var box = list.querySelector('.fn-replies[data-parent-id="' + c.parent_id + '"]');
+            if (box) box.insertAdjacentHTML('beforeend', buildCommentLi(c, true));
+            return;
+        }
+        list.insertAdjacentHTML('afterbegin', buildCommentLi(c, false));
+    }
+
+    async function postComment(form) {
+        var btn = form.querySelector('[type="submit"]');
+        var fd = new FormData(form);
+        if (btn) btn.disabled = true;
+        try {
+            var res = await fetch(form.action, {
+                method: 'POST',
+                body: fd,
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin'
+            });
+            var data = null;
+            try { data = await res.json(); } catch (e) { data = null; }
+            if (res.status === 401 && data && data.login_url) {
+                window.location.href = data.login_url;
+                return;
+            }
+            if (!data) {
+                setFlash('Não foi possível publicar. Tente de novo.', false);
+                return;
+            }
+            if (!res.ok || data.ok === false && !data.comment) {
+                setFlash((data && data.error) || 'Não foi possível publicar.', false);
+                return;
+            }
+            setFlash(data.message || (data.ok ? 'Comentário publicado.' : 'Comentário bloqueado pela moderação.'), !!data.ok);
+            if (data.comment) {
+                prependComment(data.comment);
+                if (typeof data.count === 'number') updateCount(data.count);
+                form.reset();
+                if (form.classList.contains('fn-reply-form')) form.classList.add('hidden');
+            }
+        } catch (err) {
+            setFlash('Falha de rede ao publicar.', false);
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    var mainForm = document.getElementById('fn-comment-form');
+    if (mainForm) {
+        mainForm.addEventListener('submit', function (ev) {
+            ev.preventDefault();
+            postComment(mainForm);
+        });
+    }
+
+    root.addEventListener('submit', function (ev) {
+        var form = ev.target;
+        if (!(form instanceof HTMLFormElement)) return;
+        if (!form.classList.contains('fn-reply-form')) return;
+        ev.preventDefault();
+        postComment(form);
     });
-});
+
+    root.addEventListener('click', function (ev) {
+        var t = ev.target;
+        if (!(t instanceof HTMLElement)) return;
+        if (t.classList.contains('fn-reply-toggle')) {
+            var id = t.getAttribute('data-parent');
+            var form = root.querySelector('.fn-reply-form[data-parent-form="' + id + '"]');
+            if (form) form.classList.toggle('hidden');
+            return;
+        }
+        if (t.classList.contains('fn-upvote-btn')) {
+            var cid = t.getAttribute('data-comment-id');
+            if (!cid) return;
+            t.disabled = true;
+            var body = new FormData();
+            body.append('news_id', newsId);
+            fetch('/comentarios/' + encodeURIComponent(cid) + '/upvote', {
+                method: 'POST',
+                body: body,
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin'
+            }).then(function (r) { return r.json().then(function (d) { return { r: r, d: d }; }); })
+              .then(function (pack) {
+                  if (pack.r.status === 401) {
+                      window.location.href = '/login?next=/noticia/' + newsId + '%23comentarios';
+                      return;
+                  }
+                  if (pack.d && pack.d.added) {
+                      var item = root.querySelector('[data-comment-id="' + cid + '"]');
+                      var span = item && item.querySelector('[data-upvotes]');
+                      var wrap = item && item.querySelector('.fn-upvote-count');
+                      if (span) {
+                          var n = Number(span.textContent || '0') + 1;
+                          span.textContent = String(n);
+                          if (wrap) wrap.classList.remove('hidden');
+                      }
+                  }
+              }).catch(function () {}).finally(function () { t.disabled = false; });
+        }
+    });
+})();
 </script>

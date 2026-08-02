@@ -25,8 +25,17 @@ IP_HASH_SALT_ENV = "IP_HASH_SALT"
 EMAIL_VERIFY_TTL_HOURS = int(os.getenv("EMAIL_VERIFY_TTL_HOURS") or "48")
 EMAIL_VERIFY_RESEND_COOLDOWN_SEC = int(os.getenv("EMAIL_VERIFY_RESEND_COOLDOWN_SEC") or "120")
 EMAIL_NOT_VERIFIED_MSG = (
-    "Confirme seu e-mail pelo link enviado antes de entrar. "
-    "Se não recebeu, use reenviar verificação."
+    "Sua conta ainda não está ativa. Abra o e-mail de confirmação que enviamos "
+    "(caixa de entrada ou Spam) e clique no link. Se precisar, reenvie o link abaixo."
+)
+EMAIL_RESEND_OK_MSG = (
+    "Se existir uma conta pendente com este e-mail, enviamos um novo link. "
+    "Confira a caixa de entrada e também Spam / Promoções. "
+    "O link vale por algumas horas e só pode ser usado uma vez."
+)
+EMAIL_SIGNUP_OK_MSG = (
+    "Conta criada. Enviamos um e-mail para ativar sua conta — "
+    "confira a caixa de entrada e o Spam. Depois de confirmar, você poderá entrar."
 )
 
 
@@ -65,6 +74,38 @@ def validate_password_strength(password: str) -> str | None:
     if len(password or "") < 8:
         return "A senha deve ter pelo menos 8 caracteres."
     return None
+
+
+def format_comment_time(raw: str | None) -> str:
+    """Rótulo amigável para data de comentário (pt-BR relativo ou curto)."""
+    if not raw:
+        return ""
+    text = str(raw).strip()
+    try:
+        normalized = text.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalized)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        delta = now - dt.astimezone(timezone.utc)
+        secs = int(delta.total_seconds())
+        if secs < 45:
+            return "agora"
+        if secs < 3600:
+            mins = max(1, secs // 60)
+            return f"há {mins} min"
+        if secs < 86400:
+            hours = max(1, secs // 3600)
+            return f"há {hours} h"
+        if secs < 86400 * 7:
+            days = max(1, secs // 86400)
+            return f"há {days} d"
+        local = dt.astimezone(timezone.utc)
+        return local.strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        if "T" in text:
+            return text.replace("T", " ").replace("Z", "")[:16]
+        return text[:19]
 
 
 def now_iso() -> str:
@@ -562,6 +603,7 @@ def list_comments(client, news_id: int, *, include_pending_for_user: int | None 
                 "body": str(row[4] or ""),
                 "status": str(row[5] or ""),
                 "created_at": str(row[6] or ""),
+                "created_at_label": format_comment_time(str(row[6] or "")),
                 "geo_country": row[7],
                 "upvotes": int(row[8] or 0),
                 "author_name": str(row[9] or ""),
@@ -632,7 +674,15 @@ def create_comment(
     cid = int(row[0][0]) if row else 0
     return {
         "id": cid,
+        "news_id": int(news_id),
+        "user_id": int(user_id),
+        "parent_id": int(parent_id) if parent_id is not None else None,
+        "body": body_clean,
         "status": final_status,
+        "created_at": agora,
+        "created_at_label": format_comment_time(agora),
+        "geo_country": geo,
+        "upvotes": 0,
         "ok": bool(decision.get("ok")),
         "reason": decision.get("reason"),
     }

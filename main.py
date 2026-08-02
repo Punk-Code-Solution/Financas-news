@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 from fastapi import FastAPI, Request, Response, HTTPException, Form, File, UploadFile
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 import uvicorn
@@ -1074,9 +1074,7 @@ async def cadastro_submit(
             status_code=303,
         )
 
-    msg = quote(
-        "Conta criada. Verifique seu e-mail pelo link enviado antes de entrar."
-    )
+    msg = quote(community.EMAIL_SIGNUP_OK_MSG)
     return RedirectResponse(
         url=f"/login?verificar=1&email={quote(str(user['email']))}&msg={msg}",
         status_code=303,
@@ -1115,10 +1113,8 @@ async def reenviar_verificacao(request: Request, email: str = Form(...)):
         )
 
     user = community.find_user_by_email(client, email_n) if email_n else None
-    # Resposta genérica anti-enumeração (padrão Gamers League).
-    ok_msg = quote(
-        "Se existir uma conta pendente com este e-mail, enviamos um novo link de verificação."
-    )
+    # Resposta genérica anti-enumeração (padrão Gamers League) + dica de Spam.
+    ok_msg = quote(community.EMAIL_RESEND_OK_MSG)
     if user and not user.get("email_verified"):
         issued = community.issue_email_verification(client, int(user["id"]))
         if issued.get("rate_limited"):
@@ -1239,6 +1235,13 @@ def auth_google_callback(request: Request, code: str | None = None, state: str |
     return RedirectResponse(url=next_url, status_code=303)
 
 
+def _wants_json(request: Request) -> bool:
+    accept = (request.headers.get("accept") or "").lower()
+    if "application/json" in accept:
+        return True
+    return (request.headers.get("x-requested-with") or "").lower() == "xmlhttprequest"
+
+
 @app.post("/noticia/{noticia_id}/comentarios")
 async def post_comment(
     request: Request,
@@ -1248,6 +1251,8 @@ async def post_comment(
 ):
     user = _current_user(request)
     if not user:
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "error": "login_required", "login_url": f"/login?next=/noticia/{noticia_id}%23comentarios"}, status_code=401)
         return RedirectResponse(url=f"/login?next=/noticia/{noticia_id}%23comentarios", status_code=303)
     consent = community.parse_consent_cookie(request.cookies.get(CONSENT_COOKIE))
     from urllib.parse import quote
@@ -1264,21 +1269,54 @@ async def post_comment(
             consent=consent,
         )
     except ValueError as exc:
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
         return RedirectResponse(
             url=f"/noticia/{noticia_id}?comment_ok=0&comment_msg={quote(str(exc))}#comentarios",
             status_code=303,
         )
     except Exception:
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "error": "Erro ao salvar"}, status_code=500)
         return RedirectResponse(
             url=f"/noticia/{noticia_id}?comment_ok=0&comment_msg={quote('Erro ao salvar')}#comentarios",
             status_code=303,
         )
-    if result.get("status") == "published":
-        msg = "Comentário publicado."
-        ok = "1"
-    else:
-        msg = "Comentário bloqueado pela moderação."
-        ok = "0"
+    published = result.get("status") == "published"
+    msg = "Comentário publicado." if published else "Comentário bloqueado pela moderação."
+    if _wants_json(request):
+        comment = {
+            "id": result.get("id"),
+            "parent_id": result.get("parent_id"),
+            "body": result.get("body"),
+            "status": result.get("status"),
+            "created_at": result.get("created_at"),
+            "created_at_label": result.get("created_at_label"),
+            "geo_country": result.get("geo_country"),
+            "upvotes": 0,
+            "author_name": user.get("name") or "",
+            "author_avatar": user.get("avatar_url") or community.DEFAULT_AVATAR,
+        }
+        count = 0
+        try:
+            count = len(
+                community.list_comments(
+                    get_db(),
+                    noticia_id,
+                    include_pending_for_user=int(user["id"]),
+                )
+            )
+        except Exception:
+            count = 0
+        return JSONResponse(
+            {
+                "ok": published,
+                "message": msg,
+                "comment": comment,
+                "count": count,
+            }
+        )
+    ok = "1" if published else "0"
     return RedirectResponse(
         url=f"/noticia/{noticia_id}?comment_ok={ok}&comment_msg={quote(msg)}#comentarios",
         status_code=303,
@@ -1293,8 +1331,12 @@ async def upvote_comment_route(
 ):
     user = _current_user(request)
     if not user:
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
         return RedirectResponse(url=f"/login?next=/noticia/{news_id}%23comentarios", status_code=303)
-    _ = community.upvote_comment(get_db(), comment_id, int(user["id"]))
+    added = community.upvote_comment(get_db(), comment_id, int(user["id"]))
+    if _wants_json(request):
+        return JSONResponse({"ok": True, "added": bool(added)})
     return RedirectResponse(url=f"/noticia/{news_id}#comentarios", status_code=303)
 
 # ==========================================
