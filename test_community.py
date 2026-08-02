@@ -14,6 +14,7 @@ from community_auth import (
     can_resend_verification,
     create_comment,
     create_user,
+    delete_own_comment,
     generate_verify_token,
     hash_password,
     is_verify_token_expired,
@@ -336,6 +337,65 @@ def test_issue_verification_rate_limit():
     assert issued.get("rate_limited") is True
 
 
+def test_delete_own_comment_ok():
+    client = MagicMock()
+    client.execute.side_effect = [
+        MagicMock(rows=[(10, 5, 99, None)]),  # SELECT id, user_id, news_id, parent_id
+        MagicMock(rows=[]),  # DELETE votes
+        MagicMock(rows=[]),  # DELETE replies
+        MagicMock(rows=[]),  # DELETE comment
+    ]
+    result = delete_own_comment(client, 10, 5)
+    assert result["ok"] is True
+    assert result["id"] == 10
+    assert result["news_id"] == 99
+    sqls = [c.args[0] for c in client.execute.call_args_list]
+    assert any("DELETE FROM comments WHERE id" in s for s in sqls)
+    assert any("DELETE FROM comments WHERE parent_id" in s for s in sqls)
+
+
+def test_delete_own_comment_forbidden_for_other_user():
+    client = MagicMock()
+    client.execute.return_value = MagicMock(rows=[(10, 5, 99, None)])
+    try:
+        delete_own_comment(client, 10, 7)
+        assert False, "deveria negar exclusão de comentário alheio"
+    except ValueError as exc:
+        assert "próprio" in str(exc).lower()
+    assert client.execute.call_count == 1
+
+
+def test_delete_own_comment_not_found():
+    client = MagicMock()
+    client.execute.return_value = MagicMock(rows=[])
+    try:
+        delete_own_comment(client, 404, 1)
+        assert False, "deveria falhar para comentário inexistente"
+    except ValueError as exc:
+        assert "não encontrado" in str(exc).lower()
+
+
+def test_create_comment_json_payload_includes_user_id():
+    client = MagicMock()
+    client.execute.side_effect = [
+        MagicMock(rows=[]),  # INSERT
+        MagicMock(rows=[(42,)]),  # SELECT id
+    ]
+    result = create_comment(
+        client,
+        news_id=1,
+        user_id=7,
+        body="Comentário objetivo sobre a Selic.",
+        parent_id=None,
+        ip="127.0.0.1",
+        headers={},
+        consent={"necessary": True, "analytics": False, "preferences": False},
+    )
+    assert result["user_id"] == 7
+    assert result["id"] == 42
+    assert result["status"] == "published"
+
+
 if __name__ == "__main__":
     test_profanity_blocks_common_terms()
     test_profanity_allows_clean_finance_text()
@@ -353,4 +413,8 @@ if __name__ == "__main__":
     test_mail_fail_user_msg_is_honest()
     test_reenviar_ui_when_mailer_not_configured()
     test_issue_verification_rate_limit()
+    test_delete_own_comment_ok()
+    test_delete_own_comment_forbidden_for_other_user()
+    test_delete_own_comment_not_found()
+    test_create_comment_json_payload_includes_user_id()
     print("OK test_community")

@@ -54,6 +54,35 @@ def test_estimate_reading_minutes():
     assert core.estimate_reading_minutes(text) == 2
 
 
+def test_awesome_daily_url_requires_days_for_range():
+    """Sem /{days} no path a AwesomeAPI devolve 1 ponto (linha invisível no Chart.js)."""
+    url = core._awesome_daily_url(
+        "USD-BRL",
+        days=30,
+        start_date="20260703",
+        end_date="20260802",
+    )
+    assert "/json/daily/USD-BRL/30?" in url
+    assert "start_date=20260703" in url
+    assert "end_date=20260802" in url
+    assert core._awesome_daily_url("BTC-BRL", days=7).endswith("/BTC-BRL/7")
+
+
+def test_parse_awesome_daily_points_aligns_labels_values():
+    raw = [
+        {"bid": "5.10", "timestamp": "1785531571"},  # mais recente
+        {"bid": "5.05", "timestamp": "1785455978"},
+        {"bid": None, "timestamp": "1785368934"},  # ignorado
+    ]
+    points = core._parse_awesome_daily_points(raw)
+    assert len(points) == 2
+    labels = [p[0] for p in points]
+    values = [p[1] for p in points]
+    assert len(labels) == len(values)
+    assert values[0] == 5.05
+    assert values[-1] == 5.10
+
+
 def test_mercado_page():
     with (
         patch.object(core, "fetch_market_snapshot", return_value=FAKE_MARKET),
@@ -242,6 +271,8 @@ if __name__ == "__main__":
         sys.stdout.reconfigure(encoding="utf-8")
     tests = [
         test_estimate_reading_minutes,
+        test_awesome_daily_url_requires_days_for_range,
+        test_parse_awesome_daily_points_aligns_labels_values,
         test_mercado_page,
         test_radar_requires_auth,
         test_radar_semanal_mocked,

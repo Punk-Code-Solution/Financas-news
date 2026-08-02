@@ -77,7 +77,7 @@ RSS_FEED_LIMIT = 50
 
 
 def _content_security_policy() -> str:
-    """CSP compatível com AdSense, Google Fonts, Chart.js CDN e scripts inline do portal."""
+    """CSP compatível com AdSense, SWG, Google Fonts, Chart.js CDN e scripts inline do portal."""
     directives = [
         "default-src 'self'",
         "base-uri 'self'",
@@ -87,7 +87,7 @@ def _content_security_policy() -> str:
             "script-src 'self' 'unsafe-inline' "
             "https://pagead2.googlesyndication.com https://cdn.jsdelivr.net "
             "https://www.googletagmanager.com https://www.google-analytics.com "
-            "https://accounts.google.com"
+            "https://accounts.google.com https://news.google.com"
         ),
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src 'self' https://fonts.gstatic.com data:",
@@ -96,12 +96,13 @@ def _content_security_policy() -> str:
             "connect-src 'self' https://economia.awesomeapi.com.br "
             "https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net "
             "https://www.google.com https://ep1.adtrafficquality.google "
-            "https://accounts.google.com https://oauth2.googleapis.com"
+            "https://accounts.google.com https://oauth2.googleapis.com "
+            "https://news.google.com"
         ),
         (
-            "frame-src https://googleads.g.doubleclick.net "
+            "frame-src about:blank https://googleads.g.doubleclick.net "
             "https://tpc.googlesyndication.com https://www.google.com "
-            "https://accounts.google.com"
+            "https://accounts.google.com https://news.google.com"
         ),
     ]
     return "; ".join(directives)
@@ -1183,17 +1184,25 @@ def perfil_page(request: Request):
 async def perfil_avatar(request: Request, avatar: UploadFile = File(...)):
     user = _current_user(request)
     if not user:
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
         return RedirectResponse(url="/login?next=/perfil", status_code=303)
     data = await avatar.read()
     try:
         url = community.save_avatar_upload(int(user["id"]), avatar.filename or "avatar.jpg", data)
         get_db().execute("UPDATE users SET avatar_url = ? WHERE id = ?", [url, int(user["id"])])
     except ValueError as exc:
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
         from urllib.parse import quote
 
         return RedirectResponse(url=f"/perfil?ok=0&msg={quote(str(exc))}", status_code=303)
     except Exception:
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "error": "Falha no upload"}, status_code=500)
         return RedirectResponse(url="/perfil?ok=0&msg=Falha+no+upload", status_code=303)
+    if _wants_json(request):
+        return JSONResponse({"ok": True, "avatar_url": url, "message": "Avatar atualizado"})
     return RedirectResponse(url="/perfil?ok=1&msg=Avatar+atualizado", status_code=303)
 
 
@@ -1287,6 +1296,7 @@ async def post_comment(
     if _wants_json(request):
         comment = {
             "id": result.get("id"),
+            "user_id": result.get("user_id") or int(user["id"]),
             "parent_id": result.get("parent_id"),
             "body": result.get("body"),
             "status": result.get("status"),
@@ -1295,7 +1305,7 @@ async def post_comment(
             "geo_country": result.get("geo_country"),
             "upvotes": 0,
             "author_name": user.get("name") or "",
-            "author_avatar": user.get("avatar_url") or community.DEFAULT_AVATAR,
+            "author_avatar": community.normalize_avatar_url(user.get("avatar_url")),
         }
         count = 0
         try:
@@ -1337,6 +1347,51 @@ async def upvote_comment_route(
     added = community.upvote_comment(get_db(), comment_id, int(user["id"]))
     if _wants_json(request):
         return JSONResponse({"ok": True, "added": bool(added)})
+    return RedirectResponse(url=f"/noticia/{news_id}#comentarios", status_code=303)
+
+
+@app.post("/comentarios/{comment_id}/excluir")
+async def delete_comment_route(
+    request: Request,
+    comment_id: int,
+    news_id: int = Form(...),
+):
+    user = _current_user(request)
+    if not user:
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
+        return RedirectResponse(url=f"/login?next=/noticia/{news_id}%23comentarios", status_code=303)
+    try:
+        result = community.delete_own_comment(get_db(), comment_id, int(user["id"]))
+    except ValueError as exc:
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=403)
+        from urllib.parse import quote
+
+        return RedirectResponse(
+            url=f"/noticia/{news_id}?comment_ok=0&comment_msg={quote(str(exc))}#comentarios",
+            status_code=303,
+        )
+    except Exception:
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "error": "Erro ao excluir"}, status_code=500)
+        return RedirectResponse(
+            url=f"/noticia/{news_id}?comment_ok=0&comment_msg=Erro+ao+excluir#comentarios",
+            status_code=303,
+        )
+    if _wants_json(request):
+        count = 0
+        try:
+            count = len(
+                community.list_comments(
+                    get_db(),
+                    int(result["news_id"]),
+                    include_pending_for_user=int(user["id"]),
+                )
+            )
+        except Exception:
+            count = 0
+        return JSONResponse({"ok": True, "id": result["id"], "count": count, "message": "Comentário excluído."})
     return RedirectResponse(url=f"/noticia/{news_id}#comentarios", status_code=303)
 
 # ==========================================

@@ -1,0 +1,310 @@
+{# Avatar / menu do usuário ao lado do toggle de tema. #}
+{% if current_user %}
+<button type="button" id="fn-user-menu-btn" class="fn-user-menu-btn" aria-haspopup="dialog" aria-controls="fn-user-modal" aria-label="Conta">
+    <img id="fn-nav-avatar" src="{{ current_user.avatar_url or '/static/avatars/default.svg?v=2' }}" alt="" width="32" height="32" class="fn-user-menu-btn__img" data-fallback="/static/avatars/default.svg?v=2" onerror="this.onerror=null;this.src=this.dataset.fallback||'/static/avatars/default.svg?v=2'">
+</button>
+<div id="fn-user-modal" class="fn-user-modal" hidden role="dialog" aria-modal="true" aria-labelledby="fn-user-modal-title">
+    <div class="fn-user-modal__backdrop" data-fn-user-close></div>
+    <div class="fn-user-modal__card">
+        <div class="fn-user-modal__head">
+            <h2 id="fn-user-modal-title" class="fn-user-modal__title">Minha conta</h2>
+            <button type="button" class="fn-user-modal__close" data-fn-user-close aria-label="Fechar">&times;</button>
+        </div>
+        <div class="fn-user-modal__profile">
+            <img id="fn-modal-avatar" src="{{ current_user.avatar_url or '/static/avatars/default.svg?v=2' }}" alt="" width="64" height="64" class="fn-user-modal__avatar" data-fallback="/static/avatars/default.svg?v=2" onerror="this.onerror=null;this.src=this.dataset.fallback||'/static/avatars/default.svg?v=2'">
+            <div>
+                <p class="fn-user-modal__name">{{ current_user.name }}</p>
+                <p class="fn-user-modal__email">{{ current_user.email }}</p>
+            </div>
+        </div>
+        <form id="fn-avatar-form" method="post" action="/perfil/avatar" enctype="multipart/form-data" class="fn-user-modal__form">
+            <label class="fn-user-modal__label" for="fn-avatar-input">Trocar imagem de perfil</label>
+            <p class="fn-user-modal__hint">JPG, PNG, WEBP ou GIF — máx. 512 KB</p>
+            <input id="fn-avatar-input" type="file" name="avatar" accept="image/jpeg,image/png,image/webp,image/gif" required class="fn-user-modal__file">
+            <button type="submit" id="fn-avatar-submit" class="fn-user-modal__btn fn-user-modal__btn--primary">Salvar imagem</button>
+            <p id="fn-avatar-msg" class="fn-user-modal__msg" role="status" aria-live="polite"></p>
+        </form>
+        <form method="post" action="/logout" class="fn-user-modal__logout" id="fn-logout-form">
+            <button type="submit" id="fn-logout-btn" class="fn-user-modal__btn fn-user-modal__btn--ghost">Sair da conta</button>
+        </form>
+    </div>
+</div>
+<style>
+.fn-user-menu-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    padding: 0;
+    border: 1px solid rgba(148, 163, 184, 0.45);
+    border-radius: 9999px;
+    background: transparent;
+    cursor: pointer;
+    overflow: hidden;
+}
+.fn-user-menu-btn:hover { border-color: #3b82f6; }
+.fn-user-menu-btn__img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fn-user-modal[hidden] { display: none !important; }
+.fn-user-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+.fn-user-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.55);
+}
+.fn-user-modal__card {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 22rem;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 1rem;
+    padding: 1.25rem;
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.2);
+}
+.dark .fn-user-modal__card {
+    background: #1e293b;
+    border-color: #334155;
+}
+.fn-user-modal__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+.fn-user-modal__title {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #0f172a;
+}
+.dark .fn-user-modal__title { color: #f8fafc; }
+.fn-user-modal__close {
+    border: none;
+    background: transparent;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    color: #64748b;
+}
+.fn-user-modal__profile {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    margin-bottom: 1rem;
+}
+.fn-user-modal__avatar {
+    width: 4rem;
+    height: 4rem;
+    border-radius: 9999px;
+    object-fit: cover;
+    background: #334155;
+}
+.fn-user-modal__name {
+    margin: 0;
+    font-weight: 800;
+    color: #0f172a;
+}
+.dark .fn-user-modal__name { color: #f8fafc; }
+.fn-user-modal__email {
+    margin: 0.15rem 0 0;
+    font-size: 0.8rem;
+    color: #64748b;
+}
+.fn-user-modal__form { margin-bottom: 0.75rem; }
+.fn-user-modal__label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    color: #0f172a;
+}
+.dark .fn-user-modal__label { color: #e2e8f0; }
+.fn-user-modal__hint {
+    margin: 0 0 0.5rem;
+    font-size: 0.7rem;
+    color: #64748b;
+}
+.fn-user-modal__file {
+    display: block;
+    width: 100%;
+    margin-bottom: 0.6rem;
+    font-size: 0.75rem;
+    color: #475569;
+}
+.fn-user-modal__btn {
+    display: inline-flex;
+    width: 100%;
+    justify-content: center;
+    align-items: center;
+    border-radius: 0.6rem;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+.fn-user-modal__btn:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+.fn-user-modal__btn--primary {
+    background: #2563eb;
+    color: #fff;
+}
+.dark .fn-user-modal__btn--primary {
+    background: #4ade80;
+    color: #0f172a;
+}
+.fn-user-modal__btn--ghost {
+    background: transparent;
+    border-color: #cbd5e1;
+    color: #475569;
+}
+.dark .fn-user-modal__btn--ghost {
+    border-color: #475569;
+    color: #cbd5e1;
+}
+.fn-user-modal__msg {
+    margin: 0.5rem 0 0;
+    font-size: 0.75rem;
+    min-height: 1rem;
+}
+.fn-user-modal__msg.is-ok { color: #16a34a; }
+.fn-user-modal__msg.is-err { color: #dc2626; }
+.fn-user-modal__logout { margin-top: 0.5rem; }
+</style>
+<script>
+(function () {
+    var btn = document.getElementById('fn-user-menu-btn');
+    var modal = document.getElementById('fn-user-modal');
+    if (!btn || !modal) return;
+    var fallback = '/static/avatars/default.svg?v=2';
+    var modalAvatar = document.getElementById('fn-modal-avatar');
+    var navAvatar = document.getElementById('fn-nav-avatar');
+    var committedSrc = (modalAvatar && modalAvatar.getAttribute('src')) || fallback;
+    var previewUrl = null;
+
+    function revokePreview() {
+        if (previewUrl) {
+            try { URL.revokeObjectURL(previewUrl); } catch (e) {}
+            previewUrl = null;
+        }
+    }
+
+    function setAvatars(src, onlyModal) {
+        if (modalAvatar) modalAvatar.src = src;
+        if (!onlyModal && navAvatar) navAvatar.src = src;
+    }
+
+    function openModal() {
+        modal.hidden = false;
+        document.documentElement.style.overflow = 'hidden';
+    }
+    function closeModal() {
+        modal.hidden = true;
+        document.documentElement.style.overflow = '';
+    }
+    btn.addEventListener('click', openModal);
+    modal.querySelectorAll('[data-fn-user-close]').forEach(function (el) {
+        el.addEventListener('click', closeModal);
+    });
+    document.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Escape' && !modal.hidden) closeModal();
+    });
+
+    var form = document.getElementById('fn-avatar-form');
+    var input = document.getElementById('fn-avatar-input');
+    var submitBtn = document.getElementById('fn-avatar-submit');
+    var msg = document.getElementById('fn-avatar-msg');
+    var logoutForm = document.getElementById('fn-logout-form');
+    var logoutBtn = document.getElementById('fn-logout-btn');
+
+    if (input) {
+        input.addEventListener('change', function () {
+            var file = input.files && input.files[0];
+            revokePreview();
+            if (!file) {
+                setAvatars(committedSrc, true);
+                return;
+            }
+            previewUrl = URL.createObjectURL(file);
+            setAvatars(previewUrl, true);
+            if (msg) {
+                msg.textContent = 'Pré-visualização — clique em Salvar imagem para confirmar.';
+                msg.className = 'fn-user-modal__msg';
+            }
+        });
+    }
+
+    if (form) {
+        form.addEventListener('submit', function (ev) {
+            ev.preventDefault();
+            var fd = new FormData(form);
+            var prevLabel = submitBtn ? submitBtn.textContent : '';
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Salvando…';
+            }
+            if (msg) { msg.textContent = 'Enviando…'; msg.className = 'fn-user-modal__msg'; }
+            fetch('/perfil/avatar', {
+                method: 'POST',
+                body: fd,
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin'
+            }).then(function (r) { return r.json().then(function (d) { return { r: r, d: d }; }); })
+              .then(function (pack) {
+                  if (!pack.d || !pack.d.ok) {
+                      revokePreview();
+                      setAvatars(committedSrc, false);
+                      if (msg) {
+                          msg.textContent = (pack.d && pack.d.error) || 'Falha no upload';
+                          msg.className = 'fn-user-modal__msg is-err';
+                      }
+                      return;
+                  }
+                  revokePreview();
+                  var url = pack.d.avatar_url + (pack.d.avatar_url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + Date.now();
+                  committedSrc = url;
+                  setAvatars(url, false);
+                  if (msg) {
+                      msg.textContent = pack.d.message || 'Avatar atualizado';
+                      msg.className = 'fn-user-modal__msg is-ok';
+                  }
+                  form.reset();
+              }).catch(function () {
+                  revokePreview();
+                  setAvatars(committedSrc, false);
+                  if (msg) {
+                      msg.textContent = 'Falha de rede';
+                      msg.className = 'fn-user-modal__msg is-err';
+                  }
+              }).finally(function () {
+                  if (submitBtn) {
+                      submitBtn.disabled = false;
+                      submitBtn.textContent = prevLabel || 'Salvar imagem';
+                  }
+              });
+        });
+    }
+
+    if (logoutForm && logoutBtn) {
+        logoutForm.addEventListener('submit', function () {
+            logoutBtn.disabled = true;
+            logoutBtn.textContent = 'Saindo…';
+        });
+    }
+})();
+</script>
+{% else %}
+<a href="/login?lang={{ lang }}" class="text-xs font-bold text-blue-600 dark:text-[#4ade80] hover:underline whitespace-nowrap px-1">Entrar</a>
+{% endif %}

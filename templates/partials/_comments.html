@@ -1,7 +1,8 @@
 {# Comentários estilo lista densa (referência HLTV) — 1 nível de reply; envio via fetch sem reload. #}
 <section id="comentarios" class="mt-10 border-t border-gray-200 dark:border-slate-700 pt-6" aria-labelledby="comentarios-titulo"
          data-news-id="{{ noticia[0] }}"
-         data-can-comment="{{ '1' if current_user else '0' }}">
+         data-can-comment="{{ '1' if current_user else '0' }}"
+         data-current-user-id="{{ current_user.id if current_user else '' }}">
     <div class="flex items-baseline justify-between gap-3 mb-4">
         <h2 id="comentarios-titulo" class="text-sm font-black uppercase tracking-wider text-gray-800 dark:text-slate-100">
             Comentários <span id="fn-comments-count" class="text-gray-400 dark:text-slate-500 font-bold">({{ comments|length }})</span>
@@ -34,9 +35,9 @@
 
     <ul id="fn-comments-list" class="divide-y divide-gray-100 dark:divide-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-[#1e293b]{% if not comments %} hidden{% endif %}">
         {% for c in comments if not c.parent_id %}
-        <li class="px-3 py-2.5 fn-comment-item {% if c.status != 'published' %}opacity-70{% endif %}" data-comment-id="{{ c.id }}">
+        <li class="px-3 py-2.5 fn-comment-item {% if c.status != 'published' %}opacity-70{% endif %}" data-comment-id="{{ c.id }}" data-user-id="{{ c.user_id }}">
             <div class="flex items-start gap-2.5">
-                <img src="{{ c.author_avatar }}" alt="" width="28" height="28" class="rounded-full object-cover shrink-0 mt-0.5 bg-slate-700" loading="lazy">
+                <img src="{{ c.author_avatar or '/static/avatars/default.svg?v=2' }}" alt="" width="28" height="28" class="rounded-full object-cover shrink-0 mt-0.5 bg-slate-700" loading="lazy" data-fallback="/static/avatars/default.svg?v=2" onerror="this.onerror=null;this.src=this.dataset.fallback||'/static/avatars/default.svg?v=2'">
                 <div class="min-w-0 flex-1">
                     <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px] leading-tight">
                         <span class="font-bold text-gray-900 dark:text-white">{{ c.author_name }}</span>
@@ -50,6 +51,9 @@
                         {% if current_user %}
                         <button type="button" class="text-[10px] font-bold uppercase text-gray-500 hover:text-blue-600 dark:hover:text-[#4ade80] fn-upvote-btn" data-comment-id="{{ c.id }}">Upvote</button>
                         <button type="button" class="text-[10px] font-bold uppercase text-gray-500 hover:text-blue-600 dark:hover:text-[#4ade80] fn-reply-toggle" data-parent="{{ c.id }}">Responder</button>
+                        {% if current_user.id == c.user_id %}
+                        <button type="button" class="text-[10px] font-bold uppercase text-red-500/80 hover:text-red-600 fn-delete-btn" data-comment-id="{{ c.id }}">Excluir</button>
+                        {% endif %}
                         {% endif %}
                     </div>
                     {% if current_user %}
@@ -62,9 +66,9 @@
                     {% endif %}
                     <div class="fn-replies" data-parent-id="{{ c.id }}">
                     {% for r in comments if r.parent_id == c.id %}
-                    <div class="mt-2 ml-3 pl-3 border-l-2 border-gray-200 dark:border-slate-600 fn-reply-item" data-comment-id="{{ r.id }}">
+                    <div class="mt-2 ml-3 pl-3 border-l-2 border-gray-200 dark:border-slate-600 fn-reply-item" data-comment-id="{{ r.id }}" data-user-id="{{ r.user_id }}">
                         <div class="flex items-start gap-2">
-                            <img src="{{ r.author_avatar }}" alt="" width="22" height="22" class="rounded-full object-cover shrink-0 bg-slate-700" loading="lazy">
+                            <img src="{{ r.author_avatar or '/static/avatars/default.svg?v=2' }}" alt="" width="22" height="22" class="rounded-full object-cover shrink-0 bg-slate-700" loading="lazy" data-fallback="/static/avatars/default.svg?v=2" onerror="this.onerror=null;this.src=this.dataset.fallback||'/static/avatars/default.svg?v=2'">
                             <div class="min-w-0">
                                 <div class="flex flex-wrap gap-x-2 text-[11px]">
                                     <span class="font-bold text-gray-900 dark:text-white">{{ r.author_name }}</span>
@@ -72,6 +76,9 @@
                                     {% if r.status != 'published' %}<span class="text-amber-600 text-[10px]">{{ r.status }}</span>{% endif %}
                                 </div>
                                 <p class="mt-0.5 text-[13px] leading-snug text-gray-800 dark:text-slate-200 whitespace-pre-wrap">{{ r.body }}</p>
+                                {% if current_user and current_user.id == r.user_id %}
+                                <button type="button" class="mt-1 text-[10px] font-bold uppercase text-red-500/80 hover:text-red-600 fn-delete-btn" data-comment-id="{{ r.id }}">Excluir</button>
+                                {% endif %}
                             </div>
                         </div>
                     </div>
@@ -93,6 +100,7 @@
     var countEl = document.getElementById('fn-comments-count');
     var flash = document.getElementById('fn-comment-flash');
     var canComment = root.getAttribute('data-can-comment') === '1';
+    var currentUserId = root.getAttribute('data-current-user-id') || '';
 
     function setFlash(msg, ok) {
         if (!flash) return;
@@ -111,14 +119,6 @@
         setFlash(flash.textContent.trim(), okInit);
     }
 
-    function updateCount(n) {
-        if (countEl) countEl.textContent = '(' + n + ')';
-        if (n > 0) {
-            if (list) list.classList.remove('hidden');
-            if (empty) empty.classList.add('hidden');
-        }
-    }
-
     function esc(s) {
         var d = document.createElement('div');
         d.textContent = s == null ? '' : String(s);
@@ -132,25 +132,43 @@
         var geo = c.geo_country ? '<span class="text-gray-400 dark:text-slate-500">' + esc(c.geo_country) + '</span>' : '';
         var upvotes = Number(c.upvotes || 0);
         var upvoteHtml = '<span class="text-gray-400 fn-upvote-count' + (upvotes ? '' : ' hidden') + '">▲ <span data-upvotes>' + upvotes + '</span></span>';
+        var isMine = currentUserId && String(c.user_id) === String(currentUserId);
+        var deleteBtn = isMine
+            ? '<button type="button" class="text-[10px] font-bold uppercase text-red-500/80 hover:text-red-600 fn-delete-btn" data-comment-id="' + esc(c.id) + '">Excluir</button>'
+            : '';
+        var avatar = esc(c.author_avatar || '/static/avatars/default.svg?v=2');
+        var imgAttrs = ' data-fallback="/static/avatars/default.svg?v=2" onerror="this.onerror=null;this.src=this.dataset.fallback||\'/static/avatars/default.svg?v=2\'"';
         var actions = '';
-        if (canComment && !isReply) {
-            actions =
-                '<div class="mt-1.5 flex items-center gap-3">' +
-                '<button type="button" class="text-[10px] font-bold uppercase text-gray-500 hover:text-blue-600 dark:hover:text-[#4ade80] fn-upvote-btn" data-comment-id="' + esc(c.id) + '">Upvote</button>' +
-                '<button type="button" class="text-[10px] font-bold uppercase text-gray-500 hover:text-blue-600 dark:hover:text-[#4ade80] fn-reply-toggle" data-parent="' + esc(c.id) + '">Responder</button>' +
-                '</div>' +
-                '<form method="post" action="/noticia/' + esc(newsId) + '/comentarios" class="mt-2 hidden fn-reply-form" data-parent-form="' + esc(c.id) + '">' +
-                '<input type="hidden" name="parent_id" value="' + esc(c.id) + '">' +
-                '<textarea name="body" rows="2" maxlength="2000" required placeholder="Resposta…" class="w-full text-xs rounded border border-gray-300 dark:border-slate-600 bg-gray-50 dark:bg-[#0f172a] px-2 py-1.5"></textarea>' +
-                '<button type="submit" class="mt-1 px-3 py-1 text-[10px] font-bold rounded bg-gray-800 dark:bg-slate-200 text-white dark:text-slate-900">Enviar resposta</button>' +
-                '</form>' +
-                '<div class="fn-replies" data-parent-id="' + esc(c.id) + '"></div>';
+        if (!isReply) {
+            var actionBtns = '';
+            if (canComment) {
+                actionBtns =
+                    '<button type="button" class="text-[10px] font-bold uppercase text-gray-500 hover:text-blue-600 dark:hover:text-[#4ade80] fn-upvote-btn" data-comment-id="' + esc(c.id) + '">Upvote</button>' +
+                    '<button type="button" class="text-[10px] font-bold uppercase text-gray-500 hover:text-blue-600 dark:hover:text-[#4ade80] fn-reply-toggle" data-parent="' + esc(c.id) + '">Responder</button>';
+            }
+            if (deleteBtn || actionBtns) {
+                actions =
+                    '<div class="mt-1.5 flex items-center gap-3">' +
+                    actionBtns + deleteBtn +
+                    '</div>';
+            }
+            if (canComment) {
+                actions +=
+                    '<form method="post" action="/noticia/' + esc(newsId) + '/comentarios" class="mt-2 hidden fn-reply-form" data-parent-form="' + esc(c.id) + '">' +
+                    '<input type="hidden" name="parent_id" value="' + esc(c.id) + '">' +
+                    '<textarea name="body" rows="2" maxlength="2000" required placeholder="Resposta…" class="w-full text-xs rounded border border-gray-300 dark:border-slate-600 bg-gray-50 dark:bg-[#0f172a] px-2 py-1.5"></textarea>' +
+                    '<button type="submit" class="mt-1 px-3 py-1 text-[10px] font-bold rounded bg-gray-800 dark:bg-slate-200 text-white dark:text-slate-900">Enviar resposta</button>' +
+                    '</form>' +
+                    '<div class="fn-replies" data-parent-id="' + esc(c.id) + '"></div>';
+            } else {
+                actions += '<div class="fn-replies" data-parent-id="' + esc(c.id) + '"></div>';
+            }
         }
         if (isReply) {
             return (
-                '<div class="mt-2 ml-3 pl-3 border-l-2 border-gray-200 dark:border-slate-600 fn-reply-item" data-comment-id="' + esc(c.id) + '">' +
+                '<div class="mt-2 ml-3 pl-3 border-l-2 border-gray-200 dark:border-slate-600 fn-reply-item" data-comment-id="' + esc(c.id) + '" data-user-id="' + esc(c.user_id) + '">' +
                 '<div class="flex items-start gap-2">' +
-                '<img src="' + esc(c.author_avatar) + '" alt="" width="22" height="22" class="rounded-full object-cover shrink-0 bg-slate-700">' +
+                '<img src="' + avatar + '" alt="" width="22" height="22" class="rounded-full object-cover shrink-0 bg-slate-700"' + imgAttrs + '>' +
                 '<div class="min-w-0">' +
                 '<div class="flex flex-wrap gap-x-2 text-[11px]">' +
                 '<span class="font-bold text-gray-900 dark:text-white">' + esc(c.author_name) + '</span>' +
@@ -158,13 +176,14 @@
                 statusBadge +
                 '</div>' +
                 '<p class="mt-0.5 text-[13px] leading-snug text-gray-800 dark:text-slate-200 whitespace-pre-wrap">' + esc(c.body) + '</p>' +
+                (deleteBtn ? '<div class="mt-1">' + deleteBtn + '</div>' : '') +
                 '</div></div></div>'
             );
         }
         return (
-            '<li class="px-3 py-2.5 fn-comment-item' + (c.status !== 'published' ? ' opacity-70' : '') + '" data-comment-id="' + esc(c.id) + '">' +
+            '<li class="px-3 py-2.5 fn-comment-item' + (c.status !== 'published' ? ' opacity-70' : '') + '" data-comment-id="' + esc(c.id) + '" data-user-id="' + esc(c.user_id) + '">' +
             '<div class="flex items-start gap-2.5">' +
-            '<img src="' + esc(c.author_avatar) + '" alt="" width="28" height="28" class="rounded-full object-cover shrink-0 mt-0.5 bg-slate-700">' +
+            '<img src="' + avatar + '" alt="" width="28" height="28" class="rounded-full object-cover shrink-0 mt-0.5 bg-slate-700"' + imgAttrs + '>' +
             '<div class="min-w-0 flex-1">' +
             '<div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px] leading-tight">' +
             '<span class="font-bold text-gray-900 dark:text-white">' + esc(c.author_name) + '</span>' +
@@ -175,6 +194,17 @@
             actions +
             '</div></div></li>'
         );
+    }
+
+    function updateCount(n) {
+        if (countEl) countEl.textContent = '(' + n + ')';
+        if (n > 0) {
+            if (list) list.classList.remove('hidden');
+            if (empty) empty.classList.add('hidden');
+        } else {
+            if (list) list.classList.add('hidden');
+            if (empty) empty.classList.remove('hidden');
+        }
     }
 
     function prependComment(c) {
@@ -192,7 +222,12 @@
     async function postComment(form) {
         var btn = form.querySelector('[type="submit"]');
         var fd = new FormData(form);
-        if (btn) btn.disabled = true;
+        var prevLabel = btn ? btn.textContent : '';
+        var busyLabel = form.classList.contains('fn-reply-form') ? 'Enviando…' : 'Publicando…';
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = busyLabel;
+        }
         try {
             var res = await fetch(form.action, {
                 method: 'POST',
@@ -227,7 +262,10 @@
         } catch (err) {
             setFlash('Falha de rede ao publicar.', false);
         } finally {
-            if (btn) btn.disabled = false;
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = prevLabel || (form.classList.contains('fn-reply-form') ? 'Enviar resposta' : 'Publicar');
+            }
         }
     }
 
@@ -284,6 +322,51 @@
                       }
                   }
               }).catch(function () {}).finally(function () { t.disabled = false; });
+            return;
+        }
+        if (t.classList.contains('fn-delete-btn')) {
+            var delId = t.getAttribute('data-comment-id');
+            if (!delId) return;
+            if (t.getAttribute('data-confirm') !== '1') {
+                t.setAttribute('data-confirm', '1');
+                t.textContent = 'Confirmar?';
+                setTimeout(function () {
+                    if (t.getAttribute('data-confirm') === '1') {
+                        t.removeAttribute('data-confirm');
+                        t.textContent = 'Excluir';
+                    }
+                }, 4000);
+                return;
+            }
+            t.disabled = true;
+            var delBody = new FormData();
+            delBody.append('news_id', newsId);
+            fetch('/comentarios/' + encodeURIComponent(delId) + '/excluir', {
+                method: 'POST',
+                body: delBody,
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin'
+            }).then(function (r) { return r.json().then(function (d) { return { r: r, d: d }; }); })
+              .then(function (pack) {
+                  if (pack.r.status === 401) {
+                      window.location.href = '/login?next=/noticia/' + newsId + '%23comentarios';
+                      return;
+                  }
+                  if (!pack.d || !pack.d.ok) {
+                      setFlash((pack.d && pack.d.error) || 'Não foi possível excluir.', false);
+                      t.removeAttribute('data-confirm');
+                      t.textContent = 'Excluir';
+                      return;
+                  }
+                  var node = root.querySelector('[data-comment-id="' + delId + '"]');
+                  if (node) node.remove();
+                  if (typeof pack.d.count === 'number') updateCount(pack.d.count);
+                  setFlash(pack.d.message || 'Comentário excluído.', true);
+              }).catch(function () {
+                  setFlash('Falha de rede ao excluir.', false);
+                  t.removeAttribute('data-confirm');
+                  t.textContent = 'Excluir';
+              }).finally(function () { t.disabled = false; });
         }
     });
 })();

@@ -9,3 +9,5 @@ tools/*.log
 tools/*_fill_*.txt
 *.db
 *.env
+static/avatars/*
+!static/avatars/default.svg

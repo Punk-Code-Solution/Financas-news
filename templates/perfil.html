@@ -28,7 +28,7 @@
             <p class="text-sm {% if profile_flash_ok %}text-green-600{% else %}text-red-600{% endif %}">{{ profile_flash }}</p>
             {% endif %}
             <div class="rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-6 shadow-sm flex items-center gap-4">
-                <img src="{{ current_user.avatar_url }}" alt="" width="72" height="72" class="rounded-full object-cover bg-slate-700">
+                <img src="{{ current_user.avatar_url or '/static/avatars/default.svg?v=2' }}" alt="" width="72" height="72" class="rounded-full object-cover bg-slate-700" data-fallback="/static/avatars/default.svg?v=2" onerror="this.onerror=null;this.src=this.dataset.fallback||'/static/avatars/default.svg?v=2'">
                 <div>
                     <p class="font-black text-gray-900 dark:text-white">{{ current_user.name }}</p>
                     <p class="text-sm text-gray-500 dark:text-slate-400">{{ current_user.email }}</p>

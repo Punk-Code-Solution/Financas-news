@@ -15,7 +15,7 @@ import requests
 
 from profanity_filter import moderate_comment
 
-DEFAULT_AVATAR = "/static/avatars/default.svg"
+DEFAULT_AVATAR = "/static/avatars/default.svg?v=2"
 AVATAR_DIR = Path(os.getenv("AVATAR_DIR", "static/avatars"))
 AVATAR_MAX_BYTES = 512 * 1024
 AVATAR_ALLOWED = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
@@ -160,17 +160,34 @@ def approximate_geo(request_headers: dict[str, str], *, allowed: bool) -> str | 
     return None
 
 
-def ensure_default_avatar() -> None:
-    AVATAR_DIR.mkdir(parents=True, exist_ok=True)
-    path = AVATAR_DIR / "default.svg"
-    if path.is_file():
-        return
-    svg = """<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="Avatar">
+_DEFAULT_AVATAR_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="Avatar">
   <rect width="128" height="128" fill="#1e293b"/>
   <circle cx="64" cy="48" r="24" fill="#94a3b8"/>
   <ellipse cx="64" cy="104" rx="40" ry="28" fill="#94a3b8"/>
-</svg>"""
-    path.write_text(svg, encoding="utf-8")
+</svg>
+"""
+
+
+def normalize_avatar_url(value: Any) -> str:
+    avatar = (str(value or "").strip() or DEFAULT_AVATAR)
+    if avatar.split("?", 1)[0] == "/static/avatars/default.svg":
+        return DEFAULT_AVATAR
+    return avatar
+
+
+def ensure_default_avatar() -> None:
+    """Garante default.svg válido em UTF-8 (SVG sem encoding declara UTF-8)."""
+    AVATAR_DIR.mkdir(parents=True, exist_ok=True)
+    path = AVATAR_DIR / "default.svg"
+    if path.is_file():
+        raw = path.read_bytes()
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = ""
+        if text.strip().startswith("<svg") and "xmlns=" in text:
+            return
+    path.write_text(_DEFAULT_AVATAR_SVG, encoding="utf-8", newline="\n")
 
 
 def create_user(
@@ -195,7 +212,7 @@ def create_user(
     else:
         pw_hash = None
     agora = now_iso()
-    avatar = avatar_url or DEFAULT_AVATAR
+    avatar = (str(avatar_url or "").strip() or DEFAULT_AVATAR)
     ensure_default_avatar()
     # Google OAuth já prova o e-mail; cadastro local exige verificação.
     verified = 1 if (email_verified if email_verified is not None else bool(google_id)) else 0
@@ -320,7 +337,7 @@ def _user_dict(row, *, include_hash: bool = False, include_verify: bool = False)
         "id": int(row[0]),
         "name": str(row[1] or ""),
         "email": str(row[2] or ""),
-        "avatar_url": str(row[3] or DEFAULT_AVATAR),
+        "avatar_url": normalize_avatar_url(row[3]),
         "google_id": row[4] if len(row) > 4 else None,
     }
     if include_hash:
@@ -555,6 +572,31 @@ def exchange_google_code(code: str) -> dict[str, Any]:
     }
 
 
+def delete_own_comment(client, comment_id: int, user_id: int) -> dict[str, Any]:
+    """Exclui comentário apenas se pertencer ao usuário. Remove replies e votos."""
+    rows = client.execute(
+        "SELECT id, user_id, news_id, parent_id FROM comments WHERE id = ? LIMIT 1",
+        [int(comment_id)],
+    ).rows
+    if not rows:
+        raise ValueError("Comentário não encontrado.")
+    owner = int(rows[0][1])
+    news_id = int(rows[0][2])
+    if owner != int(user_id):
+        raise ValueError("Você só pode excluir o próprio comentário.")
+    cid = int(comment_id)
+    try:
+        client.execute("DELETE FROM comment_votes WHERE comment_id = ? OR comment_id IN (SELECT id FROM comments WHERE parent_id = ?)", [cid, cid])
+    except Exception:
+        try:
+            client.execute("DELETE FROM comment_votes WHERE comment_id = ?", [cid])
+        except Exception:
+            pass
+    client.execute("DELETE FROM comments WHERE parent_id = ?", [cid])
+    client.execute("DELETE FROM comments WHERE id = ?", [cid])
+    return {"ok": True, "id": cid, "news_id": news_id}
+
+
 def save_avatar_upload(user_id: int, filename: str, data: bytes) -> str:
     ensure_default_avatar()
     ext = Path(filename or "").suffix.lower()
@@ -607,7 +649,7 @@ def list_comments(client, news_id: int, *, include_pending_for_user: int | None 
                 "geo_country": row[7],
                 "upvotes": int(row[8] or 0),
                 "author_name": str(row[9] or ""),
-                "author_avatar": str(row[10] or DEFAULT_AVATAR),
+                "author_avatar": normalize_avatar_url(row[10]),
             }
         )
     return items

@@ -28,8 +28,13 @@ _ = load_dotenv()
 _MARKET_CACHE: dict[str, tuple[float, Any]] = {}
 _MARKET_CACHE_LOCK = threading.Lock()
 _HTTP_TIMEOUT = float(os.getenv("MARKET_HTTP_TIMEOUT", "3"))
+# Histórico BCB/AwesomeAPI costuma precisar de mais tempo que o snapshot.
+_HTTP_TIMEOUT_HIST = float(os.getenv("MARKET_HIST_HTTP_TIMEOUT", str(max(_HTTP_TIMEOUT, 8.0))))
 _CACHE_TTL_SNAPSHOT = int(os.getenv("MARKET_CACHE_TTL", "300"))  # 5 min
 _CACHE_TTL_HISTORICAL = int(os.getenv("MARKET_HIST_CACHE_TTL", "900"))  # 15 min
+# Endpoint /ultimos/N do BCB rejeita N > 20 (HTTP 400).
+_BCB_ULTIMOS_MAX = 20
+_AWESOME_DAILY_MAX = 360
 
 
 def _cache_get(key: str):
@@ -365,6 +370,46 @@ BCB_HISTORICAL_LABELS = {
 }
 
 
+def _awesome_daily_url(
+    pair: str,
+    *,
+    days: int = 30,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> str:
+    """URL do histórico diário AwesomeAPI.
+
+    Com start_date/end_date o path PRECISA incluir /{days} (1–360). Sem o
+    contador a API devolve 1 ponto — Chart.js desenha eixos sem linha visível
+    quando pointRadius=0.
+    """
+    limit = max(1, min(int(days or 1), _AWESOME_DAILY_MAX))
+    base = f"https://economia.awesomeapi.com.br/json/daily/{pair}/{limit}"
+    if start_date and end_date:
+        return f"{base}?start_date={start_date}&end_date={end_date}"
+    return base
+
+
+def _parse_awesome_daily_points(dados: list) -> list[tuple[str, float]]:
+    """Converte payload AwesomeAPI em (label dd/mm, bid), alinhando labels e values."""
+    points: list[tuple[str, float]] = []
+    # API costuma devolver do mais recente ao mais antigo.
+    for item in reversed(dados):
+        if not isinstance(item, dict):
+            continue
+        ts = item.get("timestamp")
+        bid = item.get("bid")
+        if ts is None or bid is None:
+            continue
+        try:
+            label = datetime.fromtimestamp(int(ts)).strftime("%d/%m")
+            value = float(bid)
+        except (TypeError, ValueError, OSError, OverflowError):
+            continue
+        points.append((label, value))
+    return points
+
+
 def clean_html(html_content):
     soup = BeautifulSoup(html_content, "html.parser")
     return soup.get_text(separator=" ").strip()
@@ -505,25 +550,48 @@ def fetch_bcb_snapshot(blocking: bool = True) -> dict[str, dict[str, Any]]:
 
 def fetch_bcb_historical(days: int = 90) -> dict[str, Any]:
     """Séries históricas BCB para gráficos de linha (paralelo + cache)."""
-    cache_key = f"bcb_hist_{days}"
+    cache_key = f"bcb_hist_v3_{days}"
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
 
     series: dict[str, Any] = {}
+    end = datetime.now()
 
     def _one(key: str, series_id: int):
         label = BCB_HISTORICAL_LABELS[key]
+        # /ultimos/N rejeita N > 20. Intervalo por data cobre 30d/90d.
+        # Séries mensais (IPCA) podem não ter ponto nos últimos 30 dias corridos.
+        span_days = max(int(days), 400 if key == "ipca_12m" else int(days))
+        start = end - timedelta(days=span_days)
         url = (
-            f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{series_id}"
-            + f"/dados/ultimos/{days}?formato=json"
+            f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{series_id}/dados"
+            + f"?formato=json&dataInicial={start.strftime('%d/%m/%Y')}"
+            + f"&dataFinal={end.strftime('%d/%m/%Y')}"
         )
-        dados = _http_get_json(url, timeout=_HTTP_TIMEOUT)
+        dados = _http_get_json(url, timeout=_HTTP_TIMEOUT_HIST)
+        if not isinstance(dados, list) or not dados:
+            n = min(max(int(days), 1), _BCB_ULTIMOS_MAX)
+            dados = _http_get_json(
+                f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{series_id}"
+                + f"/dados/ultimos/{n}?formato=json",
+                timeout=_HTTP_TIMEOUT_HIST,
+            )
         if not isinstance(dados, list) or not dados:
             return None
+        values: list[float] = []
+        labels: list[str] = []
+        for row in dados:
+            try:
+                values.append(float(str(row.get("valor", "0")).replace(",", ".")))
+                labels.append(str(row.get("data", ""))[:5])
+            except (TypeError, ValueError):
+                continue
+        if not values:
+            return None
         return label, {
-            "labels": [d.get("data", "") for d in dados],
-            "values": [float(str(d.get("valor", "0")).replace(",", ".")) for d in dados],
+            "labels": labels,
+            "values": values,
             "periodo_dias": days,
             "fonte": "BCB",
         }
@@ -549,7 +617,7 @@ def fetch_bcb_historical(days: int = 90) -> dict[str, Any]:
 
 def fetch_awesome_historical(days: int = 30) -> dict[str, Any]:
     """Séries históricas AwesomeAPI (paralelo + cache)."""
-    cache_key = f"awesome_hist_{days}"
+    cache_key = f"awesome_hist_v2_{days}"
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
@@ -557,18 +625,16 @@ def fetch_awesome_historical(days: int = 30) -> dict[str, Any]:
     series: dict[str, Any] = {}
 
     def _one(label: str, pair: str):
-        url = f"https://economia.awesomeapi.com.br/json/daily/{pair}/{days}"
-        dados = _http_get_json(url, timeout=_HTTP_TIMEOUT)
+        url = _awesome_daily_url(pair, days=days)
+        dados = _http_get_json(url, timeout=_HTTP_TIMEOUT_HIST)
         if not isinstance(dados, list) or not dados:
             return None
-        dados = list(reversed(dados))
+        points = _parse_awesome_daily_points(dados)
+        if not points:
+            return None
         return label, {
-            "labels": [
-                datetime.fromtimestamp(int(d.get("timestamp", 0))).strftime("%d/%m")
-                for d in dados
-                if d.get("timestamp")
-            ],
-            "values": [float(d.get("bid", 0)) for d in dados],
+            "labels": [p[0] for p in points],
+            "values": [p[1] for p in points],
             "periodo_dias": days,
             "fonte": "AwesomeAPI",
         }
@@ -594,7 +660,7 @@ def fetch_awesome_historical(days: int = 30) -> dict[str, Any]:
 
 def fetch_market_historical(days_short: int = 30, days_long: int = 90) -> dict[str, Any]:
     """Agrega histórico BCB + AwesomeAPI (cache 15 min)."""
-    cache_key = f"market_hist_{days_short}_{days_long}"
+    cache_key = f"market_hist_v3_{days_short}_{days_long}"
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
@@ -643,12 +709,13 @@ def fetch_sparkline_data(blocking: bool = False) -> dict[str, list[float]]:
         sparklines: dict[str, list[float]] = {}
         for label, pair in list(AWESOME_HISTORICAL.items())[:2]:
             dados = _http_get_json(
-                f"https://economia.awesomeapi.com.br/json/daily/{pair}/7",
-                timeout=_HTTP_TIMEOUT,
+                _awesome_daily_url(pair, days=7),
+                timeout=_HTTP_TIMEOUT_HIST,
             )
             if isinstance(dados, list):
-                dados = list(reversed(dados))
-                sparklines[label] = [float(d.get("bid", 0)) for d in dados if d.get("bid")]
+                points = _parse_awesome_daily_points(dados)
+                if points:
+                    sparklines[label] = [p[1] for p in points]
         if sparklines:
             _cache_set(cache_key, sparklines, _CACHE_TTL_SNAPSHOT)
 
@@ -739,11 +806,13 @@ def fetch_market_snapshot_as_of(as_of: datetime) -> dict[str, Any]:
     ]
 
     def _one(pair: str, label: str):
-        url = (
-            f"https://economia.awesomeapi.com.br/json/daily/{pair}/"
-            + f"?start_date={start.strftime('%Y%m%d')}&end_date={day_key}"
+        url = _awesome_daily_url(
+            pair,
+            days=14,
+            start_date=start.strftime("%Y%m%d"),
+            end_date=day_key,
         )
-        dados = _http_get_json(url, timeout=_HTTP_TIMEOUT)
+        dados = _http_get_json(url, timeout=_HTTP_TIMEOUT_HIST)
         if not isinstance(dados, list) or not dados:
             return None
         # API costuma devolver do mais recente ao mais antigo
@@ -837,7 +906,7 @@ def fetch_market_historical_as_of(
 ) -> dict[str, Any]:
     """Séries históricas terminando na data da análise."""
     day_key = as_of.strftime("%Y%m%d")
-    cache_key = f"market_hist_asof_{day_key}_{days_short}_{days_long}"
+    cache_key = f"market_hist_asof_v2_{day_key}_{days_short}_{days_long}"
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
@@ -847,21 +916,21 @@ def fetch_market_historical_as_of(
         start = as_of - timedelta(days=days)
         series: dict[str, Any] = {}
         for label, pair in AWESOME_HISTORICAL.items():
-            url = (
-                f"https://economia.awesomeapi.com.br/json/daily/{pair}/"
-                + f"?start_date={start.strftime('%Y%m%d')}&end_date={day_key}"
+            url = _awesome_daily_url(
+                pair,
+                days=min(max(days + 5, 7), _AWESOME_DAILY_MAX),
+                start_date=start.strftime("%Y%m%d"),
+                end_date=day_key,
             )
-            dados = _http_get_json(url, timeout=_HTTP_TIMEOUT)
+            dados = _http_get_json(url, timeout=_HTTP_TIMEOUT_HIST)
             if not isinstance(dados, list) or not dados:
                 continue
-            dados = list(reversed(dados))
+            points = _parse_awesome_daily_points(dados)
+            if not points:
+                continue
             series[label] = {
-                "labels": [
-                    datetime.fromtimestamp(int(d.get("timestamp", 0))).strftime("%d/%m")
-                    for d in dados
-                    if d.get("timestamp")
-                ],
-                "values": [float(d.get("bid", 0)) for d in dados if d.get("bid") is not None],
+                "labels": [p[0] for p in points],
+                "values": [p[1] for p in points],
                 "periodo_dias": days,
                 "fonte": "AwesomeAPI",
                 "ate": as_of.strftime("%d/%m/%Y"),
@@ -869,21 +938,32 @@ def fetch_market_historical_as_of(
         return series
 
     def _bcb_range(days: int) -> dict[str, Any]:
-        start = as_of - timedelta(days=days)
         series: dict[str, Any] = {}
         for key, series_id in BCB_SERIES.items():
             label = BCB_HISTORICAL_LABELS[key]
+            span_days = max(int(days), 400 if key == "ipca_12m" else int(days))
+            start = as_of - timedelta(days=span_days)
             url = (
                 f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{series_id}/dados"
                 + f"?formato=json&dataInicial={start.strftime('%d/%m/%Y')}"
                 + f"&dataFinal={as_of.strftime('%d/%m/%Y')}"
             )
-            dados = _http_get_json(url, timeout=_HTTP_TIMEOUT)
+            dados = _http_get_json(url, timeout=_HTTP_TIMEOUT_HIST)
             if not isinstance(dados, list) or not dados:
                 continue
+            values: list[float] = []
+            labels: list[str] = []
+            for row in dados:
+                try:
+                    values.append(float(str(row.get("valor", "0")).replace(",", ".")))
+                    labels.append(str(row.get("data", ""))[:5])
+                except (TypeError, ValueError):
+                    continue
+            if not values:
+                continue
             series[label] = {
-                "labels": [d.get("data", "")[:5] for d in dados],
-                "values": [float(str(d.get("valor", "0")).replace(",", ".")) for d in dados],
+                "labels": labels,
+                "values": values,
                 "periodo_dias": days,
                 "fonte": "BCB",
                 "ate": as_of.strftime("%d/%m/%Y"),
