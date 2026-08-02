@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="{{ html_lang }}" data-locale="{{ number_locale }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t('meta_market_title') }}</title>
+    <meta name="description" content="{{ t('meta_market_description') }}">
+    {% include "partials/_seo_brand.html" %}
+    <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800;900&family=Playfair+Display:wght@700;800;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800;900&family=Playfair+Display:wght@700;800;900&display=swap" rel="stylesheet"></noscript>
+    {% include "partials/_hreflang.html" %}
+    {% include "partials/_styles.html" %}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script>
+        if (localStorage.getItem('color-theme') === 'dark') {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    </script>
+</head>
+<body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 transition-colors duration-200 flex flex-col min-h-screen">
+    {% include "partials/_market_ticker.html" %}
+
+    <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] transition-colors duration-200 pt-4 pb-4">
+        <div class="container mx-auto px-4 max-w-7xl flex flex-wrap justify-between items-center gap-3">
+            <a href="/?lang={{ lang }}" class="text-xl sm:text-2xl font-black tracking-tighter">
+                <span class="text-green-600 dark:text-[#4ade80]">{{ t('brand_finance') }}</span><span class="text-gray-900 dark:text-white">{{ t('brand_news') }}</span>
+            </a>
+            <div class="flex items-center gap-2 sm:gap-3">
+                <a href="/mercado?lang={{ lang }}" class="text-sm font-bold text-blue-600 dark:text-[#4ade80]">{{ t('nav_market') }}</a>
+                <a href="/?lang={{ lang }}" class="text-sm font-semibold text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white transition-colors">&larr; {{ t('back') }}</a>
+                {% include "partials/_lang_switcher.html" %}
+                <button id="theme-toggle" type="button" aria-label="{{ t('theme_toggle') }}" class="inline-flex items-center justify-center min-h-11 min-w-11 text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 focus:outline-none rounded-lg text-sm p-2.5 transition-colors">
+                    <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
+                    <svg id="theme-toggle-light-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path></svg>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mx-auto px-4 py-8 md:py-10 flex-grow w-full max-w-7xl">
+        <header class="mb-8">
+            <p class="text-xs font-bold uppercase tracking-[0.2em] text-blue-600 dark:text-[#4ade80]">{{ t('market_page_eyebrow') }}</p>
+            <h1 class="font-serif text-3xl md:text-4xl font-black text-gray-900 dark:text-white mt-2">{{ t('market_page_title') }}</h1>
+            <p class="mt-2 text-base text-gray-600 dark:text-slate-400 max-w-3xl">{{ t('market_page_blurb') }}</p>
+            {% if collected_at %}
+            <p class="mt-3 text-xs text-gray-500 dark:text-slate-500">{{ t('market_updated') }} {{ collected_at }}</p>
+            {% endif %}
+        </header>
+
+        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+            <article class="rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-5">
+                <p class="text-[10px] font-black uppercase tracking-wider text-gray-500 dark:text-slate-400">{{ t('market_selic') }}</p>
+                <p class="mt-2 text-3xl font-black text-gray-900 dark:text-white">{% if selic.valor %}{{ selic.valor }}%{% else %}—{% endif %}</p>
+                {% if selic.data %}<p class="mt-1 text-xs text-gray-500 dark:text-slate-500">{{ selic.data }}</p>{% endif %}
+            </article>
+            <article class="rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-5">
+                <p class="text-[10px] font-black uppercase tracking-wider text-gray-500 dark:text-slate-400">{{ t('market_ipca') }}</p>
+                <p class="mt-2 text-3xl font-black text-gray-900 dark:text-white">{% if ipca.valor %}{{ ipca.valor }}%{% else %}—{% endif %}</p>
+                {% if ipca.data %}<p class="mt-1 text-xs text-gray-500 dark:text-slate-500">{{ ipca.data }}</p>{% endif %}
+            </article>
+            <article class="rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-5">
+                <p class="text-[10px] font-black uppercase tracking-wider text-gray-500 dark:text-slate-400">{{ t('market_usd') }}</p>
+                <p class="mt-2 text-3xl font-black text-gray-900 dark:text-white">{{ usd.cotacao or '—' }}</p>
+                {% if usd.variacao_24h %}<p class="mt-1 text-xs font-semibold {% if usd.variacao_24h.startswith('-') %}text-red-600 dark:text-[#f87171]{% else %}text-green-600 dark:text-[#4ade80]{% endif %}">{{ usd.variacao_24h }}</p>{% endif %}
+            </article>
+            <article class="rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-5">
+                <p class="text-[10px] font-black uppercase tracking-wider text-gray-500 dark:text-slate-400">{{ t('market_btc') }}</p>
+                <p class="mt-2 text-3xl font-black text-gray-900 dark:text-white">{{ btc.cotacao or '—' }}</p>
+                {% if btc.variacao_24h %}<p class="mt-1 text-xs font-semibold {% if btc.variacao_24h.startswith('-') %}text-red-600 dark:text-[#f87171]{% else %}text-green-600 dark:text-[#4ade80]{% endif %}">{{ btc.variacao_24h }}</p>{% endif %}
+            </article>
+        </section>
+
+        <section class="mb-6">
+            <h2 class="text-lg font-black text-gray-900 dark:text-white mb-4">{{ t('market_history') }}</h2>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {% for key, title in [('usd', t('market_usd')), ('btc', t('market_btc')), ('selic', t('market_selic')), ('ipca', t('market_ipca'))] %}
+                <div class="rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-5">
+                    <p class="text-sm font-bold text-gray-800 dark:text-slate-200 mb-3">{{ title }}</p>
+                    <div class="h-48">
+                        <canvas id="chart-{{ key }}" aria-label="{{ title }}"></canvas>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <p class="text-center mt-8">
+            <a href="/?lang={{ lang }}" class="text-sm font-bold text-blue-600 dark:text-[#4ade80] hover:underline">{{ t('back_home') }}</a>
+        </p>
+    </main>
+
+    {% include "partials/_footer.html" %}
+
+    <script id="market-charts-data" type="application/json">{{ charts | tojson }}</script>
+    <script>
+        (function () {
+            const darkIcon = document.getElementById('theme-toggle-dark-icon');
+            const lightIcon = document.getElementById('theme-toggle-light-icon');
+            const syncIcons = () => {
+                if (!darkIcon || !lightIcon) return;
+                if (document.documentElement.classList.contains('dark')) {
+                    lightIcon.classList.remove('hidden'); darkIcon.classList.add('hidden');
+                } else {
+                    darkIcon.classList.remove('hidden'); lightIcon.classList.add('hidden');
+                }
+            };
+            syncIcons();
+            document.getElementById('theme-toggle')?.addEventListener('click', () => {
+                document.documentElement.classList.toggle('dark');
+                localStorage.setItem('color-theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+                syncIcons();
+            });
+
+            let chartsPayload = {};
+            try {
+                chartsPayload = JSON.parse(document.getElementById('market-charts-data')?.textContent || '{}');
+            } catch (e) { chartsPayload = {}; }
+
+            const isDark = document.documentElement.classList.contains('dark');
+            const gridColor = isDark ? 'rgba(148,163,184,0.15)' : 'rgba(148,163,184,0.25)';
+            const tickColor = isDark ? '#94a3b8' : '#64748b';
+            const lineColor = isDark ? '#4ade80' : '#2563eb';
+
+            function makeChart(canvasId, series) {
+                const canvas = document.getElementById(canvasId);
+                if (!canvas || !series || !series.values || !series.values.length) return;
+                const labels = series.labels || series.values.map((_, i) => String(i + 1));
+                new Chart(canvas, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            data: series.values,
+                            borderColor: lineColor,
+                            backgroundColor: 'transparent',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            tension: 0.25,
+                        }],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { ticks: { color: tickColor, maxTicksLimit: 6 }, grid: { color: gridColor } },
+                            y: { ticks: { color: tickColor }, grid: { color: gridColor } },
+                        },
+                    },
+                });
+            }
+
+            makeChart('chart-usd', chartsPayload.usd);
+            makeChart('chart-btc', chartsPayload.btc);
+            makeChart('chart-selic', chartsPayload.selic);
+            makeChart('chart-ipca', chartsPayload.ipca);
+        })();
+    </script>
+    <script src="/static/js/market-ticker.js?v=6" defer></script>
+</body>
+</html>

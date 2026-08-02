@@ -66,6 +66,12 @@ def run() -> int:
         patch.object(core, "fetch_awesome_historical", return_value={"labels": [], "values": []}),
     ):
         client = TestClient(main.app)
+        try:
+            from db import ensure_schema, get_db
+
+            ensure_schema(get_db())
+        except Exception as exc:
+            print(f"[aviso] ensure_schema no início da suite: {exc}")
 
         # SEO / infra
         for path, needle in [
@@ -95,9 +101,14 @@ def run() -> int:
         check("CSP header", "default-src 'self'" in csp and "cdn.jsdelivr.net" in csp)
 
         # Páginas
-        for path in ["/", "/quem-somos", "/privacidade", "/termos"]:
+        for path in ["/", "/quem-somos", "/privacidade", "/termos", "/mercado"]:
             r = client.get(path)
             check(f"GET {path}", r.status_code == 200 and "FINAN" in r.text.upper(), f"status={r.status_code}")
+
+        r = client.get("/mercado")
+        check("Mercado: Selic/IPCA", "14.25" in r.text or "Selic" in r.text)
+        check("Mercado: charts canvas", "chart-usd" in r.text and "chart-btc" in r.text)
+        check("Mercado: Chart.js CDN", "cdn.jsdelivr.net" in r.text)
 
         r = client.get("/")
         check("Home: ticker", "market-ticker" in r.text and "fn-ticker" in r.text)
@@ -301,7 +312,11 @@ def run() -> int:
         check("Banco tem notícias", len(ids) > 0, f"count={len(ids)}")
 
         for nid in ids:
-            r = client.get(f"/noticia/{nid}")
+            try:
+                r = client.get(f"/noticia/{nid}")
+            except Exception as exc:
+                check(f"Notícia {nid}", False, f"excecao={type(exc).__name__}")
+                continue
             html = r.text
             ok = r.status_code == 200
             check(f"Notícia {nid}", ok, f"status={r.status_code}")
@@ -317,67 +332,96 @@ def run() -> int:
                 check(f"Notícia {nid}: sem Tailwind CDN", "cdn.tailwindcss.com" not in html)
 
         if ids:
-            r = client.get(f"/noticia/{ids[0]}")
-            html = r.text
-            check(
-                "Enrichment: acervo/relacionados",
-                "Contexto do acervo" in html
-                or "Archive context" in html
-                or "アーカイブの文脈" in html
-                or "Leia também" in html
-                or "Related" in html
-                or "Matérias relacionadas" in html
-                or "Related stories" in html
-                or "Para aprofundar" in html
-            )
-            check(
-                "Enrichment: temas/pontos",
-                "Temas relacionados" in html
-                or "Related themes" in html
-                or "Pontos-chave" in html
-                or "Key takeaways" in html
-                or "pontos-chave" in html,
-            )
-            check("Fonte / metodologia", "Fonte" in html or "Source" in html or "出典" in html)
-            check("Sem href malformado", "/?categoria=<a" not in html and "categoria=%3Ca" not in html)
-            check(
-                "Impacto redesenhado",
-                "Guia prático" in html
-                or "Practical guide" in html
-                or "Impacto no seu Bolso" in html
-                or "Impact on Your Wallet" in html
-                or 'id="impacto-texto"' in html,
-            )
-
-            # links de notícia no artigo
-            noticia_links = re.findall(r'href="(/noticia/\d+)"', html)
-            bad = []
-            for href in noticia_links[:8]:
-                rr = client.get(href)
-                if rr.status_code != 200:
-                    bad.append((href, rr.status_code))
-            check("Links internos /noticia/", len(bad) == 0, str(bad))
-
-            # pontos-chave hrefs
-            pontos = re.findall(r'id="pontos-chave-analise".*?</aside>|id="pontos-chave-analise".*?</section>', html, re.S)
-            if not pontos:
-                # fallback: any Ver mais links near pontos
-                check("Pontos-chave presentes ou fallback", "Pontos-chave" in html or "Método editorial" in html or True)
-            else:
-                hrefs = re.findall(r'href="([^"]+)"', pontos[0])
-                bad_p = []
-                for href in hrefs:
-                    if not href.startswith("/"):
+            try:
+                r = client.get(f"/noticia/{ids[0]}")
+                html = r.text
+            except Exception as exc:
+                check("Enrichment skip (db)", False, f"excecao={type(exc).__name__}")
+                html = ""
+                r = None
+            if r is not None and getattr(r, "status_code", 0) == 200 and html:
+                check(
+                    "Enrichment: acervo/relacionados",
+                    "Contexto do acervo" in html
+                    or "Archive context" in html
+                    or "アーカイブの文脈" in html
+                    or "Leia também" in html
+                    or "Related" in html
+                    or "Matérias relacionadas" in html
+                    or "Related stories" in html
+                    or "Para aprofundar" in html
+                )
+                check(
+                    "Enrichment: temas/pontos",
+                    "Temas relacionados" in html
+                    or "Related themes" in html
+                    or "Pontos-chave" in html
+                    or "Key takeaways" in html
+                    or "pontos-chave" in html,
+                )
+                check("Fonte / metodologia", "Fonte" in html or "Source" in html or "出典" in html)
+                check("Sem href malformado", "/?categoria=<a" not in html and "categoria=%3Ca" not in html)
+                check(
+                    "Impacto redesenhado",
+                    "Guia prático" in html
+                    or "Practical guide" in html
+                    or "Impacto no seu Bolso" in html
+                    or "Impact on Your Wallet" in html
+                    or 'id="impacto-texto"' in html,
+                )
+                noticia_links = re.findall(r'href="(/noticia/\d+)"', html)
+                bad = []
+                for href in noticia_links[:8]:
+                    try:
+                        rr = client.get(href)
+                    except Exception:
+                        bad.append((href, "exc"))
                         continue
-                    rr = client.get(href)
-                    if rr.status_code >= 400:
-                        bad_p.append((href, rr.status_code))
-                check("Links pontos-chave", len(bad_p) == 0, str(bad_p))
+                    if rr.status_code != 200:
+                        bad.append((href, rr.status_code))
+                check("Links internos /noticia/", len(bad) == 0, str(bad))
+                pontos = re.findall(
+                    r'id="pontos-chave-analise".*?</aside>|id="pontos-chave-analise".*?</section>',
+                    html,
+                    re.S,
+                )
+                if not pontos:
+                    check(
+                        "Pontos-chave presentes ou fallback",
+                        "Pontos-chave" in html or "Método editorial" in html or True,
+                    )
+                else:
+                    hrefs = re.findall(r'href="([^"]+)"', pontos[0])
+                    bad_p = []
+                    for href in hrefs:
+                        if not href.startswith("/"):
+                            continue
+                        try:
+                            rr = client.get(href)
+                        except Exception:
+                            bad_p.append((href, "exc"))
+                            continue
+                        if rr.status_code >= 400:
+                            bad_p.append((href, rr.status_code))
+                    check("Links pontos-chave", len(bad_p) == 0, str(bad_p))
+            else:
+                check("Enrichment: acervo/relacionados", False, "noticia indisponivel")
 
-        r = client.get("/noticia/999999")
-        check("Notícia 404", r.status_code == 404)
+        try:
+            r = client.get("/noticia/999999")
+            check("Notícia 404", r.status_code == 404)
+        except Exception as exc:
+            check("Notícia 404", False, f"excecao={type(exc).__name__}")
 
-        for path in ["/api/rodar-robo", "/api/gerar-imagens", "/api/atualizar-artigos", "/api/gerar-analises-proprias"]:
+        for path in [
+            "/api/rodar-robo",
+            "/api/gerar-imagens",
+            "/api/atualizar-artigos",
+            "/api/gerar-analises-proprias",
+            "/api/radar-semanal",
+            "/api/macro-watch",
+            "/api/traduzir-pendentes",
+        ]:
             r = client.get(path)
             check(f"{path} sem token=401", r.status_code == 401, f"status={r.status_code}")
             r = client.get(path, params={"token": "token-invalido"})
@@ -390,6 +434,11 @@ def run() -> int:
             patch.object(core, "get_robot_own_analyses_count", return_value=3),
             patch.object(
                 core,
+                "run_macro_watch",
+                return_value={"changes": [], "current": {}, "generated": []},
+            ),
+            patch.object(
+                core,
                 "backfill_missing_images",
                 return_value={"processed": 0, "updated": 0, "failed": 0, "items": []},
             ),
@@ -397,6 +446,12 @@ def run() -> int:
                 core,
                 "refresh_stale_articles",
                 return_value={"processed": 0, "updated": 0, "failed": 0, "items": []},
+            ),
+            patch.object(core, "generate_weekly_radar", return_value=[]),
+            patch.object(
+                core,
+                "translate_pending_articles",
+                return_value={"ok": True, "scanned": 0, "translated": 0, "errors": []},
             ),
         ):
             auth = {"Authorization": f"Bearer {os.environ['ROBO_TOKEN']}"}
@@ -415,6 +470,12 @@ def run() -> int:
                     body.get("status") == "Sucesso" and "meta_diaria" in body,
                     str(body)[:200],
                 )
+            r = client.get("/api/radar-semanal", headers=auth)
+            check("Bearer /api/radar-semanal", r.status_code == 200, f"status={r.status_code}")
+            r = client.get("/api/macro-watch", headers=auth)
+            check("Bearer /api/macro-watch", r.status_code == 200, f"status={r.status_code}")
+            r = client.get("/api/traduzir-pendentes", headers=auth)
+            check("Bearer /api/traduzir-pendentes", r.status_code == 200, f"status={r.status_code}")
             r = client.get("/api/gerar-imagens", params={"token": os.environ["ROBO_TOKEN"]})
             check("Query token /api/gerar-imagens", r.status_code == 200, f"status={r.status_code}")
             r = client.get("/api/gerar-imagens", headers={"X-Robo-Token": os.environ["ROBO_TOKEN"]})

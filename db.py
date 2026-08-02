@@ -314,6 +314,10 @@ def ensure_schema(client: DbClient) -> None:
             ("updated_at", "TEXT"),
             ("versao_analise", "INTEGER"),
             ("home_priority", "INTEGER"),
+            ("titulo_en", "TEXT"),
+            ("resumo_en", "TEXT"),
+            ("titulo_ja", "TEXT"),
+            ("resumo_ja", "TEXT"),
         ]:
             try:
                 _ = client.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
@@ -340,6 +344,14 @@ def ensure_schema(client: DbClient) -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 news_id INTEGER NOT NULL UNIQUE,
                 sent_at TEXT NOT NULL
+            )
+        """)
+
+        _ = client.execute("""
+            CREATE TABLE IF NOT EXISTS macro_watch_state (
+                key TEXT PRIMARY KEY NOT NULL,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             )
         """)
 

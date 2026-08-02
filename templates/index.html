@@ -313,6 +313,7 @@
 
             <div class="filter-scroll flex items-center gap-1 overflow-x-auto mt-2 pb-2 -mx-1 px-1">
                 <a href="/?lang={{ lang }}" class="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition {% if not categoria_ativa and not q %}bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-900{% else %}text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800{% endif %}">{{ t('latest') }}</a>
+                <a href="/mercado?lang={{ lang }}" class="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800">{{ t('nav_market') }}</a>
                 {% for cat in categorias %}
                 <a href="/?categoria={{ cat | urlencode }}&lang={{ lang }}" class="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition {% if categoria_ativa == cat %}bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-900{% else %}text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800{% endif %}">{{ tr_tag(cat) }}</a>
                 {% endfor %}

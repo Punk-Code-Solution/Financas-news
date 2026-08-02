@@ -252,6 +252,51 @@ def _guide_slug_from_link(link: object) -> str | None:
     return None
 
 
+def _article_has_translation(noticia: tuple | list, lang: str) -> bool:
+    if lang == "en":
+        return bool(len(noticia) > 15 and noticia[15])
+    if lang == "ja":
+        return bool(len(noticia) > 17 and noticia[17])
+    return True
+
+
+def _apply_article_locale(noticia: tuple | list, lang: str) -> list[Any]:
+    """Substitui título/resumo pelas traduções quando existirem (mínimo viável i18n)."""
+    row = list(noticia)
+    if lang == "en" and len(row) > 16 and row[15]:
+        row[1] = row[15]
+        if row[16]:
+            row[2] = row[16]
+    elif lang == "ja" and len(row) > 18 and row[17]:
+        row[1] = row[17]
+        if row[18]:
+            row[2] = row[18]
+    return row
+
+
+def _internal_refs_from_market(dados_mercado: dict[str, Any]) -> list[dict[str, Any]]:
+    """Referências internas resolvidas (com noticia_id) para o bloco destacado no artigo."""
+    refs: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for ref in dados_mercado.get("referencias_internas") or []:
+        if not isinstance(ref, dict):
+            continue
+        nid = ref.get("noticia_id")
+        try:
+            nid_int = int(nid) if nid is not None else 0
+        except (TypeError, ValueError):
+            continue
+        if not nid_int or nid_int in seen:
+            continue
+        seen.add(nid_int)
+        titulo = (ref.get("titulo") or ref.get("trecho") or f"Notícia #{nid_int}").strip()
+        trecho = (ref.get("trecho") or "").strip()
+        refs.append({"id": nid_int, "titulo": titulo[:120], "trecho": trecho[:180]})
+        if len(refs) >= 6:
+            break
+    return refs
+
+
 # ==========================================
 # ROTAS DE PÁGINAS (FRONTEND) - ATUALIZADAS PARA FASTAPI MODERNO
 # ==========================================
@@ -260,9 +305,33 @@ NEWS_SELECT = """
     SELECT id, titulo, resumo, impacto, link, tag, sentimento,
            COALESCE(NULLIF(published_at, ''), created_at) AS data_publicacao,
            fonte, dados_mercado, contexto_editorial, imagem_url,
-           conteudo_extra, updated_at, versao_analise
+           conteudo_extra, updated_at, versao_analise,
+           titulo_en, resumo_en, titulo_ja, resumo_ja
     FROM news
 """
+
+# Fallback se o host ainda não aplicou ALTER das colunas de tradução.
+NEWS_SELECT_LEGACY = """
+    SELECT id, titulo, resumo, impacto, link, tag, sentimento,
+           COALESCE(NULLIF(published_at, ''), created_at) AS data_publicacao,
+           fonte, dados_mercado, contexto_editorial, imagem_url,
+           conteudo_extra, updated_at, versao_analise,
+           NULL AS titulo_en, NULL AS resumo_en, NULL AS titulo_ja, NULL AS resumo_ja
+    FROM news
+"""
+
+
+def _fetch_news_by_id(client, noticia_id: int) -> QueryResult:
+    """Busca notícia com colunas i18n; cai para SELECT legado se o schema estiver atrasado."""
+    try:
+        ensure_schema(client)
+    except Exception:
+        pass
+    try:
+        return client.execute(NEWS_SELECT + " WHERE id = ?", [noticia_id])
+    except Exception:
+        return client.execute(NEWS_SELECT_LEGACY + " WHERE id = ?", [noticia_id])
+
 
 # Listagem da home: mantém os mesmos índices das templates, sem puxar blobs pesados.
 NEWS_LIST_SELECT = """
@@ -546,15 +615,20 @@ def _render_noticia_page(
         except json.JSONDecodeError:
             pass
 
-    tag = str(noticia[5]) if len(noticia) > 5 and noticia[5] else "Economia"
-    resumo = str(noticia[2]) if len(noticia) > 2 and noticia[2] else ""
-    fonte_url = clean_source_url(noticia[4] if len(noticia) > 4 else None)
+    lang = resolve_lang(request)
+    display = _apply_article_locale(noticia, lang)
+
+    tag = str(display[5]) if len(display) > 5 and display[5] else "Economia"
+    resumo = str(display[2]) if len(display) > 2 and display[2] else ""
+    impacto = str(display[3]) if len(display) > 3 and display[3] else ""
+    contexto = str(display[10]) if len(display) > 10 and display[10] else ""
+    fonte_url = clean_source_url(display[4] if len(display) > 4 else None)
     fonte_nome = infer_source_name(
-        noticia[8] if len(noticia) > 8 else None,
-        noticia[4] if len(noticia) > 4 else None,
+        display[8] if len(display) > 8 else None,
+        display[4] if len(display) > 4 else None,
     )
     if not fonte_url:
-        fonte_url = source_homepage(fonte_nome, noticia[4] if len(noticia) > 4 else None)
+        fonte_url = source_homepage(fonte_nome, display[4] if len(display) > 4 else None)
 
     enrichment = build_article_enrichment(
         client,
@@ -562,26 +636,33 @@ def _render_noticia_page(
         tag,
         dados_mercado,
         resumo=resumo,
-        published_at=noticia[7] if len(noticia) > 7 else None,
+        published_at=display[7] if len(display) > 7 else None,
         created_at=None,
     )
     contextual_affiliate = get_contextual_affiliate(tag)
+    reading_minutes = core.estimate_reading_minutes(resumo, impacto, contexto)
+    internal_refs = _internal_refs_from_market(dados_mercado)
 
     path = canonical_path or f"/noticia/{noticia_id}"
-    published_iso = _to_iso8601(noticia[7] if len(noticia) > 7 else None)
-    updated_iso = _to_iso8601(noticia[13] if len(noticia) > 13 else None) or published_iso
+    published_iso = _to_iso8601(display[7] if len(display) > 7 else None)
+    updated_iso = _to_iso8601(display[13] if len(display) > 13 else None) or published_iso
     article_canonical = absolute_url(SITE_ORIGIN, path)
-    article_hreflang = build_hreflang_map(SITE_ORIGIN, path, {}, full=False)
+    has_en = _article_has_translation(noticia, "en")
+    has_ja = _article_has_translation(noticia, "ja")
+    hreflang_full = has_en or has_ja
+    article_hreflang = build_hreflang_map(SITE_ORIGIN, path, {}, full=hreflang_full)
 
     response = _render(
         request,
         "noticia.html",
         {
-            "noticia": noticia,
+            "noticia": display,
             "dados_mercado": dados_mercado,
             "enrichment": enrichment,
             "monetization": get_monetization_config(),
             "contextual_affiliate": contextual_affiliate,
+            "reading_minutes": reading_minutes,
+            "internal_refs": internal_refs,
             "categorias": CATEGORIAS,
             "fonte_url": fonte_url,
             "fonte_nome": fonte_nome,
@@ -589,10 +670,11 @@ def _render_noticia_page(
             "canonical_query": {},
             "canonical_url": article_canonical,
             "hreflang_urls": article_hreflang,
-            "hreflang_full": False,
+            "hreflang_full": hreflang_full,
             "robots_noindex": False,
             "published_iso": published_iso,
             "updated_iso": updated_iso,
+            "content_translated": lang != "pt" and _article_has_translation(noticia, lang),
         },
     )
     response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=60"
@@ -602,7 +684,7 @@ def _render_noticia_page(
 @app.get("/noticia/{noticia_id}", response_class=HTMLResponse)
 def ver_noticia(request: Request, noticia_id: int):
     client = get_db()
-    result = client.execute(NEWS_SELECT + " WHERE id = ?", [noticia_id])
+    result = _fetch_news_by_id(client, noticia_id)
 
     if not result.rows:
         raise HTTPException(status_code=404, detail="Notícia não encontrada")
@@ -635,7 +717,7 @@ def ver_artigo_educativo(request: Request, slug: str):
     if not noticia_id:
         raise HTTPException(status_code=404, detail="Artigo não encontrado")
 
-    result = client.execute(NEWS_SELECT + " WHERE id = ?", [noticia_id])
+    result = _fetch_news_by_id(client, noticia_id)
     if not result.rows:
         raise HTTPException(status_code=404, detail="Artigo não encontrado")
 
@@ -683,6 +765,53 @@ async def privacidade(request: Request):
 @app.get("/termos", response_class=HTMLResponse)
 async def termos(request: Request):
     return _render(request, "termos.html")
+
+
+@app.get("/mercado", response_class=HTMLResponse)
+def mercado_dashboard(request: Request):
+    """Painel público: Selic, IPCA, dólar, BTC + histórico/sparklines."""
+    market = core.fetch_market_snapshot(blocking=False)
+    bcb = core.fetch_bcb_snapshot(blocking=False)
+    historico = core.fetch_market_historical()
+    sparklines = core.fetch_sparkline_data(blocking=False)
+
+    selic = bcb.get("Selic meta (% a.a.)") or {}
+    ipca = bcb.get("IPCA acumulado 12 meses (%)") or {}
+    usd = market.get("Dólar (USD/BRL)") or {}
+    btc = market.get("Bitcoin (BTC/BRL)") or {}
+
+    hist_30 = historico.get("30d") if isinstance(historico, dict) else {}
+    if not isinstance(hist_30, dict):
+        hist_30 = {}
+
+    charts = {
+        "selic": hist_30.get("Selic meta (% a.a.)"),
+        "ipca": hist_30.get("IPCA 12 meses (%)") or hist_30.get("IPCA acumulado 12 meses (%)"),
+        "usd": hist_30.get("Dólar (USD/BRL)"),
+        "btc": hist_30.get("Bitcoin (BTC/BRL)"),
+    }
+
+    response = _render(
+        request,
+        "mercado.html",
+        {
+            "market": market,
+            "bcb": bcb,
+            "selic": selic,
+            "ipca": ipca,
+            "usd": usd,
+            "btc": btc,
+            "sparklines": sparklines,
+            "charts": charts,
+            "historico": historico,
+            "monetization": get_monetization_config(),
+            "categorias": CATEGORIAS,
+            "collected_at": market.get("coletado_em")
+            or (historico.get("coletado_em") if isinstance(historico, dict) else None),
+        },
+    )
+    response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=120"
+    return response
 
 # ==========================================
 # ROTAS DE SEO E INTEGRAÇÕES
@@ -1107,6 +1236,60 @@ def newsletter_alerta(
     return {"status": "Sucesso", **result}
 
 
+@app.get("/api/radar-semanal")
+def radar_semanal(request: Request, token: str | None = None, force: int = 0):
+    """Gera o Radar da semana (análise própria) e persiste no banco."""
+    require_robo_auth(request, token)
+    geradas = core.generate_weekly_radar(force=bool(force))
+    # Se force e já existia, generate_weekly_radar cria link novo; se vazio sem force, ok.
+    salvas = _persist_generated_news(geradas)
+    if salvas:
+        cover_limit = min(5, salvas)
+        backfill = core.backfill_missing_images(limit=cover_limit)
+        _invalidate_home_cache()
+        invalidate_sentiment_cache()
+    else:
+        backfill = None
+    return {
+        "status": "Sucesso",
+        "processadas_pela_ia": len(geradas),
+        "novas_salvas_no_banco": salvas,
+        "titulos": [g.get("titulo_viral") for g in geradas],
+        "backfill_capas": backfill,
+    }
+
+
+@app.get("/api/macro-watch")
+def macro_watch(request: Request, token: str | None = None):
+    """Compara Selic/IPCA com snapshot anterior; gera matéria se mudou."""
+    require_robo_auth(request, token)
+    result = core.run_macro_watch(persist_state=True)
+    geradas = result.get("generated") or []
+    salvas = _persist_generated_news(geradas)
+    if salvas:
+        _ = core.backfill_missing_images(limit=min(5, salvas))
+        _invalidate_home_cache()
+        invalidate_sentiment_cache()
+    return {
+        "status": "Sucesso",
+        "changes": result.get("changes") or [],
+        "current": result.get("current") or {},
+        "processadas_pela_ia": len(geradas),
+        "novas_salvas_no_banco": salvas,
+        "titulos": [g.get("titulo_viral") for g in geradas],
+    }
+
+
+@app.get("/api/traduzir-pendentes")
+def traduzir_pendentes(request: Request, token: str | None = None, limit: int = 10):
+    """Traduz título+resumo pendentes para EN/JA (auth robô)."""
+    require_robo_auth(request, token)
+    result = core.translate_pending_articles(limit=limit)
+    if not result.get("ok"):
+        raise HTTPException(status_code=503, detail=result.get("error", "Falha na traducao"))
+    return {"status": "Sucesso", **result}
+
+
 @app.get("/ping")
 def ping():
     return {"status": "Render acordado!"}
@@ -1185,6 +1368,12 @@ def rodar_robo(request: Request, token: str | None = None):
     noticias_geradas = core.fetch_and_process(max_articles=max_articles)
     salvas = _persist_generated_news(noticias_geradas)
 
+    # 2b) Macro-watch: Selic/IPCA — gera matéria se o indicador mudou desde a última rodada.
+    print("Macro-watch: conferindo Selic/IPCA...")
+    macro_result = core.run_macro_watch(persist_state=True)
+    macro_geradas = macro_result.get("generated") or []
+    macro_salvas = _persist_generated_news(macro_geradas)
+
     # Se a meta própria ainda não fechou (ex.: acervo curto na 1ª passagem), tenta de novo.
     if own_target > 0 and core.count_own_analyses_today() < own_target:
         print("Análises próprias: 2ª passagem após RSS...")
@@ -1192,7 +1381,7 @@ def rodar_robo(request: Request, token: str | None = None):
         own_geradas.extend(extra)
         own_salvas += _persist_generated_news(extra)
 
-    if not noticias_geradas and not own_geradas:
+    if not noticias_geradas and not own_geradas and not macro_geradas:
         print("Nenhuma noticia nova — gerando capa para pendentes (prioridade id DESC)...")
         backfill = core.backfill_missing_images(limit=8)
         _invalidate_home_cache()
@@ -1206,10 +1395,14 @@ def rodar_robo(request: Request, token: str | None = None):
                 "salvas": 0,
                 "hoje": core.count_own_analyses_today(),
             },
+            "macro_watch": {
+                "changes": macro_result.get("changes") or [],
+                "salvas": macro_salvas,
+            },
             "backfill_capas": backfill,
         }
 
-    novas = salvas + own_salvas
+    novas = salvas + own_salvas + macro_salvas
     cover_limit = min(40, max(novas, 8))
     print(
         f"Backfill pos-robo: ate {cover_limit} capa(s) pendente(s) "
@@ -1228,6 +1421,11 @@ def rodar_robo(request: Request, token: str | None = None):
             "salvas": own_salvas,
             "hoje": core.count_own_analyses_today(),
             "titulos": [g.get("titulo_viral") for g in own_geradas],
+        },
+        "macro_watch": {
+            "changes": macro_result.get("changes") or [],
+            "salvas": macro_salvas,
+            "titulos": [g.get("titulo_viral") for g in macro_geradas],
         },
         "backfill_capas": backfill,
     }

@@ -82,6 +82,60 @@ TAG_AFFILIATE_MAP: dict[str, str] = {
     "Política Econômica": "btg",
 }
 
+# Copy contextual por categoria (sobrescreve título/descrição do afiliado padrão).
+CATEGORY_AFFILIATE_COPY: dict[str, dict[str, str]] = {
+    "Cripto": {
+        "titulo": "Negocie cripto com liquidez global",
+        "descricao": "Abra conta na exchange indicada e opere BTC e altcoins com ferramentas para varejo.",
+        "cta": "Começar em cripto",
+    },
+    "Ações": {
+        "titulo": "Invista em ações com assessoria",
+        "descricao": "Acesse a bolsa brasileira com corretora completa — fundos, FIIs e renda variável.",
+        "cta": "Abrir conta na bolsa",
+    },
+    "Economia": {
+        "titulo": "Organize seus investimentos",
+        "descricao": "Plataforma completa para acompanhar macroeconomia e montar carteira diversificada.",
+        "cta": "Conhecer a plataforma",
+    },
+    "Dólar": {
+        "titulo": "Proteja-se do câmbio",
+        "descricao": "Produtos em dólar, fundos cambiais e alternativas para diversificar risco de moeda.",
+        "cta": "Ver opções cambiais",
+    },
+    "Juros": {
+        "titulo": "Renda fixa alinhada à Selic",
+        "descricao": "Tesouro, CDBs e fundos DI com foco em liquidez e acompanhamento do ciclo de juros.",
+        "cta": "Explorar renda fixa",
+    },
+    "Inflação": {
+        "titulo": "Proteção contra IPCA",
+        "descricao": "Títulos e fundos indexados à inflação para preservar poder de compra no longo prazo.",
+        "cta": "Ver proteção IPCA",
+    },
+    "Imóveis": {
+        "titulo": "Crédito e fundos imobiliários",
+        "descricao": "Alternativas para quem acompanha financiamento, FIIs e o ciclo do mercado imobiliário.",
+        "cta": "Conhecer opções",
+    },
+    "Fintech": {
+        "titulo": "Conta digital e cripto BR",
+        "descricao": "Exchange e serviços digitais com onboarding simples para o investidor brasileiro.",
+        "cta": "Abrir conta digital",
+    },
+    "Commodities": {
+        "titulo": "Exposição a commodities",
+        "descricao": "Acesse fundos e produtos ligados a petróleo, agronegócio e metais via corretora.",
+        "cta": "Ver produtos",
+    },
+    "Política Econômica": {
+        "titulo": "Carteira para cenários fiscais",
+        "descricao": "Diversifique com renda fixa e multimercados pensados para volatilidade política.",
+        "cta": "Montar carteira",
+    },
+}
+
 
 def get_contextual_affiliate(tag: str) -> dict[str, object] | None:
     """Retorna afiliado relevante para a tag, somente se URL estiver configurada."""
@@ -94,7 +148,15 @@ def get_contextual_affiliate(tag: str) -> dict[str, object] | None:
         return None
     for item in DEFAULT_AFFILIATES:
         if item["id"] == affiliate_id:
-            return {**item, "url": url}
+            copy = CATEGORY_AFFILIATE_COPY.get(tag) or {}
+            return {
+                **item,
+                "url": url,
+                "titulo": copy.get("titulo") or item["titulo"],
+                "descricao": copy.get("descricao") or item["descricao"],
+                "cta": copy.get("cta") or item["cta"],
+                "category_tag": tag,
+            }
     return None
 
 

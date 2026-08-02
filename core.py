@@ -3608,6 +3608,399 @@ def fetch_and_process(max_per_feed: int | None = None, max_articles: int | None 
     return noticias_processadas
 
 
+# ==========================================
+# RADAR DA SEMANA · MACRO WATCH · TRADUÇÃO
+# ==========================================
+
+RADAR_LINK_PREFIX = "internal://radar/"
+MACRO_WATCH_KEYS = ("Selic meta (% a.a.)", "IPCA acumulado 12 meses (%)")
+
+
+def _iso_week_key(when: datetime | None = None) -> str:
+    dt = when or datetime.now()
+    iso = dt.isocalendar()
+    return f"{iso.year}-W{iso.week:02d}"
+
+
+def _radar_week_link(week_key: str | None = None) -> str:
+    return f"{RADAR_LINK_PREFIX}{week_key or _iso_week_key()}"
+
+
+def estimate_reading_minutes(*parts: object, wpm: int = 200) -> int:
+    """Tempo de leitura estimado a partir de textos (padrão ~200 palavras/min)."""
+    blob = " ".join(str(p or "") for p in parts)
+    words = re.findall(r"[0-9A-Za-zÀ-ÿ]+", blob, flags=re.UNICODE)
+    if not words:
+        return 1
+    return max(1, int(round(len(words) / max(1, wpm))))
+
+
+def generate_weekly_radar(*, force: bool = False) -> list[dict[str, Any]]:
+    """Gera (ou regenera) o Radar da semana — análise própria semanal do acervo."""
+    week_key = _iso_week_key()
+    link = _radar_week_link(week_key)
+    if existing_news_links([link]):
+        if not force:
+            print(f"   [radar] Já existe para {week_key} — use force=1 para regenerar.")
+            return []
+        link = f"{link}-r{datetime.now().strftime('%H%M%S')}"
+        print(f"   [radar] force=1 — novo link {link}")
+
+    if not get_gemini_api_keys():
+        print("   [radar] Sem GOOGLE_API_KEY — abortando.")
+        return []
+
+    source_rows = _fetch_recent_source_news(limit=40)
+    if len(source_rows) < 4:
+        print("   [radar] Acervo insuficiente (<4 matérias).")
+        return []
+
+    # Cruza as top tags da semana em um único ângulo editorial.
+    by_tag: dict[str, list[tuple]] = {}
+    for row in source_rows:
+        tag = str(row[2] or "Economia").strip()
+        if tag not in VALID_TAGS:
+            tag = "Economia"
+        by_tag.setdefault(tag, []).append(row)
+
+    top_tags = sorted(by_tag.items(), key=lambda item: len(item[1]), reverse=True)[:4]
+    mixed_items: list[tuple] = []
+    for _tag, items in top_tags:
+        mixed_items.extend(items[:4])
+    mixed_items = mixed_items[:16]
+    titles = [str(r[1] or "").strip() for r in mixed_items if r[1]]
+
+    angle = {
+        "tag": "Economia",
+        "tone": "panorama",
+        "items": mixed_items,
+        "titles": titles,
+    }
+    seed_title = f"Radar da semana {week_key}: o que moveu o mercado"
+    _seed, brief = _build_own_analysis_brief(angle)
+    brief = (
+        f"FORMATO OBRIGATÓRIO: Radar da semana ({week_key}).\n"
+        "Estruture a análise como um briefing semanal autoral: tese da semana, "
+        "3 a 5 sinais do acervo, painel macro só se relevante, e o que monitorar.\n\n"
+        + brief
+    )
+
+    market = fetch_market_snapshot()
+    bcb = fetch_bcb_snapshot()
+    historico = fetch_market_historical()
+    db_context = get_editorial_context(tag_hint="Economia")
+    data_context = format_data_context(market, bcb, db_context, historico, "Economia")
+
+    print(f"   [radar] Gerando Radar da semana {week_key}...")
+    ai_data = process_news_with_ai(
+        seed_title,
+        brief,
+        OWN_ANALYSIS_FONTE,
+        "Economia",
+        data_context,
+    )
+    if not ai_data:
+        print("   [radar] IA não retornou JSON.")
+        return []
+
+    out_tag = ai_data.get("tag", "Economia")
+    if out_tag not in VALID_TAGS:
+        out_tag = "Economia"
+        ai_data["tag"] = out_tag
+
+    # Título canônico do formato.
+    ai_data["titulo_viral"] = ai_data.get("titulo_viral") or seed_title
+    if "radar da semana" not in str(ai_data["titulo_viral"]).lower():
+        ai_data["titulo_viral"] = f"Radar da semana: {ai_data['titulo_viral']}"
+
+    imagem_url = generate_article_image(
+        ai_data.get("titulo_viral", seed_title),
+        out_tag,
+        link,
+        ai_data.get("resumo_simples", ""),
+        use_openai=False,
+    )
+    published = datetime.now().strftime("%d/%m/%Y %H:%M")
+    item = {
+        "original_link": link,
+        "fonte": OWN_ANALYSIS_FONTE,
+        "published_at": published,
+        "imagem_url": imagem_url,
+        "dados_mercado": _build_dados_mercado_payload(market, bcb, ai_data, historico),
+        "contexto_editorial": ai_data.get("contexto_mercado", ""),
+        "versao_analise": 1,
+        "urgencia": "Média",
+        **ai_data,
+    }
+    print(f"   [radar] OK: {item.get('titulo_viral', '')[:70]}")
+    return [item]
+
+
+def _macro_value(bcb: dict[str, Any], label: str) -> str:
+    info = bcb.get(label) or {}
+    if isinstance(info, dict):
+        return str(info.get("valor") or "").strip()
+    return str(info or "").strip()
+
+
+def _load_macro_watch_state(client) -> dict[str, str]:
+    try:
+        result = client.execute("SELECT key, value FROM macro_watch_state")
+        return {str(r[0]): str(r[1]) for r in (result.rows or [])}
+    except Exception:
+        return {}
+
+
+def _save_macro_watch_state(client, values: dict[str, str]) -> None:
+    agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+    for key, value in values.items():
+        try:
+            client.execute(
+                """
+                INSERT INTO macro_watch_state (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+                """,
+                [key, value, agora],
+            )
+        except Exception as exc:
+            # SQLite local sem UPSERT antigo — fallback UPDATE/INSERT.
+            try:
+                client.execute(
+                    "UPDATE macro_watch_state SET value = ?, updated_at = ? WHERE key = ?",
+                    [value, agora, key],
+                )
+                check = client.execute(
+                    "SELECT 1 FROM macro_watch_state WHERE key = ?",
+                    [key],
+                )
+                if not check.rows:
+                    client.execute(
+                        "INSERT INTO macro_watch_state (key, value, updated_at) VALUES (?, ?, ?)",
+                        [key, value, agora],
+                    )
+            except Exception as exc2:
+                print(f"   [macro-watch] falha ao salvar {key}: {exc} / {exc2}")
+
+
+def _macro_event_link(label: str, value: str) -> str:
+    day = datetime.now().strftime("%Y%m%d")
+    slug = "selic" if "selic" in label.lower() else "ipca"
+    digest = hashlib.sha256(f"{label}|{value}|{day}".encode()).hexdigest()[:8]
+    return f"internal://macro/{slug}-{day}-{digest}"
+
+
+def generate_macro_change_article(
+    label: str,
+    old_value: str,
+    new_value: str,
+    bcb: dict[str, Any],
+    market: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Gera matéria event-driven quando Selic ou IPCA muda."""
+    is_selic = "selic" in label.lower()
+    tag = "Juros" if is_selic else "Inflação"
+    seed_title = (
+        f"{'Selic' if is_selic else 'IPCA'} muda de {old_value} para {new_value}: o que isso muda no bolso"
+    )
+    brief = (
+        f"ALERTA MACRO (event-driven): o indicador oficial '{label}' mudou "
+        f"de {old_value} para {new_value}.\n"
+        "Produza uma análise editorial própria explicando o significado da mudança, "
+        "impacto no crédito/investimentos/preços e o que o leitor deve monitorar. "
+        "Use o painel de mercado apenas quando relevante."
+    )
+    link = _macro_event_link(label, new_value)
+    if existing_news_links([link]):
+        return None
+
+    historico = fetch_market_historical()
+    db_context = get_editorial_context(tag_hint=tag)
+    data_context = format_data_context(market, bcb, db_context, historico, tag)
+    ai_data = process_news_with_ai(seed_title, brief, OWN_ANALYSIS_FONTE, tag, data_context)
+    if not ai_data:
+        # Fallback sem IA: matéria mínima factual.
+        ai_data = {
+            "titulo_viral": seed_title,
+            "resumo_simples": (
+                f"O indicador {label} passou de {old_value} para {new_value} "
+                "segundo dados oficiais do Banco Central. Esta nota registra a variação "
+                "para acompanhar o impacto em juros, crédito e preços."
+            ),
+            "impacto_bolso": (
+                "Mudanças na Selic ou no IPCA afetam custo do crédito, rendimento da renda fixa "
+                "e poder de compra. Reavalie reservas e prazos com o novo patamar."
+            ),
+            "tag": tag,
+            "sentimento": "Neutro",
+            "urgencia": "Alta",
+            "contexto_mercado": f"{label}: {old_value} → {new_value}",
+        }
+
+    out_tag = ai_data.get("tag", tag)
+    if out_tag not in VALID_TAGS:
+        out_tag = tag
+        ai_data["tag"] = out_tag
+    ai_data.setdefault("urgencia", "Alta")
+
+    imagem_url = generate_article_image(
+        ai_data.get("titulo_viral", seed_title),
+        out_tag,
+        link,
+        ai_data.get("resumo_simples", ""),
+        use_openai=False,
+    )
+    published = datetime.now().strftime("%d/%m/%Y %H:%M")
+    return {
+        "original_link": link,
+        "fonte": OWN_ANALYSIS_FONTE,
+        "published_at": published,
+        "imagem_url": imagem_url,
+        "dados_mercado": _build_dados_mercado_payload(market, bcb, ai_data, historico),
+        "contexto_editorial": ai_data.get("contexto_mercado", ""),
+        "versao_analise": 1,
+        **ai_data,
+    }
+
+
+def run_macro_watch(*, persist_state: bool = True) -> dict[str, Any]:
+    """Compara snapshot BCB com o último estado; gera matérias quando Selic/IPCA mudam."""
+    client = get_db()
+    bcb = fetch_bcb_snapshot(blocking=True)
+    market = fetch_market_snapshot(blocking=True)
+    previous = _load_macro_watch_state(client)
+    current: dict[str, str] = {}
+    for key in MACRO_WATCH_KEYS:
+        current[key] = _macro_value(bcb, key)
+
+    changes: list[dict[str, str]] = []
+    generated: list[dict[str, Any]] = []
+    for key, new_val in current.items():
+        if not new_val:
+            continue
+        old_val = previous.get(key, "")
+        if old_val and old_val != new_val:
+            changes.append({"indicator": key, "from": old_val, "to": new_val})
+            article = generate_macro_change_article(key, old_val, new_val, bcb, market)
+            if article:
+                generated.append(article)
+        elif not old_val:
+            # Primeira leitura: só grava estado, sem matéria.
+            pass
+
+    if persist_state and current:
+        _save_macro_watch_state(client, {k: v for k, v in current.items() if v})
+
+    return {
+        "previous": previous,
+        "current": current,
+        "changes": changes,
+        "generated": generated,
+    }
+
+
+def translate_title_resumo(titulo: str, resumo: str) -> dict[str, str]:
+    """Traduz título+resumo para EN e JA via Gemini (JSON). Mínimo viável i18n conteúdo."""
+    titulo = (titulo or "").strip()
+    resumo = (resumo or "").strip()
+    if not titulo:
+        return {}
+    prompt = f"""
+Traduza o título e o resumo de uma notícia financeira brasileira para inglês (en) e japonês (ja).
+Mantenha tom jornalístico, números e nomes próprios. Responda SOMENTE JSON válido:
+
+{{
+  "titulo_en": "...",
+  "resumo_en": "...",
+  "titulo_ja": "...",
+  "resumo_ja": "..."
+}}
+
+TÍTULO (pt-BR):
+{titulo}
+
+RESUMO (pt-BR):
+{resumo[:3500]}
+"""
+    raw = generate_content_with_fallback(prompt)
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        # Tenta extrair bloco JSON.
+        match = re.search(r"\{[\s\S]*\}", raw)
+        if not match:
+            return {}
+        try:
+            data = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return {}
+    out: dict[str, str] = {}
+    for key in ("titulo_en", "resumo_en", "titulo_ja", "resumo_ja"):
+        val = data.get(key)
+        if isinstance(val, str) and val.strip():
+            out[key] = val.strip()
+    return out
+
+
+def translate_pending_articles(limit: int = 10) -> dict[str, Any]:
+    """Preenche titulo_en/resumo_en/titulo_ja/resumo_ja em matérias ainda sem tradução."""
+    limit = max(1, min(int(limit), 40))
+    client = get_db()
+    try:
+        result = client.execute(
+            """
+            SELECT id, titulo, resumo
+            FROM news
+            WHERE (titulo_en IS NULL OR titulo_en = '')
+              AND titulo IS NOT NULL AND titulo != ''
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            [limit],
+        )
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:200], "translated": 0}
+
+    rows = list(result.rows or [])
+    translated = 0
+    errors: list[str] = []
+    for row in rows:
+        news_id = int(row[0])
+        try:
+            payload = translate_title_resumo(str(row[1] or ""), str(row[2] or ""))
+            if not payload:
+                errors.append(f"id={news_id}: vazio")
+                continue
+            client.execute(
+                """
+                UPDATE news
+                SET titulo_en = ?, resumo_en = ?, titulo_ja = ?, resumo_ja = ?
+                WHERE id = ?
+                """,
+                [
+                    payload.get("titulo_en", ""),
+                    payload.get("resumo_en", ""),
+                    payload.get("titulo_ja", ""),
+                    payload.get("resumo_ja", ""),
+                    news_id,
+                ],
+            )
+            translated += 1
+        except Exception as exc:
+            errors.append(f"id={news_id}: {exc}"[:120])
+        if _all_text_models_exhausted():
+            break
+
+    return {
+        "ok": True,
+        "scanned": len(rows),
+        "translated": translated,
+        "errors": errors[:8],
+    }
+
+
 if __name__ == "__main__":
     print("🚀 Modo de Teste Manual Iniciado...")
     resultado = fetch_and_process(max_per_feed=1)
