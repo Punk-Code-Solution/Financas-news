@@ -12,13 +12,30 @@ from typing import Any
 
 import requests
 
-SITE_ORIGIN = os.getenv("SITE_ORIGIN", "https://financas-news.net.br").rstrip("/")
-NEWSLETTER_FROM = os.getenv("NEWSLETTER_FROM", "newsletter@financas-news.net.br").strip()
 DIGEST_TOP_N = 5
 
+# Mensagem de UI quando o mailer falha ou não está configurado (cadastro / reenvio).
+MAIL_SEND_FAIL_USER_MSG = (
+    "Não foi possível enviar o e-mail. Tente mais tarde ou contate o suporte."
+)
 
-def _env(key: str) -> str:
-    return os.getenv(key, "").strip()
+
+def _env(key: str, default: str = "") -> str:
+    return os.getenv(key, default).strip()
+
+
+def site_origin() -> str:
+    """Origem pública do site (lida em runtime — após load_dotenv / env do host)."""
+    return _env("SITE_ORIGIN", "https://financas-news.net.br").rstrip("/")
+
+
+def newsletter_from() -> str:
+    return _env("NEWSLETTER_FROM", "newsletter@financas-news.net.br")
+
+
+# Compat: módulos/testes que ainda importam constantes de módulo.
+SITE_ORIGIN = site_origin()
+NEWSLETTER_FROM = newsletter_from()
 
 
 def is_send_configured() -> bool:
@@ -45,9 +62,9 @@ def _subscriber_emails(client) -> list[str]:
 def _send_via_resend(to: list[str], subject: str, html: str, text: str) -> dict[str, Any]:
     api_key = _env("RESEND_API_KEY")
     if not api_key:
-        return {"ok": False, "error": "RESEND_API_KEY nao configurado"}
+        return {"ok": False, "error": "RESEND_API_KEY nao configurado", "not_configured": True}
     payload = {
-        "from": NEWSLETTER_FROM,
+        "from": newsletter_from(),
         "to": to,
         "subject": subject,
         "html": html,
@@ -60,7 +77,16 @@ def _send_via_resend(to: list[str], subject: str, html: str, text: str) -> dict[
         timeout=30,
     )
     if resp.status_code >= 400:
-        return {"ok": False, "error": f"Resend HTTP {resp.status_code}", "body": resp.text[:500]}
+        print(
+            f"[newsletter] Resend HTTP {resp.status_code}: {resp.text[:300]}",
+            flush=True,
+        )
+        return {
+            "ok": False,
+            "error": f"Resend HTTP {resp.status_code}",
+            "body": resp.text[:500],
+            "status_code": resp.status_code,
+        }
     return {"ok": True, "provider": "resend", "id": resp.json().get("id")}
 
 
@@ -69,9 +95,9 @@ def _send_via_smtp(to: list[str], subject: str, html: str, text: str) -> dict[st
     port = int(_env("SMTP_PORT") or "587")
     user = _env("SMTP_USER")
     password = _env("SMTP_PASSWORD")
-    from_addr = _env("SMTP_FROM") or NEWSLETTER_FROM
+    from_addr = _env("SMTP_FROM") or newsletter_from()
     if not host or not from_addr:
-        return {"ok": False, "error": "SMTP_HOST ou SMTP_FROM nao configurado"}
+        return {"ok": False, "error": "SMTP_HOST ou SMTP_FROM nao configurado", "not_configured": True}
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -89,17 +115,27 @@ def _send_via_smtp(to: list[str], subject: str, html: str, text: str) -> dict[st
             server.sendmail(from_addr, to, msg.as_string())
         return {"ok": True, "provider": "smtp", "recipients": len(to)}
     except Exception as exc:
+        print(f"[newsletter] SMTP falhou: {exc}", flush=True)
         return {"ok": False, "error": str(exc)[:300], "provider": "smtp"}
 
 
 def _send_via_webhook(to: list[str], subject: str, html: str, text: str) -> dict[str, Any]:
     url = _env("NEWSLETTER_WEBHOOK_URL")
     if not url:
-        return {"ok": False, "error": "NEWSLETTER_WEBHOOK_URL nao configurado"}
-    payload = {"subject": subject, "html": html, "text": text, "to": to, "from": NEWSLETTER_FROM}
+        return {"ok": False, "error": "NEWSLETTER_WEBHOOK_URL nao configurado", "not_configured": True}
+    payload = {"subject": subject, "html": html, "text": text, "to": to, "from": newsletter_from()}
     resp = requests.post(url, json=payload, timeout=30)
     if resp.status_code >= 400:
-        return {"ok": False, "error": f"Webhook HTTP {resp.status_code}", "body": resp.text[:500]}
+        print(
+            f"[newsletter] Webhook HTTP {resp.status_code}: {resp.text[:300]}",
+            flush=True,
+        )
+        return {
+            "ok": False,
+            "error": f"Webhook HTTP {resp.status_code}",
+            "body": resp.text[:500],
+            "status_code": resp.status_code,
+        }
     return {"ok": True, "provider": "webhook"}
 
 
@@ -109,7 +145,12 @@ def send_email(to: list[str], subject: str, html: str, text: str) -> dict[str, A
     if not recipients:
         return {"ok": False, "error": "Nenhum destinatario valido"}
     if not is_send_configured():
-        return {"ok": False, "error": "Nenhum provedor de envio configurado"}
+        print("[newsletter] mailer nao configurado", flush=True)
+        return {
+            "ok": False,
+            "error": "Nenhum provedor de envio configurado",
+            "not_configured": True,
+        }
 
     if _env("RESEND_API_KEY"):
         return _send_via_resend(recipients, subject, html, text)
@@ -117,12 +158,14 @@ def send_email(to: list[str], subject: str, html: str, text: str) -> dict[str, A
         return _send_via_smtp(recipients, subject, html, text)
     if _env("NEWSLETTER_WEBHOOK_URL"):
         return _send_via_webhook(recipients, subject, html, text)
-    return {"ok": False, "error": "Provedor indisponivel"}
+    print("[newsletter] mailer nao configurado", flush=True)
+    return {"ok": False, "error": "Provedor indisponivel", "not_configured": True}
 
 
 def build_verification_email(*, name: str, token: str, ttl_hours: int = 48) -> dict[str, str]:
     safe_name = escape((name or "olá").strip() or "olá")
-    verify_url = f"{SITE_ORIGIN}/verificar-email?token={token}"
+    origin = site_origin()
+    verify_url = f"{origin}/verificar-email?token={token}"
     subject = "Confirme seu e-mail — Finanças News"
     text = (
         f"Olá, {name or 'olá'}!\n\n"
@@ -162,6 +205,14 @@ def build_verification_email(*, name: str, token: str, ttl_hours: int = 48) -> d
 def send_verification_email(*, email: str, name: str, token: str, ttl_hours: int = 48) -> dict[str, Any]:
     payload = build_verification_email(name=name, token=token, ttl_hours=ttl_hours)
     result = send_email([email], payload["subject"], payload["html"], payload["text"])
+    if result.get("ok"):
+        print(
+            f"[newsletter] verificacao enviada para={email} provider={result.get('provider')}",
+            flush=True,
+        )
+    else:
+        err = result.get("error") or "falha desconhecida"
+        print(f"[newsletter] verificacao NAO enviada para={email}: {err}", flush=True)
     return {**result, "verify_url": payload["verify_url"]}
 
 

@@ -1050,19 +1050,29 @@ async def cadastro_submit(
         print(f"   [auth] falha no cadastro: {type(exc).__name__}: {exc}", flush=True)
         return RedirectResponse(url="/cadastro?erro=Não+foi+possível+criar+a+conta", status_code=303)
 
+    from newsletter_service import MAIL_SEND_FAIL_USER_MSG, send_verification_email
+
     token = user.get("email_verify_token")
+    mail_ok = False
     if token:
         try:
-            from newsletter_service import send_verification_email
-
-            send_verification_email(
+            send_result = send_verification_email(
                 email=str(user["email"]),
                 name=str(user.get("name") or ""),
                 token=str(token),
                 ttl_hours=community.EMAIL_VERIFY_TTL_HOURS,
             )
+            mail_ok = bool(send_result.get("ok"))
         except Exception as exc:
-            print(f"Aviso: falha ao enviar e-mail de verificação: {exc}", flush=True)
+            print(f"[newsletter] falha ao enviar e-mail de verificação: {exc}", flush=True)
+            mail_ok = False
+
+    if not mail_ok:
+        err = quote(MAIL_SEND_FAIL_USER_MSG)
+        return RedirectResponse(
+            url=f"/login?verificar=1&email={quote(str(user['email']))}&erro={err}",
+            status_code=303,
+        )
 
     msg = quote(
         "Conta criada. Verifique seu e-mail pelo link enviado antes de entrar."
@@ -1089,8 +1099,21 @@ def verificar_email(request: Request, token: str | None = None):
 async def reenviar_verificacao(request: Request, email: str = Form(...)):
     from urllib.parse import quote
 
+    from newsletter_service import MAIL_SEND_FAIL_USER_MSG, is_send_configured, send_verification_email
+
     client = get_db()
     email_n = (email or "").strip().lower()
+    # Infra sem mailer: mensagem honesta (não finge envio).
+    if not is_send_configured():
+        print("[newsletter] mailer nao configurado", flush=True)
+        return RedirectResponse(
+            url=(
+                f"/login?verificar=1&email={quote(email_n)}"
+                f"&erro={quote(MAIL_SEND_FAIL_USER_MSG)}"
+            ),
+            status_code=303,
+        )
+
     user = community.find_user_by_email(client, email_n) if email_n else None
     # Resposta genérica anti-enumeração (padrão Gamers League).
     ok_msg = quote(
@@ -1108,16 +1131,29 @@ async def reenviar_verificacao(request: Request, email: str = Form(...)):
             )
         if issued.get("ok") and issued.get("token"):
             try:
-                from newsletter_service import send_verification_email
-
-                send_verification_email(
+                send_result = send_verification_email(
                     email=str(issued["email"]),
                     name=str(issued.get("name") or ""),
                     token=str(issued["token"]),
                     ttl_hours=community.EMAIL_VERIFY_TTL_HOURS,
                 )
+                if not send_result.get("ok"):
+                    return RedirectResponse(
+                        url=(
+                            f"/login?verificar=1&email={quote(email_n)}"
+                            f"&erro={quote(MAIL_SEND_FAIL_USER_MSG)}"
+                        ),
+                        status_code=303,
+                    )
             except Exception as exc:
-                print(f"Aviso: falha ao reenviar verificação: {exc}", flush=True)
+                print(f"[newsletter] falha ao reenviar verificação: {exc}", flush=True)
+                return RedirectResponse(
+                    url=(
+                        f"/login?verificar=1&email={quote(email_n)}"
+                        f"&erro={quote(MAIL_SEND_FAIL_USER_MSG)}"
+                    ),
+                    status_code=303,
+                )
     return RedirectResponse(
         url=f"/login?verificar=1&email={quote(email_n)}&msg={ok_msg}",
         status_code=303,

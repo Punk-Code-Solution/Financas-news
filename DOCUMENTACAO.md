@@ -365,7 +365,8 @@ GOOGLE_OAUTH_CLIENT_ID=   # opcional: login Google
 GOOGLE_OAUTH_CLIENT_SECRET=
 GOOGLE_OAUTH_REDIRECT_URI=  # ex.: https://financas-news.net.br/auth/google/callback
 # SESSION_HTTPS_ONLY=false  # local HTTP; em produção/Render cookies Secure
-SITE_ORIGIN=https://financas-news.net.br  # links de verificação de e-mail e newsletter
+SITE_ORIGIN=https://financas-news.net.br  # obrigatório em produção: links de verificação (nunca 127.0.0.1)
+# Verificação de conta também exige mailer: RESEND_API_KEY + NEWSLETTER_FROM (ou SMTP_*) — ver seção Newsletter
 # EMAIL_VERIFY_TTL_HOURS=48
 # EMAIL_VERIFY_RESEND_COOLDOWN_SEC=120
 ROBOT_MAX_PER_FEED=3
@@ -462,13 +463,30 @@ NEWSLETTER_ENABLED=false
 PREMIUM_TEASER_ENABLED=false
 ```
 
-### Newsletter — envio (opcionais)
+### Newsletter — envio (obrigatório para verificação de conta)
 
-Pelo menos um provedor precisa estar configurado para `/api/newsletter-digest` e `/api/newsletter-alerta` (senão HTTP 503). Ordem de preferência no código: Resend → SMTP → webhook.
+Pelo menos um provedor precisa estar configurado para:
+- e-mail de **verificação de conta** (cadastro / `POST /reenviar-verificacao`);
+- `/api/newsletter-digest` e `/api/newsletter-alerta` (senão HTTP 503).
+
+Sem provedor, o app **não finge** que enviou: log `[newsletter] mailer nao configurado` e a UI mostra erro honesto pedindo tentar mais tarde ou contatar o suporte.
+
+Ordem de preferência no código: Resend → SMTP → webhook.
+
+**Render (checklist verificação de e-mail):**
+
+| Variável | Obrigatório? | Notas |
+|----------|--------------|--------|
+| `RESEND_API_KEY` | Sim (ou SMTP_*) | Preferencial — API Resend |
+| `NEWSLETTER_FROM` | Sim com Resend | Remetente em domínio **verificado** no Resend (ex.: `newsletter@financas-news.net.br`) |
+| `SITE_ORIGIN` | Sim em produção | Deve ser `https://financas-news.net.br` (links do e-mail de verificação). Não use `127.0.0.1`. |
+| `SMTP_HOST` + `SMTP_FROM` (+ user/pass) | Alternativa | Se não usar Resend |
+| `NEWSLETTER_WEBHOOK_URL` | Alternativa | POST JSON `{subject,html,text,to,from}` |
 
 ```env
+SITE_ORIGIN=https://financas-news.net.br
 NEWSLETTER_FROM=newsletter@financas-news.net.br
-RESEND_API_KEY=                 # preferencial (API Resend) — também usado no e-mail de verificação de conta
+RESEND_API_KEY=                 # preferencial (API Resend) — verificação de conta + newsletter
 NEWSLETTER_WEBHOOK_URL=         # alternativa: POST JSON {subject,html,text,to,from}
 SMTP_HOST=
 SMTP_PORT=587

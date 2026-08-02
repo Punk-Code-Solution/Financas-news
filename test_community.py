@@ -227,6 +227,78 @@ def test_verification_email_payload():
     assert "verificar-email?token=abcTOKEN1234567890" in payload["html"]
 
 
+def test_send_verification_not_configured_returns_false():
+    from newsletter_service import send_verification_email
+
+    with patch.dict(os.environ, {"RESEND_API_KEY": "", "SMTP_HOST": "", "NEWSLETTER_WEBHOOK_URL": ""}, clear=False):
+        # Garante que SMTP_FROM sozinho não conta como configurado.
+        os.environ.pop("SMTP_FROM", None)
+        result = send_verification_email(
+            email="ana@example.com",
+            name="Ana",
+            token="abcTOKEN1234567890",
+            ttl_hours=48,
+        )
+    assert result.get("ok") is False
+    assert result.get("not_configured") is True
+    assert "verify_url" in result
+    assert "financas-news.net.br" in result["verify_url"] or "verificar-email" in result["verify_url"]
+
+
+def test_send_verification_uses_site_origin_env():
+    from newsletter_service import build_verification_email
+
+    with patch.dict(os.environ, {"SITE_ORIGIN": "https://financas-news.net.br"}, clear=False):
+        payload = build_verification_email(name="Ana", token="tokXYZ", ttl_hours=48)
+    assert payload["verify_url"].startswith("https://financas-news.net.br/verificar-email?token=tokXYZ")
+
+
+def test_send_verification_mock_success():
+    from newsletter_service import send_verification_email
+
+    with patch("newsletter_service.send_email", return_value={"ok": True, "provider": "resend"}) as mock_send:
+        result = send_verification_email(
+            email="ana@example.com",
+            name="Ana",
+            token="abcTOKEN1234567890",
+            ttl_hours=48,
+        )
+    assert result.get("ok") is True
+    mock_send.assert_called_once()
+    assert "verificar-email?token=abcTOKEN1234567890" in result["verify_url"]
+
+
+def test_mail_fail_user_msg_is_honest():
+    from newsletter_service import MAIL_SEND_FAIL_USER_MSG
+
+    assert "Não foi possível enviar o e-mail" in MAIL_SEND_FAIL_USER_MSG
+    assert "suporte" in MAIL_SEND_FAIL_USER_MSG.lower()
+
+
+def test_reenviar_ui_when_mailer_not_configured():
+    """POST /reenviar-verificacao sem mailer → redirect com erro honesto (não finge envio)."""
+    from urllib.parse import unquote
+
+    from fastapi.testclient import TestClient
+
+    import main
+    from newsletter_service import MAIL_SEND_FAIL_USER_MSG
+
+    with patch("newsletter_service.is_send_configured", return_value=False):
+        client = TestClient(main.app)
+        resp = client.post(
+            "/reenviar-verificacao",
+            data={"email": "pendente@example.com"},
+            follow_redirects=False,
+        )
+    assert resp.status_code == 303
+    loc = unquote(resp.headers.get("location") or "")
+    assert "verificar=1" in loc
+    assert "erro=" in loc
+    assert MAIL_SEND_FAIL_USER_MSG in loc
+    assert "enviamos um novo link" not in loc
+
+
 def test_issue_verification_rate_limit():
     client = MagicMock()
     recent = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -272,5 +344,10 @@ if __name__ == "__main__":
     test_create_user_unverified_and_verify_flow()
     test_login_blocked_semantics_for_unverified()
     test_verification_email_payload()
+    test_send_verification_not_configured_returns_false()
+    test_send_verification_uses_site_origin_env()
+    test_send_verification_mock_success()
+    test_mail_fail_user_msg_is_honest()
+    test_reenviar_ui_when_mailer_not_configured()
     test_issue_verification_rate_limit()
     print("OK test_community")
