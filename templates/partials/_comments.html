@@ -1,0 +1,92 @@
+{# Comentários estilo lista densa (referência HLTV) — 1 nível de reply. #}
+<section id="comentarios" class="mt-10 border-t border-gray-200 dark:border-slate-700 pt-6" aria-labelledby="comentarios-titulo">
+    <div class="flex items-baseline justify-between gap-3 mb-4">
+        <h2 id="comentarios-titulo" class="text-sm font-black uppercase tracking-wider text-gray-800 dark:text-slate-100">
+            Comentários <span class="text-gray-400 dark:text-slate-500 font-bold">({{ comments|length }})</span>
+        </h2>
+        {% if not current_user %}
+        <a href="/login?next=/noticia/{{ noticia[0] }}#comentarios" class="text-xs font-bold text-blue-600 dark:text-[#4ade80] hover:underline">Entrar para comentar</a>
+        {% endif %}
+    </div>
+
+    {% if current_user %}
+    <form method="post" action="/noticia/{{ noticia[0] }}/comentarios" class="mb-6 space-y-2">
+        <label for="comment-body" class="sr-only">Seu comentário</label>
+        <textarea id="comment-body" name="body" rows="3" maxlength="2000" required
+                  placeholder="Escreva um comentário objetivo sobre a análise…"
+                  class="w-full text-sm rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-[#0f172a] text-gray-900 dark:text-slate-100 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+        <div class="flex items-center justify-between gap-3">
+            <p class="text-[10px] text-gray-500 dark:text-slate-500">Moderação automática. Localização aproximada só com consentimento de cookies.</p>
+            <button type="submit" class="px-4 py-2 text-xs font-bold rounded-lg bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-950">Publicar</button>
+        </div>
+        {% if comment_flash %}
+        <p class="text-xs {% if comment_flash_ok %}text-green-600 dark:text-[#4ade80]{% else %}text-red-600 dark:text-red-400{% endif %}">{{ comment_flash }}</p>
+        {% endif %}
+    </form>
+    {% endif %}
+
+    {% if comments %}
+    <ul class="divide-y divide-gray-100 dark:divide-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden bg-white dark:bg-[#1e293b]">
+        {% for c in comments if not c.parent_id %}
+        <li class="px-3 py-2.5 {% if c.status != 'published' %}opacity-70{% endif %}">
+            <div class="flex items-start gap-2.5">
+                <img src="{{ c.author_avatar }}" alt="" width="28" height="28" class="rounded-full object-cover shrink-0 mt-0.5 bg-slate-700" loading="lazy">
+                <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px] leading-tight">
+                        <span class="font-bold text-gray-900 dark:text-white">{{ c.author_name }}</span>
+                        <time class="text-gray-400 dark:text-slate-500" datetime="{{ c.created_at }}">{{ c.created_at }}</time>
+                        {% if c.geo_country %}<span class="text-gray-400 dark:text-slate-500">{{ c.geo_country }}</span>{% endif %}
+                        {% if c.status != 'published' %}<span class="text-amber-600 dark:text-amber-400 font-semibold">{{ c.status }}</span>{% endif %}
+                        {% if c.upvotes %}<span class="text-gray-400">▲ {{ c.upvotes }}</span>{% endif %}
+                    </div>
+                    <p class="mt-1 text-[13px] leading-snug text-gray-800 dark:text-slate-200 whitespace-pre-wrap">{{ c.body }}</p>
+                    <div class="mt-1.5 flex items-center gap-3">
+                        {% if current_user %}
+                        <form method="post" action="/comentarios/{{ c.id }}/upvote" class="inline">
+                            <input type="hidden" name="news_id" value="{{ noticia[0] }}">
+                            <button type="submit" class="text-[10px] font-bold uppercase text-gray-500 hover:text-blue-600 dark:hover:text-[#4ade80]">Upvote</button>
+                        </form>
+                        <button type="button" class="text-[10px] font-bold uppercase text-gray-500 hover:text-blue-600 dark:hover:text-[#4ade80] fn-reply-toggle" data-parent="{{ c.id }}">Responder</button>
+                        {% endif %}
+                    </div>
+                    {% if current_user %}
+                    <form method="post" action="/noticia/{{ noticia[0] }}/comentarios" class="mt-2 hidden fn-reply-form" data-parent-form="{{ c.id }}">
+                        <input type="hidden" name="parent_id" value="{{ c.id }}">
+                        <textarea name="body" rows="2" maxlength="2000" required placeholder="Resposta…"
+                                  class="w-full text-xs rounded border border-gray-300 dark:border-slate-600 bg-gray-50 dark:bg-[#0f172a] px-2 py-1.5"></textarea>
+                        <button type="submit" class="mt-1 px-3 py-1 text-[10px] font-bold rounded bg-gray-800 dark:bg-slate-200 text-white dark:text-slate-900">Enviar resposta</button>
+                    </form>
+                    {% endif %}
+                    {% for r in comments if r.parent_id == c.id %}
+                    <div class="mt-2 ml-3 pl-3 border-l-2 border-gray-200 dark:border-slate-600">
+                        <div class="flex items-start gap-2">
+                            <img src="{{ r.author_avatar }}" alt="" width="22" height="22" class="rounded-full object-cover shrink-0 bg-slate-700" loading="lazy">
+                            <div class="min-w-0">
+                                <div class="flex flex-wrap gap-x-2 text-[11px]">
+                                    <span class="font-bold text-gray-900 dark:text-white">{{ r.author_name }}</span>
+                                    <time class="text-gray-400 dark:text-slate-500">{{ r.created_at }}</time>
+                                    {% if r.status != 'published' %}<span class="text-amber-600 text-[10px]">{{ r.status }}</span>{% endif %}
+                                </div>
+                                <p class="mt-0.5 text-[13px] leading-snug text-gray-800 dark:text-slate-200 whitespace-pre-wrap">{{ r.body }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-gray-500 dark:text-slate-500">Nenhum comentário ainda. Seja o primeiro a opinar com respeito.</p>
+    {% endif %}
+</section>
+<script>
+document.querySelectorAll('.fn-reply-toggle').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        var id = btn.getAttribute('data-parent');
+        var form = document.querySelector('.fn-reply-form[data-parent-form="' + id + '"]');
+        if (form) form.classList.toggle('hidden');
+    });
+});
+</script>

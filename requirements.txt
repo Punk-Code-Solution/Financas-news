@@ -13,3 +13,5 @@ Pillow
 cursor-sdk
 certifi
 libsql-client
+bcrypt
+itsdangerous

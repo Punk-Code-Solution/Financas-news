@@ -431,11 +431,15 @@ def _dados_mercado_payload(guide: dict[str, Any], live: dict[str, Any] | None = 
     )
 
 
-def ensure_educational_guides(client: DbClient) -> int:
-    """Insere ou atualiza os guias evergreen. Retorna quantos foram gravados."""
+def ensure_educational_guides(client: DbClient, *, refresh: bool = False) -> int:
+    """Insere (e opcionalmente atualiza) os guias evergreen. Retorna quantos gravados.
+
+    Por padrão só materializa guias ausentes — UPDATE completo no Turso HTTP é
+    pesado/instável e não deve rodar em todo boot nem em todo /artigo.
+    """
     written = 0
     published_at = "15/01/2026 09:00"
-    live = _live_macro_snapshot()
+    live = _live_macro_snapshot() if refresh else {}
     agora = datetime.now().strftime("%d/%m/%Y %H:%M")
     for guide in EDUCATIONAL_GUIDES:
         if guide["slug"] not in GUIDE_SLUGS:
@@ -457,6 +461,8 @@ def ensure_educational_guides(client: DbClient) -> int:
                 )
         existing = client.execute("SELECT id FROM news WHERE link = ?", [link])
         if existing.rows:
+            if not refresh:
+                continue
             try:
                 client.execute(
                     """
@@ -479,7 +485,35 @@ def ensure_educational_guides(client: DbClient) -> int:
                         1,
                         link,
                     ],
+                    max_attempts=1,
                 )
+            except TypeError:
+                try:
+                    client.execute(
+                        """
+                        UPDATE news
+                        SET titulo = ?, resumo = ?, impacto = ?, tag = ?, sentimento = ?,
+                            fonte = ?, dados_mercado = ?, contexto_editorial = ?,
+                            updated_at = ?, versao_analise = ?
+                        WHERE link = ?
+                        """,
+                        [
+                            guide["titulo"],
+                            guide["resumo"],
+                            guide["impacto"],
+                            guide["tag"],
+                            guide["sentimento"],
+                            GUIDE_FONTE,
+                            dados,
+                            contexto,
+                            agora,
+                            1,
+                            link,
+                        ],
+                    )
+                except Exception as exc:
+                    print(f"Aviso: falha ao atualizar guia {guide['slug']}: {exc}")
+                    continue
             except Exception as exc:
                 # Triggers FTS legados no Turso podem falhar o protocolo HTTP.
                 print(f"Aviso: falha ao atualizar guia {guide['slug']}: {exc}")

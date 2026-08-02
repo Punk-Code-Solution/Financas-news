@@ -34,6 +34,18 @@ _ACERVO_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _ACERVO_CACHE_LOCK = threading.Lock()
 _ACERVO_CACHE_TTL = 45.0
 
+_RELATED_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_RELATED_CACHE_LOCK = threading.Lock()
+_RELATED_CACHE_TTL = 45.0
+
+
+def _soft_execute(client, sql: str, args: list[Any] | None = None):
+    """Uma tentativa — enrichment é opcional; não pode queimar 5–10s em retry."""
+    try:
+        return client.execute(sql, args, max_attempts=1)
+    except TypeError:
+        return client.execute(sql, args)
+
 SOURCE_HOST_NAMES: dict[str, str] = {
     "br.cointelegraph.com": "Cointelegraph",
     "cointelegraph.com": "Cointelegraph",
@@ -312,8 +324,9 @@ def resolve_referencias_internas(client, referencias: list[dict[str, Any]]) -> l
     if pending:
         # Uma única ida ao banco: candidatos recentes + match em memória.
         try:
-            pool = client.execute(
-                "SELECT id, titulo FROM news ORDER BY id DESC LIMIT 250",
+            pool = _soft_execute(
+                client,
+                "SELECT id, titulo FROM news ORDER BY id DESC LIMIT 80",
             )
             titles = [(row[0], str(row[1] or "")) for row in pool.rows]
         except Exception:
@@ -799,18 +812,30 @@ def build_market_stats(dados_mercado: dict[str, Any], tag: str = "Economia") -> 
 
 
 def get_related_articles(client, tag: str, exclude_id: int, limit: int = 4) -> list[dict[str, Any]]:
-    result = client.execute(
-        """
-        SELECT id, titulo, tag, sentimento,
-               COALESCE(NULLIF(published_at, ''), created_at) AS data_publicacao,
-               resumo
-        FROM news
-        WHERE tag = ? AND id != ?
-        ORDER BY id DESC
-        LIMIT ?
-        """,
-        [tag, exclude_id, limit],
-    )
+    cache_key = f"{tag}|{exclude_id}|{limit}"
+    now = time.time()
+    with _RELATED_CACHE_LOCK:
+        cached = _RELATED_CACHE.get(cache_key)
+        if cached and now < cached[0]:
+            return [dict(item) for item in cached[1]]
+
+    try:
+        result = _soft_execute(
+            client,
+            """
+            SELECT id, titulo, tag, sentimento,
+                   COALESCE(NULLIF(published_at, ''), created_at) AS data_publicacao,
+                   resumo
+            FROM news
+            WHERE tag = ? AND id != ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            [tag, exclude_id, limit],
+        )
+    except Exception:
+        return []
+
     articles: list[dict[str, Any]] = []
     for row in result.rows:
         resumo = (row[5] or "").strip().replace("\n", " ")
@@ -826,7 +851,9 @@ def get_related_articles(client, tag: str, exclude_id: int, limit: int = 4) -> l
                 "trecho": resumo,
             }
         )
-    return articles
+    with _RELATED_CACHE_LOCK:
+        _RELATED_CACHE[cache_key] = (now + _RELATED_CACHE_TTL, articles)
+    return [dict(item) for item in articles]
 
 
 def resolve_pontos_chave_links(
@@ -851,7 +878,8 @@ def resolve_pontos_chave_links(
     if categorias:
         placeholders = ",".join("?" * len(categorias))
         try:
-            latest = client.execute(
+            latest = _soft_execute(
+                client,
                 f"""
                 SELECT tag, MAX(id) AS max_id
                 FROM news
@@ -868,7 +896,8 @@ def resolve_pontos_chave_links(
         if missing:
             miss_ph = ",".join("?" * len(missing))
             try:
-                counts = client.execute(
+                counts = _soft_execute(
+                    client,
                     f"SELECT tag, COUNT(*) FROM news WHERE tag IN ({miss_ph}) GROUP BY tag",
                     missing,
                 )
@@ -905,10 +934,29 @@ def get_acervo_stats(client, tag: str) -> dict[str, Any]:
         if cached and now < cached[0]:
             return dict(cached[1])
 
-    result = client.execute(
-        "SELECT sentimento, COUNT(*) FROM news WHERE tag = ? GROUP BY sentimento",
-        [tag],
-    )
+    empty = {
+        "total": 0,
+        "positivo": 0,
+        "negativo": 0,
+        "neutro": 0,
+        "tom": "Neutro",
+        "insight": "Ainda não há histórico suficiente nesta categoria.",
+        "chart": [
+            {"label": "Positivo", "count": 0, "color": "#4ade80"},
+            {"label": "Negativo", "count": 0, "color": "#f87171"},
+            {"label": "Neutro", "count": 0, "color": "#94a3b8"},
+        ],
+    }
+
+    try:
+        result = _soft_execute(
+            client,
+            "SELECT sentimento, COUNT(*) FROM news WHERE tag = ? GROUP BY sentimento",
+            [tag],
+        )
+    except Exception:
+        return dict(empty)
+
     by_sentiment: dict[str, int] = {}
     for sentimento, count in result.rows:
         by_sentiment[sentimento or "Neutro"] = count
@@ -1102,19 +1150,28 @@ def build_article_enrichment(
 
     refs = market_data.get("referencias_internas") or []
     if refs:
-        market_data["referencias_internas"] = resolve_referencias_internas(client, refs)
+        try:
+            market_data["referencias_internas"] = resolve_referencias_internas(client, refs)
+        except Exception:
+            # Mantém refs sem IDs resolvidos — links internos ficam só por keyword.
+            pass
 
     acervo = get_acervo_stats(client, tag)
     related_articles = get_related_articles(client, tag, noticia_id)
     linked_parts = link_text_parts(resumo, market_data.get("referencias_internas"))
 
     market_stats = build_market_stats(market_data, tag)
-    market_stats["pontos_chave"] = resolve_pontos_chave_links(
-        client,
-        market_stats.get("pontos_chave") or [],
-        tag,
-        noticia_id,
-    )
+    try:
+        market_stats["pontos_chave"] = resolve_pontos_chave_links(
+            client,
+            market_stats.get("pontos_chave") or [],
+            tag,
+            noticia_id,
+        )
+    except Exception:
+        for ponto in market_stats.get("pontos_chave") or []:
+            if isinstance(ponto, dict) and "href" not in ponto:
+                ponto["href"] = f"/?categoria={quote(tag)}" if tag else "/"
     if market_data.get("periodo_analise"):
         market_stats["periodo_analise"] = market_data["periodo_analise"]
 

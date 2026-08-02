@@ -1,0 +1,176 @@
+{# Banner LGPD — consentimento de cookies (necessário / analytics / preferências).
+   CSS próprio: utilitários do banner (bottom-0, inset-x-0, z-[60], bg-*/95) podem
+   não existir no app.css buildado; layout não pode depender do purge do Tailwind. #}
+<style>
+  #fn-cookie-banner {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 70;
+    display: none;
+    border-top: 1px solid #e5e7eb;
+    background: #ffffff;
+    box-shadow: 0 -8px 32px rgba(15, 23, 42, 0.14);
+    padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+  }
+  #fn-cookie-banner.is-visible { display: block; }
+  .dark #fn-cookie-banner {
+    border-top-color: #334155;
+    background: #0f172a;
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.45);
+  }
+  #fn-cookie-banner .fn-cookie-inner {
+    max-width: 80rem;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    justify-content: space-between;
+  }
+  @media (min-width: 768px) {
+    #fn-cookie-banner .fn-cookie-inner {
+      flex-direction: row;
+      align-items: center;
+    }
+  }
+  #fn-cookie-banner .fn-cookie-copy { min-width: 0; flex: 1; }
+  #fn-cookie-banner .fn-cookie-title {
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #111827;
+  }
+  .dark #fn-cookie-banner .fn-cookie-title { color: #ffffff; }
+  #fn-cookie-banner .fn-cookie-text {
+    margin: 0.35rem 0 0;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: #4b5563;
+    max-width: 48rem;
+  }
+  .dark #fn-cookie-banner .fn-cookie-text { color: #94a3b8; }
+  #fn-cookie-banner .fn-cookie-text a {
+    text-decoration: underline;
+    font-weight: 600;
+    color: #2563eb;
+  }
+  .dark #fn-cookie-banner .fn-cookie-text a { color: #4ade80; }
+  #fn-cookie-banner .fn-cookie-cats {
+    margin-top: 0.75rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    font-size: 0.75rem;
+    color: #374151;
+  }
+  .dark #fn-cookie-banner .fn-cookie-cats { color: #cbd5e1; }
+  #fn-cookie-banner .fn-cookie-cats label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  #fn-cookie-banner .fn-cookie-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+  #fn-cookie-banner .fn-cookie-actions button {
+    padding: 0.5rem 1rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    line-height: 1.25;
+  }
+  #fn-cookie-banner .fn-btn-reject {
+    border: 1px solid #d1d5db;
+    background: transparent;
+    color: #374151;
+  }
+  .dark #fn-cookie-banner .fn-btn-reject {
+    border-color: #475569;
+    color: #e2e8f0;
+  }
+  #fn-cookie-banner .fn-btn-reject:hover { background: #f9fafb; }
+  .dark #fn-cookie-banner .fn-btn-reject:hover { background: #1e293b; }
+  #fn-cookie-banner .fn-btn-save {
+    border: 1px solid #2563eb;
+    background: transparent;
+    color: #1d4ed8;
+  }
+  .dark #fn-cookie-banner .fn-btn-save {
+    border-color: #4ade80;
+    color: #4ade80;
+  }
+  #fn-cookie-banner .fn-btn-accept {
+    border: none;
+    background: #2563eb;
+    color: #ffffff;
+  }
+  .dark #fn-cookie-banner .fn-btn-accept {
+    background: #4ade80;
+    color: #020617;
+  }
+</style>
+<div id="fn-cookie-banner" role="dialog" aria-labelledby="fn-cookie-title" aria-live="polite">
+    <div class="fn-cookie-inner">
+        <div class="fn-cookie-copy">
+            <p id="fn-cookie-title" class="fn-cookie-title">Cookies e privacidade</p>
+            <p class="fn-cookie-text">
+                Usamos cookies necessários para login e idioma. Com seu consentimento, também usamos analytics/preferências
+                e podemos associar localização aproximada a comentários (resguardo jurídico).
+                Veja a <a href="/privacidade?lang={{ lang }}">política de privacidade</a>.
+            </p>
+            <div class="fn-cookie-cats">
+                <label>
+                    <input type="checkbox" checked disabled> Necessários
+                </label>
+                <label>
+                    <input id="fn-consent-analytics" type="checkbox"> Analytics
+                </label>
+                <label>
+                    <input id="fn-consent-preferences" type="checkbox"> Preferências
+                </label>
+            </div>
+        </div>
+        <div class="fn-cookie-actions">
+            <button type="button" id="fn-consent-reject" class="fn-btn-reject">Só necessários</button>
+            <button type="button" id="fn-consent-save" class="fn-btn-save">Salvar escolhas</button>
+            <button type="button" id="fn-consent-accept" class="fn-btn-accept">Aceitar todos</button>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    const COOKIE = 'fn_consent';
+    const banner = document.getElementById('fn-cookie-banner');
+    if (!banner) return;
+    function readConsent() {
+        const m = document.cookie.match(/(?:^|; )fn_consent=([^;]*)/);
+        if (!m) return null;
+        try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; }
+    }
+    function writeConsent(analytics, preferences) {
+        const v = 'necessary=1&analytics=' + (analytics ? '1' : '0') + '&preferences=' + (preferences ? '1' : '0');
+        const maxAge = 60 * 60 * 24 * 180;
+        const secure = location.protocol === 'https:' ? '; Secure' : '';
+        document.cookie = COOKIE + '=' + encodeURIComponent(v) + '; Path=/; Max-Age=' + maxAge + '; SameSite=Lax' + secure;
+        banner.classList.remove('is-visible');
+    }
+    if (!readConsent()) banner.classList.add('is-visible');
+    document.getElementById('fn-consent-accept')?.addEventListener('click', function () {
+        writeConsent(true, true);
+    });
+    document.getElementById('fn-consent-reject')?.addEventListener('click', function () {
+        writeConsent(false, false);
+    });
+    document.getElementById('fn-consent-save')?.addEventListener('click', function () {
+        writeConsent(
+            !!document.getElementById('fn-consent-analytics')?.checked,
+            !!document.getElementById('fn-consent-preferences')?.checked
+        );
+    });
+})();
+</script>

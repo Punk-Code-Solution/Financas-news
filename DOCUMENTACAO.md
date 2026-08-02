@@ -3,7 +3,7 @@
 **Portal:** [financas-news.net.br](https://financas-news.net.br)  
 **Desenvolvedor:** Punk Code Solution  
 **Repositório:** [github.com/Punk-Code-Solution/Financas-news](https://github.com/Punk-Code-Solution/Financas-news)  
-**Versão do documento:** junho/2026
+**Versão do documento:** agosto/2026
 
 ---
 
@@ -85,18 +85,22 @@ Authorization: Bearer SEU_ROBO_TOKEN
 
 ```
 financas_auto/
-├── main.py              # App web, rotas, API do robô, SEO
-├── core.py              # Pipeline RSS → IA → imagem
-├── db.py                # Conexão Turso, schema, FTS5, contexto editorial
-├── monetization.py      # Configuração de receita (env-driven)
-├── templates/           # Páginas HTML e partials de monetização
-├── static/              # Favicon, CSS buildado (app.css) e assets
-├── src/styles.css       # Entrada do Tailwind
-├── tailwind.config.js   # Conteúdo/templates para purge
-├── tools/build-css.js   # Build via CLI standalone
-├── requirements.txt     # Dependências Python
-├── render.yaml          # Deploy no Render
-└── runtime.txt          # Versão Python fixada
+├── main.py                 # App web, rotas, API do robô, SEO, CSP
+├── core.py                 # Pipeline RSS → IA → imagem, radar, macro-watch, i18n IA
+├── db.py                   # Conexão Turso, schema, FTS5, contexto editorial
+├── monetization.py         # Receita + afiliados contextuais (env-driven)
+├── newsletter_service.py   # Digest semanal e alertas de urgência
+├── article_enrichment.py   # Relacionados, entidades, painéis do artigo
+├── educational_guides.py   # Guias evergreen (Selic, IPCA, câmbio, renda fixa)
+├── i18n.py                 # PT/EN/JA, intros de categoria, canônicas
+├── templates/              # Páginas HTML e partials (incl. mercado, afiliado)
+├── static/                 # Favicon, CSS buildado (app.css) e assets
+├── src/styles.css          # Entrada do Tailwind
+├── tailwind.config.js      # Conteúdo/templates para purge
+├── tools/build-css.js      # Build via CLI standalone
+├── requirements.txt        # Dependências Python
+├── render.yaml             # Deploy no Render
+└── runtime.txt             # Versão Python fixada
 ```
 
 Para regenerar o CSS após mudar classes nos templates: baixe o [CLI standalone do Tailwind](https://github.com/tailwindlabs/tailwindcss/releases) para `tools/tailwindcss.exe` e rode `npm run build:css` (o arquivo `static/css/app.css` é versionado e usado em produção).
@@ -127,6 +131,19 @@ Cripto · Economia · Dólar · Ações · Juros · Inflação · Imóveis · Fi
 - **Link para fonte original** (transparência editorial)
 - **Data e veículo de origem**
 - **Guias núcleo** (`/artigo/selic|ipca|cambio|renda-fixa`) — conjunto fechado; números BCB sincronizados no startup
+- **Tempo de leitura** estimado no artigo (`estimate_reading_minutes`)
+- **Matérias relacionadas** e temas cruzados (`article_enrichment.py`)
+- **Afiliado contextual** por categoria (só se a URL do programa estiver no env)
+
+### Enriquecimento do portal (ONDAs 1–3)
+
+Entregas recentes que expandem retenção, distribuição e operação editorial:
+
+| Onda | Entrega | Onde |
+|------|---------|------|
+| 1 | Intro de categoria + guias relacionados na home filtrada; feed RSS/Atom; newsletter digest/alerta | `i18n.py`, `/`, `/feed.xml`, `/feed.atom`, `newsletter_service.py` |
+| 2 | Painel `/mercado` (Selic, IPCA, USD, BTC + charts); tempo de leitura e relacionados no artigo; afiliados contextuais | `mercado.html`, `noticia.html`, `monetization.py` |
+| 3 | Radar da semana; Macro Watch (matéria se Selic/IPCA mudar); tradução pendente EN/JA; CSP + headers de segurança | `/api/radar-semanal`, `/api/macro-watch`, `/api/traduzir-pendentes`, middleware em `main.py` |
 
 ---
 
@@ -143,14 +160,20 @@ A monetização é **modular e controlada por variáveis de ambiente**. Enquanto
 | BTG Pactual | `AFFILIATE_BTG_URL` | Comissão por indicação |
 | Amazon Associados | `AMAZON_AFFILIATE_TAG` | % sobre compras |
 | Patrocínio direto | `SPONSORED_SLOT_URL` | Pagamento direto do anunciante |
-| Newsletter | `NEWSLETTER_URL` ou `NEWSLETTER_ENABLED` | Base para produto premium futuro |
+| Newsletter (captura) | `NEWSLETTER_URL` ou `NEWSLETTER_ENABLED` | Formulário local ou redirect externo |
+| Newsletter (envio) | `RESEND_API_KEY` / SMTP / `NEWSLETTER_WEBHOOK_URL` | Digest semanal e alertas de urgência |
 | Premium (futuro) | `PREMIUM_TEASER_ENABLED=true` | Assinatura / relatórios pagos |
+
+### Afiliados contextuais
+
+Na página do artigo, o bloco de afiliado escolhe o programa conforme a **tag** da matéria (ex.: Cripto → Binance; Juros/Inflação → BTG; padrão → XP). Só aparece se a URL correspondente estiver configurada — copy e CTA mudam por categoria (`get_contextual_affiliate` em `monetization.py`).
 
 ### Status atual da monetização
 
 - **AdSense:** conta criada (`ca-pub-3623062544438213`), aguardando reaprovação por qualidade de conteúdo.
-- **Afiliados:** estrutura pronta; links de rastreio pendentes de cadastro nos programas.
+- **Afiliados:** estrutura + mapeamento contextual prontos; links de rastreio pendentes de cadastro nos programas.
 - **Amazon:** aguardando tag de associado.
+- **Newsletter:** captura local/externa pronta; envio (digest/alerta) exige provedor configurado (Resend, SMTP ou webhook).
 
 ---
 
@@ -248,11 +271,23 @@ Imagens salvas em disco (`ARTICLE_IMAGES_DIR`) com URL pública `/media/articles
 | `dados_mercado` | JSON com cotações e indicadores usados |
 | `contexto_editorial` | Box de panorama de mercado |
 | `imagem_url` | Caminho da capa gerada |
+| `home_priority` | Prioridade na manchete da home (urgência) |
+| `titulo_en` / `resumo_en` | Tradução EN (quando preenchida) |
+| `titulo_ja` / `resumo_ja` | Tradução JA (quando preenchida) |
 | `created_at` | Timestamp de criação |
+| `updated_at` | Última atualização |
 
 ### Tabela `newsletter_subscribers`
 
 Armazena e-mails capturados localmente quando a newsletter está ativa.
+
+### Tabela `newsletter_alert_log`
+
+Evita reenvio duplicado de alerta de urgência por `news_id`.
+
+### Tabela `macro_watch_state`
+
+Snapshot anterior de indicadores macro (Selic, IPCA) para detectar mudanças e gerar matéria.
 
 ---
 
@@ -262,21 +297,37 @@ Armazena e-mails capturados localmente quando a newsletter está ativa.
 
 | Rota | Função |
 |------|--------|
-| `/` | Home com listagem, filtros e busca (FTS5 em título/resumo; combina `q` + `categoria`) |
-| `/noticia/{id}` | Artigo completo |
+| `/` | Home com listagem, filtros e busca (FTS5 em título/resumo; combina `q` + `categoria`). Com `?categoria=` exibe intro editorial e guias relacionados |
+| `/noticia/{id}` | Artigo completo (tempo de leitura, relacionados, afiliado contextual) |
+| `/artigo/{slug}` | Guias evergreen (selic, ipca, cambio, renda-fixa) |
+| `/mercado` | Painel público: Selic, IPCA, dólar, BTC + histórico + links para análises |
+| `/metodologia` | Transparência editorial (não republicação RSS) |
 | `/quem-somos` | Sobre o portal |
+| `/login` `/cadastro` `/perfil` | Comunidade (sessão cookie; noindex) |
 | `/privacidade` | Política de privacidade |
 | `/termos` | Termos de uso |
 
-### SEO
+### SEO e distribuição
 
 | Rota | Função |
 |------|--------|
 | `/sitemap.xml` | Home, institucionais, guias `/artigo/*` e até 500 notícias (`lastmod`, sem duplicar guias) |
-| `/robots.txt` | Allow público; `Disallow` em `/api/` e `/ping`; aponta sitemap |
+| `/robots.txt` | Allow público; `Disallow` em `/api/`, `/ping`, `?q=` e `?page=`; aponta sitemap e feed |
+| `/feed.xml` | Feed RSS 2.0 das notícias recentes |
+| `/feed.atom` | Feed Atom equivalente |
 | `/ads.txt` | Verificação Google AdSense |
 
 Sinais on-page: `rel=canonical`, meta description, JSON-LD (`WebSite` na home, `NewsArticle` + `FAQPage` nos artigos), OG/Twitter, guias no rodapé e redirect 301 de `/noticia/{id}` → `/artigo/{slug}` quando for guia evergreen.
+
+### Segurança HTTP (middleware)
+
+Todas as respostas recebem:
+
+- `X-Content-Type-Options: nosniff`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `X-Frame-Options: SAMEORIGIN`
+- `Content-Security-Policy` (self + AdSense, Google Fonts, Chart.js CDN, analytics; `script-src`/`style-src` com `'unsafe-inline'` por scripts do portal)
+- `Strict-Transport-Security` quando a request é HTTPS
 
 ### API interna
 
@@ -286,8 +337,16 @@ Sinais on-page: `rel=canonical`, meta description, JSON-LD (`WebSite` na home, `
 | `GET /api/gerar-analises-proprias` | Gera análises próprias a partir do acervo (mesma auth; meta diária `ROBOT_OWN_ANALYSES`) |
 | `GET /api/gerar-imagens` | Backfill de capas (mesma auth) |
 | `GET /api/atualizar-artigos` | Atualiza dados de mercado (mesma auth) |
-| `POST /api/newsletter` | Captura de e-mail |
+| `GET /api/radar-semanal` | Gera o Radar da semana (análise própria do acervo; `force=1` regenera) |
+| `GET /api/macro-watch` | Compara Selic/IPCA com snapshot anterior; gera matéria se mudou |
+| `GET /api/traduzir-pendentes` | Traduz título+resumo pendentes para EN/JA (`limit`, default 10) |
+| `GET /api/newsletter-digest` | Envia digest semanal aos inscritos (exige provedor de envio) |
+| `GET /api/newsletter-digest-diario` | Digest 2x/dia: manchete (`home_priority`) + links das demais |
+| `GET /api/newsletter-alerta` | Reenvio manual de alerta de urgência (`news_id` obrigatório) |
+| `POST /api/newsletter` | Captura de e-mail (local ou redirect externo) |
 | `GET /ping` | Health check |
+
+Auth das rotas de robô/newsletter de envio: mesma regra de `ROBO_TOKEN` (Bearer preferencial).
 
 ---
 
@@ -299,7 +358,13 @@ Sinais on-page: `rel=canonical`, meta description, JSON-LD (`WebSite` na home, `
 GOOGLE_API_KEY=           # ou GEMINI_API_KEY (chave 1)
 GOOGLE_API_KEY_2=         # opcional: segunda chave (fallback de cota)
 GOOGLE_API_KEY_3=         # opcional: terceira chave (fallback de cota)
-ROBO_TOKEN=               # obrigatório: /api/rodar-robo, /api/gerar-imagens, /api/atualizar-artigos, /api/gerar-analises-proprias
+ROBO_TOKEN=               # obrigatório: rotas /api do robô, radar, macro-watch, traduzir, newsletter digest/alerta, capas
+SESSION_SECRET=           # cookie de sessão da comunidade (httpOnly)
+IP_HASH_SALT=             # salt para hash de IP em comentários (LGPD)
+GOOGLE_OAUTH_CLIENT_ID=   # opcional: login Google
+GOOGLE_OAUTH_CLIENT_SECRET=
+GOOGLE_OAUTH_REDIRECT_URI=  # ex.: https://financas-news.net.br/auth/google/callback
+# SESSION_HTTPS_ONLY=false  # local HTTP; em produção/Render cookies Secure
 ROBOT_MAX_PER_FEED=3
 ROBOT_MAX_ARTICLES=36
 ROBOT_OWN_ANALYSES=3      # mínimo diário de análises próprias a partir do acervo (0=desliga)
@@ -307,6 +372,40 @@ ROBOT_OWN_ANALYSES=3      # mínimo diário de análises próprias a partir do a
 TURSO_DATABASE_URL=       # URL libsql:// do Turso
 TURSO_AUTH_TOKEN=         # Token de autenticação Turso
 ```
+
+### Newsletter 2x/dia (cron sugerido)
+
+Agendar no Render (ou similar), com `Authorization: Bearer $ROBO_TOKEN`:
+
+- Manhã (ex. 08:00 America/Sao_Paulo): `GET /api/newsletter-digest-diario`
+- Tarde (ex. 17:00): `GET /api/newsletter-digest-diario`
+- Semanal (opcional): `GET /api/newsletter-digest`
+
+### Thin content
+
+- Sitemap e `noindex` de artigo: resumo &lt; **800** caracteres.
+- Ferramenta: `PYTHONPATH=. python tools/purge_thin_news.py` (default `--min-resumo 800`; `--apply` para apagar).
+
+---
+
+## 11b. Checklist — reconsideração Google (conteúdo de baixo valor / spam)
+
+Use no Search Console ao pedir reconsideração. Evidências no código/site:
+
+| Item | Situação | Onde |
+|------|----------|------|
+| Sem landings só-afiliado | OK — afiliado só em artigo editorial | `contextual_affiliate.html`, `monetization.get_contextual_affiliate` |
+| Disclaimer afiliado + copy sóbrio | OK | partial + `DEFAULT_AFFILIATES` |
+| Originalidade (dados BCB, lentes, impacto, tempo leitura) | OK / reforçado | enrichment + `/metodologia` + quem-somos |
+| `/mercado` com valor (dados + links análises) | OK | `mercado.html` + sitemap |
+| Thin fora do índice | OK — purge 800 = sitemap; noindex thin | `purge_thin_news.py`, `_render_noticia_page` |
+| Doorways busca/paginação/conta | OK — noindex + robots Disallow | `robots.txt`, i18n canônica |
+| Categorias vazias | OK — noindex | `index()` |
+| Exemplos de qualidade | Análises com LENGTH(resumo)≥800, guias `/artigo/*`, painel `/mercado`, `/metodologia` | produção |
+
+Texto sugerido (adaptar): *Corrigimos páginas afiliadas thin (afiliados só em contexto editorial), alinhamos limiar de conteúdo fino (800), reforçamos metodologia original com dados oficiais, enriquecemos /mercado, e bloqueamos indexação de busca/paginação/contas/thin.*
+
+---
 
 ### Autenticação das rotas do robô
 
@@ -336,6 +435,7 @@ ARTICLE_IMAGES_DIR=/var/data/article_images
 ```
 
 > No Render, use `IMAGE_PROVIDER=pexels,gemini,huggingface,openai`. Cole `PEXELS_API_KEY`, `HF_TOKEN` e `ROBO_TOKEN` no painel (`sync: false`). Chave Pexels gratuita: https://www.pexels.com/api/. `auto`/`cursor` no Render ignoram Cursor.
+
 ### Monetização (opcionais — só exibe se preenchidas)
 
 ```env
@@ -359,6 +459,24 @@ NEWSLETTER_ENABLED=false
 PREMIUM_TEASER_ENABLED=false
 ```
 
+### Newsletter — envio (opcionais)
+
+Pelo menos um provedor precisa estar configurado para `/api/newsletter-digest` e `/api/newsletter-alerta` (senão HTTP 503). Ordem de preferência no código: Resend → SMTP → webhook.
+
+```env
+NEWSLETTER_FROM=newsletter@financas-news.net.br
+RESEND_API_KEY=                 # preferencial (API Resend)
+NEWSLETTER_WEBHOOK_URL=         # alternativa: POST JSON {subject,html,text,to,from}
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASSWORD=
+SMTP_FROM=
+SMTP_TLS=true
+```
+
+Não documente nem versione o valor real das chaves — só os nomes das variáveis no painel do host (`sync: false`).
+
 ---
 
 ## 11. Operação do dia a dia
@@ -377,6 +495,17 @@ Variáveis úteis: `ROBO_TOKEN`, `ROBOT_MAX_PER_FEED=3`, `ROBOT_MAX_ARTICLES=36`
 O robô prioriza a meta diária de **análises próprias** (síntese do acervo, sem RSS). Se ainda faltar, tenta de novo após os feeds. Endpoint dedicado: `/api/gerar-analises-proprias`.
 
 Se não houver notícias novas, o robô gera **1 capa** para o artigo pendente mais recente (senão, antigos sem capa).
+
+### Radar, macro e tradução (cron recomendado)
+
+Além do robô principal, agendar (mesma auth `ROBO_TOKEN`):
+
+| Endpoint | Frequência sugerida | Notas |
+|----------|---------------------|-------|
+| `/api/radar-semanal` | 1× por semana | `force=1` só se quiser regenerar |
+| `/api/macro-watch` | diário ou após decisões do Copom/IBGE | só publica se Selic/IPCA mudarem |
+| `/api/traduzir-pendentes?limit=10` | diário | preenche EN/JA pendentes |
+| `/api/newsletter-digest` | 1× por semana | exige `RESEND_API_KEY`, SMTP ou webhook |
 
 ### Capas (backfill contínuo)
 
@@ -402,16 +531,31 @@ uvicorn main:app --reload
 
 ## 12. Roadmap sugerido
 
+### Entregue (ONDAs 1–3 — ago/2026)
+
+- [x] Intro de categoria + guias na home filtrada
+- [x] Feeds `/feed.xml` e `/feed.atom` + menção no `robots.txt`
+- [x] Painel público `/mercado`
+- [x] Tempo de leitura, relacionados e afiliados contextuais no artigo
+- [x] Radar da semana, Macro Watch e tradução EN/JA (rotas autenticadas)
+- [x] Newsletter digest/alerta (provedor env-driven)
+- [x] CSP + headers de segurança no middleware
+- [x] Mover token do robô para variável de ambiente (`ROBO_TOKEN`)
+- [x] Mitigações anti-spam Google (thin 800, metodologia, mercado editorial, afiliados)
+- [x] Comunidade: users, login/OAuth Google, comentários, cookies LGPD
+- [x] Newsletter digest 2x/dia (`/api/newsletter-digest-diario`)
+
 ### Curto prazo (0–30 dias)
 
-- [x] Mover token do robô para variável de ambiente (`ROBO_TOKEN`)
-- [ ] Agendar robô automaticamente no Render
-- [ ] Reaplicar ao Google AdSense com acervo de 30+ análises de qualidade
-- [ ] Cadastrar programas de afiliados (Binance, Amazon)
+- [ ] Agendar no Render: robô, capas, radar, macro-watch, traduzir, digest diário (manhã/tarde)
+- [ ] Configurar `SESSION_SECRET`, `IP_HASH_SALT` e `GOOGLE_OAUTH_*` em produção
+- [ ] Migrar crons restantes de `?token=` para `Authorization: Bearer` (e rotacionar se houve vazamento em logs)
+- [ ] Reaplicar ao Google AdSense / reconsideração Search Console (§11b)
+- [ ] Cadastrar programas de afiliados (Binance, Amazon) e preencher URLs no env
 
 ### Médio prazo (1–3 meses)
 
-- [ ] Newsletter ativa (Beehiiv ou Mailchimp)
+- [ ] Newsletter ativa em produção (Beehiiv/Mailchimp via webhook ou Resend)
 - [ ] Relatório semanal premium (assinatura)
 - [ ] Métricas de tráfego (Google Analytics / Plausible)
 - [ ] Painel admin para revisar artigos antes de publicar

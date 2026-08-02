@@ -8,9 +8,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from fastapi import FastAPI, Request, Response, HTTPException, Form
+from fastapi import FastAPI, Request, Response, HTTPException, Form, File, UploadFile
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 import uvicorn
 from dotenv import load_dotenv
@@ -33,7 +34,13 @@ from educational_guides import (
     get_guide_by_slug,
     guides_for_tag,
 )
-from newsletter_service import enqueue_urgency_alert, is_send_configured, send_urgency_alert, send_weekly_digest
+from newsletter_service import (
+    enqueue_urgency_alert,
+    is_send_configured,
+    send_daily_digest,
+    send_urgency_alert,
+    send_weekly_digest,
+)
 from monetization import get_monetization_config, get_contextual_affiliate
 from article_enrichment import (
     build_article_enrichment,
@@ -52,8 +59,13 @@ from i18n import (
     build_i18n_context,
     resolve_lang,
 )
+import community_auth as community
+from community_auth import CONSENT_COOKIE, SESSION_USER_KEY
 
 _ = load_dotenv()
+
+# Limiar alinhado ao sitemap / purge_thin_news — artigos abaixo recebem noindex.
+THIN_RESUMO_CHARS = 800
 
 FEED_BATCH = 8
 FEATURED_COUNT = 4
@@ -74,7 +86,8 @@ def _content_security_policy() -> str:
         (
             "script-src 'self' 'unsafe-inline' "
             "https://pagead2.googlesyndication.com https://cdn.jsdelivr.net "
-            "https://www.googletagmanager.com https://www.google-analytics.com"
+            "https://www.googletagmanager.com https://www.google-analytics.com "
+            "https://accounts.google.com"
         ),
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src 'self' https://fonts.gstatic.com data:",
@@ -82,11 +95,13 @@ def _content_security_policy() -> str:
         (
             "connect-src 'self' https://economia.awesomeapi.com.br "
             "https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net "
-            "https://www.google.com https://ep1.adtrafficquality.google"
+            "https://www.google.com https://ep1.adtrafficquality.google "
+            "https://accounts.google.com https://oauth2.googleapis.com"
         ),
         (
             "frame-src https://googleads.g.doubleclick.net "
-            "https://tpc.googlesyndication.com https://www.google.com"
+            "https://tpc.googlesyndication.com https://www.google.com "
+            "https://accounts.google.com"
         ),
     ]
     return "; ".join(directives)
@@ -128,15 +143,57 @@ async def _lifespan(_app: FastAPI):
 
 app = FastAPI(lifespan=_lifespan)
 
+# Sessão de usuário da comunidade (separada do ROBO_TOKEN).
+_https_only_sessions = (os.getenv("SESSION_HTTPS_ONLY", "true").strip().lower() not in ("0", "false", "no"))
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=community.session_secret(),
+    session_cookie="fn_session",
+    max_age=60 * 60 * 24 * 30,
+    same_site="lax",
+    https_only=_https_only_sessions and (os.getenv("RENDER", "") != "" or os.getenv("FORCE_SECURE_COOKIES", "") == "1"),
+)
+
 ARTICLE_IMAGES_DIR = os.getenv("ARTICLE_IMAGES_DIR", "static/images/articles")
 os.makedirs(ARTICLE_IMAGES_DIR, exist_ok=True)
 os.makedirs("static/images/articles", exist_ok=True)
+community.ensure_default_avatar()
 
 if os.path.exists("static"):
     app.mount("/static", CachedStaticFiles(directory="static"), name="static")
 if os.path.isdir(ARTICLE_IMAGES_DIR):
     app.mount("/media/articles", CachedStaticFiles(directory=ARTICLE_IMAGES_DIR), name="article_images")
 templates = Jinja2Templates(directory="templates")
+
+
+def _current_user(request: Request):
+    uid = request.session.get(SESSION_USER_KEY)
+    if not uid:
+        return None
+    try:
+        return community.find_user_by_id(get_db(), int(uid))
+    except Exception:
+        return None
+
+
+def _safe_next_url(raw: str | None, default: str = "/") -> str:
+    value = (raw or default).strip() or default
+    if not value.startswith("/") or value.startswith("//"):
+        return default
+    return value
+
+
+def _client_ip(request: Request) -> str | None:
+    forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    if forwarded:
+        return forwarded
+    if request.client:
+        return request.client.host
+    return None
+
+
+def _request_headers_map(request: Request) -> dict[str, str]:
+    return {k.lower(): v for k, v in request.headers.items()}
 
 
 @app.middleware("http")
@@ -162,7 +219,12 @@ CATEGORIAS = core.VALID_TAGS
 
 def _render(request: Request, name: str, context: dict[str, Any] | None = None, *, status_code: int = 200):
     """Renderiza template com i18n e persiste cookie de idioma quando ?lang= estiver presente."""
-    ctx = {"request": request, **build_i18n_context(request)}
+    ctx = {
+        "request": request,
+        **build_i18n_context(request),
+        "current_user": _current_user(request),
+        "google_oauth_enabled": community.google_oauth_configured(),
+    }
     if context:
         ctx.update(context)
     response = templates.TemplateResponse(
@@ -323,10 +385,8 @@ NEWS_SELECT_LEGACY = """
 
 def _fetch_news_by_id(client, noticia_id: int) -> QueryResult:
     """Busca notícia com colunas i18n; cai para SELECT legado se o schema estiver atrasado."""
-    try:
-        ensure_schema(client)
-    except Exception:
-        pass
+    # Não chama ensure_schema aqui: no hot path isso espera o lock do boot/startup
+    # e pode estourar timeout em /noticia enquanto o Turso migra.
     try:
         return client.execute(NEWS_SELECT + " WHERE id = ?", [noticia_id])
     except Exception:
@@ -527,28 +587,33 @@ def index(request: Request, categoria: str | None = None, q: str | None = None):
         headlines = _load_headline_news(categoria)
         editorial = _split_home_editorial(list(listing["news"]), headlines)
 
+    # Categorias vazias: não indexar. Busca/paginação já marcam noindex via i18n.
+    empty_category = bool(categoria and not q and not listing["news"])
+    render_ctx: dict[str, Any] = {
+        "news": listing["news"],
+        "headline_news": editorial["headline_news"],
+        "secondary_news": editorial["secondary_news"],
+        "trilha_news": editorial["trilha_news"],
+        "feed_news": editorial["feed_news"] if not q else listing["news"],
+        "categoria_ativa": categoria,
+        "category_guides": guides_for_tag(categoria) if categoria and not q else [],
+        "categorias": CATEGORIAS,
+        "q": q,
+        "has_more": listing["has_more"],
+        "next_offset": listing["next_offset"],
+        "feed_batch": FEED_BATCH,
+        "featured_count": FEATURED_COUNT,
+        "home_top_count": HOME_TOP_COUNT,
+        "monetization": get_monetization_config(),
+        "suggested_news": listing["suggested_news"],
+        "sparklines": sparklines,
+    }
+    if empty_category:
+        render_ctx["robots_noindex"] = True
     response = _render(
         request,
         "index.html",
-        {
-            "news": listing["news"],
-            "headline_news": editorial["headline_news"],
-            "secondary_news": editorial["secondary_news"],
-            "trilha_news": editorial["trilha_news"],
-            "feed_news": editorial["feed_news"] if not q else listing["news"],
-            "categoria_ativa": categoria,
-            "category_guides": guides_for_tag(categoria) if categoria and not q else [],
-            "categorias": CATEGORIAS,
-            "q": q,
-            "has_more": listing["has_more"],
-            "next_offset": listing["next_offset"],
-            "feed_batch": FEED_BATCH,
-            "featured_count": FEATURED_COUNT,
-            "home_top_count": HOME_TOP_COUNT,
-            "monetization": get_monetization_config(),
-            "suggested_news": listing["suggested_news"],
-            "sparklines": sparklines,
-        },
+        render_ctx,
     )
     response.headers["Cache-Control"] = "public, max-age=15, stale-while-revalidate=30"
     return response
@@ -630,15 +695,42 @@ def _render_noticia_page(
     if not fonte_url:
         fonte_url = source_homepage(fonte_nome, display[4] if len(display) > 4 else None)
 
-    enrichment = build_article_enrichment(
-        client,
-        noticia_id,
-        tag,
-        dados_mercado,
-        resumo=resumo,
-        published_at=display[7] if len(display) > 7 else None,
-        created_at=None,
-    )
+    try:
+        enrichment = build_article_enrichment(
+            client,
+            noticia_id,
+            tag,
+            dados_mercado,
+            resumo=resumo,
+            published_at=display[7] if len(display) > 7 else None,
+            created_at=None,
+        )
+    except Exception as exc:
+        # Página principal não pode cair por falha transitória Turso no enrichment.
+        print(f"Aviso: enrichment parcial em /noticia/{noticia_id}: {exc}", flush=True)
+        enrichment = {
+            "market_stats": {"pontos_chave": []},
+            "related_articles": [],
+            "acervo_stats": {"total": 0, "positivo": 0, "negativo": 0, "neutro": 0, "tom": "Neutro", "insight": "", "chart": []},
+            "historical_charts": [],
+            "before_after": None,
+            "relevance": None,
+            "trust": None,
+            "timeline": [],
+            "cenarios": [],
+            "perfil_investidor": {},
+            "glossario": [],
+            "faq": [],
+            "tabela_comparativa": None,
+            "lentes_analiticas": [],
+            "atualizacao": None,
+            "related_entities": [],
+            "cross_links": [],
+            "data_source_links": [],
+            "linked_resumo": "",
+            "linked_resumo_parts": [],
+            "periodo_analise": None,
+        }
     contextual_affiliate = get_contextual_affiliate(tag)
     reading_minutes = core.estimate_reading_minutes(resumo, impacto, contexto)
     internal_refs = _internal_refs_from_market(dados_mercado)
@@ -651,6 +743,21 @@ def _render_noticia_page(
     has_ja = _article_has_translation(noticia, "ja")
     hreflang_full = has_en or has_ja
     article_hreflang = build_hreflang_map(SITE_ORIGIN, path, {}, full=hreflang_full)
+
+    # Thin content: evita indexação de análises curtas (mesmo limiar do sitemap).
+    resumo_len = len(str(resumo or ""))
+    thin_article = resumo_len < THIN_RESUMO_CHARS
+
+    user = _current_user(request)
+    comments: list[dict[str, Any]] = []
+    try:
+        comments = community.list_comments(
+            get_db(),
+            int(noticia_id),
+            include_pending_for_user=int(user["id"]) if user else None,
+        )
+    except Exception as exc:
+        print(f"   [comments] listagem falhou id={noticia_id}: {exc}")
 
     response = _render(
         request,
@@ -671,10 +778,13 @@ def _render_noticia_page(
             "canonical_url": article_canonical,
             "hreflang_urls": article_hreflang,
             "hreflang_full": hreflang_full,
-            "robots_noindex": False,
+            "robots_noindex": thin_article,
             "published_iso": published_iso,
             "updated_iso": updated_iso,
             "content_translated": lang != "pt" and _article_has_translation(noticia, lang),
+            "comments": comments,
+            "comment_flash": request.query_params.get("comment_msg"),
+            "comment_flash_ok": request.query_params.get("comment_ok") == "1",
         },
     )
     response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=60"
@@ -708,12 +818,15 @@ def ver_artigo_educativo(request: Request, slug: str):
         raise HTTPException(status_code=404, detail="Artigo não encontrado")
 
     client = get_db()
-    try:
-        ensure_educational_guides(client)
-    except Exception:
-        pass
-
+    # Sync completo só no startup. Aqui só materializa se o guia ainda não existir
+    # (evita 4 UPDATEs Turso por pageview — causa KeyError/timeout em /artigo).
     noticia_id = find_guide_noticia_id(client, slug)
+    if not noticia_id:
+        try:
+            ensure_educational_guides(client)
+        except Exception:
+            pass
+        noticia_id = find_guide_noticia_id(client, slug)
     if not noticia_id:
         raise HTTPException(status_code=404, detail="Artigo não encontrado")
 
@@ -758,6 +871,20 @@ async def newsletter_signup(email: str = Form(...)):
 async def quem_somos(request: Request):
     return _render(request, "quem-somos.html")
 
+
+@app.get("/metodologia", response_class=HTMLResponse)
+def metodologia(request: Request):
+    return _render(
+        request,
+        "metodologia.html",
+        {
+            "canonical_path": "/metodologia",
+            "canonical_query": {},
+            "canonical_url": absolute_url(SITE_ORIGIN, "/metodologia"),
+        },
+    )
+
+
 @app.get("/privacidade", response_class=HTMLResponse)
 async def privacidade(request: Request):
     return _render(request, "privacidade.html")
@@ -769,7 +896,7 @@ async def termos(request: Request):
 
 @app.get("/mercado", response_class=HTMLResponse)
 def mercado_dashboard(request: Request):
-    """Painel público: Selic, IPCA, dólar, BTC + histórico/sparklines."""
+    """Painel público: Selic, IPCA, dólar, BTC + histórico/sparklines + links editoriais."""
     market = core.fetch_market_snapshot(blocking=False)
     bcb = core.fetch_bcb_snapshot(blocking=False)
     historico = core.fetch_market_historical()
@@ -791,6 +918,25 @@ def mercado_dashboard(request: Request):
         "btc": hist_30.get("Bitcoin (BTC/BRL)"),
     }
 
+    related_analyses: list[dict[str, Any]] = []
+    try:
+        rows = get_db().execute(
+            """
+            SELECT id, titulo, tag
+            FROM news
+            WHERE LENGTH(COALESCE(resumo, '')) >= ?
+            ORDER BY id DESC
+            LIMIT 8
+            """,
+            [THIN_RESUMO_CHARS],
+        ).rows
+        related_analyses = [
+            {"id": int(r[0]), "titulo": str(r[1] or ""), "tag": str(r[2] or "")}
+            for r in (rows or [])
+        ]
+    except Exception as exc:
+        print(f"   [mercado] related analyses: {exc}")
+
     response = _render(
         request,
         "mercado.html",
@@ -806,12 +952,217 @@ def mercado_dashboard(request: Request):
             "historico": historico,
             "monetization": get_monetization_config(),
             "categorias": CATEGORIAS,
+            "related_analyses": related_analyses,
             "collected_at": market.get("coletado_em")
             or (historico.get("coletado_em") if isinstance(historico, dict) else None),
         },
     )
     response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=120"
     return response
+
+
+# ==========================================
+# COMUNIDADE: login, cadastro, perfil, comentários
+# ==========================================
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    if _current_user(request):
+        return RedirectResponse(url="/perfil", status_code=303)
+    return _render(
+        request,
+        "login.html",
+        {
+            "next_url": _safe_next_url(request.query_params.get("next")),
+            "auth_error": request.query_params.get("erro"),
+            "robots_noindex": True,
+        },
+    )
+
+
+@app.post("/login")
+async def login_submit(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    next: str = Form("/"),
+):
+    user = community.authenticate_local(get_db(), email, password)
+    if not user:
+        return RedirectResponse(url="/login?erro=Credenciais+inválidas", status_code=303)
+    request.session[SESSION_USER_KEY] = int(user["id"])
+    return RedirectResponse(url=_safe_next_url(next, "/"), status_code=303)
+
+
+@app.get("/cadastro", response_class=HTMLResponse)
+def cadastro_page(request: Request):
+    if _current_user(request):
+        return RedirectResponse(url="/perfil", status_code=303)
+    return _render(
+        request,
+        "cadastro.html",
+        {"auth_error": request.query_params.get("erro"), "robots_noindex": True},
+    )
+
+
+@app.post("/cadastro")
+async def cadastro_submit(
+    request: Request,
+    name: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+):
+    client = get_db()
+    try:
+        if community.find_user_by_email(client, email):
+            return RedirectResponse(url="/cadastro?erro=E-mail+já+cadastrado", status_code=303)
+        user = community.create_user(client, name=name, email=email, password=password)
+    except ValueError as exc:
+        from urllib.parse import quote
+
+        return RedirectResponse(url=f"/cadastro?erro={quote(str(exc))}", status_code=303)
+    except Exception:
+        return RedirectResponse(url="/cadastro?erro=Não+foi+possível+criar+a+conta", status_code=303)
+    request.session[SESSION_USER_KEY] = int(user["id"])
+    return RedirectResponse(url="/perfil", status_code=303)
+
+
+@app.post("/logout")
+async def logout_submit(request: Request):
+    request.session.clear()
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.get("/perfil", response_class=HTMLResponse)
+def perfil_page(request: Request):
+    user = _current_user(request)
+    if not user:
+        return RedirectResponse(url="/login?next=/perfil", status_code=303)
+    return _render(
+        request,
+        "perfil.html",
+        {
+            "current_user": user,
+            "profile_flash": request.query_params.get("msg"),
+            "profile_flash_ok": request.query_params.get("ok") == "1",
+            "robots_noindex": True,
+        },
+    )
+
+
+@app.post("/perfil/avatar")
+async def perfil_avatar(request: Request, avatar: UploadFile = File(...)):
+    user = _current_user(request)
+    if not user:
+        return RedirectResponse(url="/login?next=/perfil", status_code=303)
+    data = await avatar.read()
+    try:
+        url = community.save_avatar_upload(int(user["id"]), avatar.filename or "avatar.jpg", data)
+        get_db().execute("UPDATE users SET avatar_url = ? WHERE id = ?", [url, int(user["id"])])
+    except ValueError as exc:
+        from urllib.parse import quote
+
+        return RedirectResponse(url=f"/perfil?ok=0&msg={quote(str(exc))}", status_code=303)
+    except Exception:
+        return RedirectResponse(url="/perfil?ok=0&msg=Falha+no+upload", status_code=303)
+    return RedirectResponse(url="/perfil?ok=1&msg=Avatar+atualizado", status_code=303)
+
+
+@app.get("/auth/google")
+def auth_google_start(request: Request):
+    if not community.google_oauth_configured():
+        raise HTTPException(status_code=503, detail="Google OAuth não configurado")
+    import secrets
+
+    state = secrets.token_urlsafe(24)
+    request.session["oauth_state"] = state
+    request.session["oauth_next"] = _safe_next_url(request.query_params.get("next"), "/")
+    return RedirectResponse(url=community.google_authorize_url(state), status_code=302)
+
+
+@app.get("/auth/google/callback")
+def auth_google_callback(request: Request, code: str | None = None, state: str | None = None):
+    if not community.google_oauth_configured():
+        raise HTTPException(status_code=503, detail="Google OAuth não configurado")
+    expected = request.session.get("oauth_state")
+    if not code or not state or not expected or state != expected:
+        return RedirectResponse(url="/login?erro=OAuth+inválido", status_code=303)
+    try:
+        info = community.exchange_google_code(code)
+        if not info.get("email") or not info.get("google_id"):
+            return RedirectResponse(url="/login?erro=Perfil+Google+incompleto", status_code=303)
+        user = community.link_or_create_google_user(
+            get_db(),
+            google_id=str(info["google_id"]),
+            email=str(info["email"]),
+            name=str(info.get("name") or ""),
+            picture=info.get("picture"),
+        )
+    except Exception:
+        return RedirectResponse(url="/login?erro=Falha+no+login+Google", status_code=303)
+    request.session.pop("oauth_state", None)
+    next_url = _safe_next_url(request.session.pop("oauth_next", None), "/")
+    request.session[SESSION_USER_KEY] = int(user["id"])
+    return RedirectResponse(url=next_url, status_code=303)
+
+
+@app.post("/noticia/{noticia_id}/comentarios")
+async def post_comment(
+    request: Request,
+    noticia_id: int,
+    body: str = Form(...),
+    parent_id: int | None = Form(None),
+):
+    user = _current_user(request)
+    if not user:
+        return RedirectResponse(url=f"/login?next=/noticia/{noticia_id}%23comentarios", status_code=303)
+    consent = community.parse_consent_cookie(request.cookies.get(CONSENT_COOKIE))
+    from urllib.parse import quote
+
+    try:
+        result = community.create_comment(
+            get_db(),
+            news_id=noticia_id,
+            user_id=int(user["id"]),
+            body=body,
+            parent_id=parent_id,
+            ip=_client_ip(request),
+            headers=_request_headers_map(request),
+            consent=consent,
+        )
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"/noticia/{noticia_id}?comment_ok=0&comment_msg={quote(str(exc))}#comentarios",
+            status_code=303,
+        )
+    except Exception:
+        return RedirectResponse(
+            url=f"/noticia/{noticia_id}?comment_ok=0&comment_msg={quote('Erro ao salvar')}#comentarios",
+            status_code=303,
+        )
+    if result.get("status") == "published":
+        msg = "Comentário publicado."
+        ok = "1"
+    else:
+        msg = "Comentário bloqueado pela moderação."
+        ok = "0"
+    return RedirectResponse(
+        url=f"/noticia/{noticia_id}?comment_ok={ok}&comment_msg={quote(msg)}#comentarios",
+        status_code=303,
+    )
+
+
+@app.post("/comentarios/{comment_id}/upvote")
+async def upvote_comment_route(
+    request: Request,
+    comment_id: int,
+    news_id: int = Form(...),
+):
+    user = _current_user(request)
+    if not user:
+        return RedirectResponse(url=f"/login?next=/noticia/{news_id}%23comentarios", status_code=303)
+    _ = community.upvote_comment(get_db(), comment_id, int(user["id"]))
+    return RedirectResponse(url=f"/noticia/{news_id}#comentarios", status_code=303)
 
 # ==========================================
 # ROTAS DE SEO E INTEGRAÇÕES
@@ -874,12 +1225,16 @@ def get_default_category_image(slug: str):
 
 @app.get("/robots.txt", response_class=Response)
 def get_robots_txt():
-    # Busca e paginação legada (?page=) não devem consumir crawl budget.
+    # Busca, paginação legada e áreas de conta não devem consumir crawl budget.
     content = (
         "User-agent: *\n"
         + "Allow: /\n"
         + "Disallow: /api/\n"
         + "Disallow: /ping\n"
+        + "Disallow: /login\n"
+        + "Disallow: /cadastro\n"
+        + "Disallow: /perfil\n"
+        + "Disallow: /auth/\n"
         + "Disallow: /*?q=\n"
         + "Disallow: /*?*q=\n"
         + "Disallow: /*?page=\n"
@@ -1030,6 +1385,8 @@ def get_sitemap():
     static_urls = [
         (absolute_url(SITE_ORIGIN, "/"), "daily", "1.0", today),
         (absolute_url(SITE_ORIGIN, "/quem-somos"), "monthly", "0.6", today),
+        (absolute_url(SITE_ORIGIN, "/metodologia"), "monthly", "0.7", today),
+        (absolute_url(SITE_ORIGIN, "/mercado"), "hourly", "0.8", today),
         (absolute_url(SITE_ORIGIN, "/privacidade"), "monthly", "0.3", today),
         (absolute_url(SITE_ORIGIN, "/termos"), "monthly", "0.3", today),
     ]
@@ -1197,6 +1554,19 @@ def newsletter_digest(request: Request, token: str | None = None):
         raise HTTPException(status_code=503, detail="Provedor de envio nao configurado")
     client = get_db()
     result = send_weekly_digest(client)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Falha no envio"))
+    return {"status": "Sucesso", **result}
+
+
+@app.get("/api/newsletter-digest-diario")
+def newsletter_digest_diario(request: Request, token: str | None = None):
+    """Digest 2x/dia: manchete (home_priority) + links das demais (cron manhã/tarde)."""
+    require_robo_auth(request, token)
+    if not is_send_configured():
+        raise HTTPException(status_code=503, detail="Provedor de envio nao configurado")
+    client = get_db()
+    result = send_daily_digest(client)
     if not result.get("ok"):
         raise HTTPException(status_code=400, detail=result.get("error", "Falha no envio"))
     return {"status": "Sucesso", **result}

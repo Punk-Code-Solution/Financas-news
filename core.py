@@ -3024,7 +3024,7 @@ def compute_home_priority_from_json(raw: str | dict[str, Any] | None) -> int:
     return compute_home_priority(obj)
 
 
-def backfill_home_priority(client, limit: int = 300) -> int:
+def backfill_home_priority(client, limit: int = 50) -> int:
     """Preenche home_priority em matérias antigas a partir de dados_mercado.urgencia."""
     try:
         result = client.execute(
@@ -3045,7 +3045,19 @@ def backfill_home_priority(client, limit: int = 300) -> int:
         priority = compute_home_priority_from_json(row[1])
         if priority <= 0:
             continue
-        client.execute("UPDATE news SET home_priority = ? WHERE id = ?", [priority, row[0]])
+        try:
+            client.execute(
+                "UPDATE news SET home_priority = ? WHERE id = ?",
+                [priority, row[0]],
+                max_attempts=1,
+            )
+        except TypeError:
+            client.execute(
+                "UPDATE news SET home_priority = ? WHERE id = ?",
+                [priority, row[0]],
+            )
+        except Exception:
+            continue
         updated += 1
     if updated:
         print(f"   [home_priority] backfill: {updated} matéria(s) atualizada(s).")

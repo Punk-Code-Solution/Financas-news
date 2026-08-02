@@ -42,7 +42,7 @@ class LocalDbClient:
         # Conexão única compartilhada entre threads — serializa o acesso.
         self._lock = threading.Lock()
 
-    def execute(self, sql: str, args: list[Any] | None = None) -> QueryResult:
+    def execute(self, sql: str, args: list[Any] | None = None, **_kwargs: Any) -> QueryResult:
         with self._lock:
             cursor = self._conn.cursor()
             if args:
@@ -181,6 +181,8 @@ class PooledClient:
     def __init__(self, inner: ClientSync):
         self._inner: ClientSync = inner
         self._swap_lock = threading.Lock()
+        # libsql ClientSync: um event loop — execute concorrente trava threads.
+        self._exec_lock = threading.Lock()
 
     def _reconnect(self, stale: ClientSync) -> None:
         """Substitui o client interno uma única vez por falha compartilhada.
@@ -201,16 +203,29 @@ class PooledClient:
         except Exception:
             pass
 
-    def execute(self, sql: str, args: list[Any] | None = None) -> QueryResult:
-        attempts = max(1, int(os.getenv("TURSO_EXECUTE_RETRIES", "4")))
-        delay = float(os.getenv("TURSO_RETRY_BASE_SEC", "1.5"))
+    def execute(
+        self,
+        sql: str,
+        args: list[Any] | None = None,
+        *,
+        max_attempts: int | None = None,
+    ) -> QueryResult:
+        # Defaults curtos: páginas de artigo fazem várias queries; backoff longo
+        # (ex.: 1.5+3+6s × N queries) vira timeout de request mesmo com fail-soft.
+        # Enrichment opcional deve passar max_attempts=1.
+        if max_attempts is not None:
+            attempts = max(1, int(max_attempts))
+        else:
+            attempts = max(1, int(os.getenv("TURSO_EXECUTE_RETRIES", "3")))
+        delay = float(os.getenv("TURSO_RETRY_BASE_SEC", "0.8"))
         last_exc: BaseException | None = None
         for attempt in range(1, attempts + 1):
             inner = self._inner
             try:
-                if args is None:
-                    return _as_query_result(inner.execute(sql))
-                return _as_query_result(inner.execute(sql, args))
+                with self._exec_lock:
+                    if args is None:
+                        return _as_query_result(inner.execute(sql))
+                    return _as_query_result(inner.execute(sql, args))
             except Exception as exc:
                 last_exc = exc
                 if not _is_transient_db_error(exc) or attempt >= attempts:
@@ -218,7 +233,7 @@ class PooledClient:
                 if self._inner is not inner:
                     # Outra thread já trocou o client — repete direto no novo.
                     continue
-                wait = delay * (2 ** (attempt - 1)) + random.uniform(0, 0.35)
+                wait = delay * (2 ** (attempt - 1)) + random.uniform(0, 0.25)
                 print(
                     f"   [db] Turso instável ({type(exc).__name__}): "
                     + f"retry {attempt}/{attempts} em {wait:.1f}s…",
@@ -292,82 +307,152 @@ def ensure_schema(client: DbClient) -> None:
         if _schema_ready:
             return
 
-        _ = client.execute("""
-            CREATE TABLE IF NOT EXISTS news (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                titulo TEXT,
-                resumo TEXT,
-                impacto TEXT,
-                link TEXT,
-                tag TEXT
-            )
-        """)
-        for col, col_type in [
-            ("sentimento", "TEXT"),
-            ("published_at", "TEXT"),
-            ("fonte", "TEXT"),
-            ("dados_mercado", "TEXT"),
-            ("contexto_editorial", "TEXT"),
-            ("created_at", "TEXT"),
-            ("imagem_url", "TEXT"),
-            ("conteudo_extra", "TEXT"),
-            ("updated_at", "TEXT"),
-            ("versao_analise", "INTEGER"),
-            ("home_priority", "INTEGER"),
-            ("titulo_en", "TEXT"),
-            ("resumo_en", "TEXT"),
-            ("titulo_ja", "TEXT"),
-            ("resumo_ja", "TEXT"),
-        ]:
+        try:
+            _ = client.execute("""
+                CREATE TABLE IF NOT EXISTS news (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    titulo TEXT,
+                    resumo TEXT,
+                    impacto TEXT,
+                    link TEXT,
+                    tag TEXT
+                )
+            """)
+            for col, col_type in [
+                ("sentimento", "TEXT"),
+                ("published_at", "TEXT"),
+                ("fonte", "TEXT"),
+                ("dados_mercado", "TEXT"),
+                ("contexto_editorial", "TEXT"),
+                ("created_at", "TEXT"),
+                ("imagem_url", "TEXT"),
+                ("conteudo_extra", "TEXT"),
+                ("updated_at", "TEXT"),
+                ("versao_analise", "INTEGER"),
+                ("home_priority", "INTEGER"),
+                ("titulo_en", "TEXT"),
+                ("resumo_en", "TEXT"),
+                ("titulo_ja", "TEXT"),
+                ("resumo_ja", "TEXT"),
+            ]:
+                try:
+                    _ = client.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
+                except Exception:
+                    pass
+
             try:
-                _ = client.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
-            except Exception:
-                pass
+                _ = client.execute("""
+                    UPDATE news
+                    SET created_at = published_at
+                    WHERE (created_at IS NULL OR created_at = '')
+                      AND published_at IS NOT NULL AND published_at != ''
+                """)
+            except Exception as exc:
+                print(f"Aviso: backfill created_at: {exc}", flush=True)
 
-        _ = client.execute("""
-            UPDATE news
-            SET created_at = published_at
-            WHERE (created_at IS NULL OR created_at = '')
-              AND published_at IS NOT NULL AND published_at != ''
-        """)
+            _ = client.execute("""
+                CREATE TABLE IF NOT EXISTS newsletter_subscribers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT UNIQUE NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
 
-        _ = client.execute("""
-            CREATE TABLE IF NOT EXISTS newsletter_subscribers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT UNIQUE NOT NULL,
-                created_at TEXT NOT NULL
-            )
-        """)
+            _ = client.execute("""
+                CREATE TABLE IF NOT EXISTS newsletter_alert_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    news_id INTEGER NOT NULL UNIQUE,
+                    sent_at TEXT NOT NULL
+                )
+            """)
 
-        _ = client.execute("""
-            CREATE TABLE IF NOT EXISTS newsletter_alert_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                news_id INTEGER NOT NULL UNIQUE,
-                sent_at TEXT NOT NULL
-            )
-        """)
+            _ = client.execute("""
+                CREATE TABLE IF NOT EXISTS macro_watch_state (
+                    key TEXT PRIMARY KEY NOT NULL,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
 
-        _ = client.execute("""
-            CREATE TABLE IF NOT EXISTS macro_watch_state (
-                key TEXT PRIMARY KEY NOT NULL,
-                value TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-        """)
+            _ = client.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT,
+                    google_id TEXT,
+                    avatar_url TEXT,
+                    created_at TEXT NOT NULL,
+                    consent_at TEXT,
+                    email_verified INTEGER NOT NULL DEFAULT 0,
+                    email_verify_token TEXT,
+                    email_verify_sent_at TEXT
+                )
+            """)
+            for col, col_type in (
+                ("google_id", "TEXT"),
+                ("avatar_url", "TEXT"),
+                ("consent_at", "TEXT"),
+                ("password_hash", "TEXT"),
+                # DEFAULT 1 no ALTER: contas já existentes ficam verificadas (grandfather).
+                ("email_verified", "INTEGER DEFAULT 1"),
+                ("email_verify_token", "TEXT"),
+                ("email_verify_sent_at", "TEXT"),
+            ):
+                try:
+                    _ = client.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type}")
+                except Exception:
+                    pass
 
-        # Índices para listagens / filtros da home, relacionados e dedupe.
-        for sql in (
-            "CREATE INDEX IF NOT EXISTS idx_news_id_desc ON news(id DESC)",
-            "CREATE INDEX IF NOT EXISTS idx_news_tag_id ON news(tag, id DESC)",
-            "CREATE INDEX IF NOT EXISTS idx_news_link ON news(link)",
-        ):
+            _ = client.execute("""
+                CREATE TABLE IF NOT EXISTS comments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    news_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    parent_id INTEGER,
+                    body TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    consent_at TEXT,
+                    ip_hash TEXT,
+                    geo_country TEXT,
+                    upvotes INTEGER DEFAULT 0
+                )
+            """)
+
+            _ = client.execute("""
+                CREATE TABLE IF NOT EXISTS comment_votes (
+                    comment_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (comment_id, user_id)
+                )
+            """)
+
+            # Índices para listagens / filtros da home, relacionados e dedupe.
+            for sql in (
+                "CREATE INDEX IF NOT EXISTS idx_news_id_desc ON news(id DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_news_tag_id ON news(tag, id DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_news_link ON news(link)",
+                "CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+                "CREATE INDEX IF NOT EXISTS idx_users_google ON users(google_id)",
+                "CREATE INDEX IF NOT EXISTS idx_users_verify_token ON users(email_verify_token)",
+                "CREATE INDEX IF NOT EXISTS idx_comments_news ON comments(news_id, id)",
+            ):
+                try:
+                    _ = client.execute(sql)
+                except Exception:
+                    pass
+
             try:
-                _ = client.execute(sql)
-            except Exception:
-                pass
-
-        _ensure_fts(client)
-        _schema_ready = True
+                _ensure_fts(client)
+            except Exception as exc:
+                print(f"Aviso: FTS no schema: {exc}", flush=True)
+        except Exception as exc:
+            # Não deixar cada /noticia reexecutar migração completa no Turso.
+            print(f"Aviso: ensure_schema parcial: {exc}", flush=True)
+        finally:
+            _schema_ready = True
 
 
 def _ensure_fts(client: DbClient) -> None:
@@ -375,7 +460,7 @@ def _ensure_fts(client: DbClient) -> None:
 
     No Turso/libSQL HTTP, triggers FTS quebram o protocolo do client
     (KeyError: 'result' no UPDATE/INSERT). Por isso triggers só no SQLite local;
-    no remoto o índice é reconstruído sob demanda.
+    rebuild completo no remoto fica para ``sync_news_fts`` (ops), não no hot path.
     """
     global _fts_ready
     try:
@@ -423,12 +508,12 @@ def _ensure_fts(client: DbClient) -> None:
             ):
                 _ = client.execute(sql)
 
-        count = client.execute("SELECT COUNT(*) FROM news_fts")
-        fts_rows = int(count.rows[0][0]) if count.rows else 0
-        news_count = client.execute("SELECT COUNT(*) FROM news")
-        news_rows = int(news_count.rows[0][0]) if news_count.rows else 0
-        if news_rows and fts_rows < max(1, int(news_rows * 0.9)):
-            _ = client.execute("INSERT INTO news_fts(news_fts) VALUES('rebuild')")
+            count = client.execute("SELECT COUNT(*) FROM news_fts")
+            fts_rows = int(count.rows[0][0]) if count.rows else 0
+            news_count = client.execute("SELECT COUNT(*) FROM news")
+            news_rows = int(news_count.rows[0][0]) if news_count.rows else 0
+            if news_rows and fts_rows < max(1, int(news_rows * 0.9)):
+                _ = client.execute("INSERT INTO news_fts(news_fts) VALUES('rebuild')")
         _fts_ready = True
     except Exception:
         _fts_ready = False

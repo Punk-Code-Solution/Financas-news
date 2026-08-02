@@ -24,7 +24,11 @@
     {% set meta_desc = (noticia[2] or '')|replace('\n', ' ')|trim %}
     {% if meta_desc|length > 160 %}{% set meta_desc = meta_desc[:157] ~ '…' %}{% endif %}
     <meta name="description" content="{{ meta_desc }}">
+    {% if robots_noindex %}
+    <meta name="robots" content="noindex, follow">
+    {% else %}
     <meta name="robots" content="max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+    {% endif %}
     {% include "partials/_seo_brand.html" %}
 
     <meta property="og:type" content="article" />
@@ -507,6 +511,9 @@
                     </div>
                 </div>
             </div>
+
+            {% include "partials/_comments.html" %}
+
             </div>
         </article>
         </div>
@@ -520,6 +527,7 @@
     </main>
 
     {% include "partials/_footer.html" %}
+    {% include "partials/_cookie_banner.html" %}
 
     <script>
         function setInitialThemeIcons() {

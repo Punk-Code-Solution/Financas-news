@@ -89,12 +89,35 @@
             </div>
         </section>
 
+        {% if related_analyses %}
+        <section class="mt-10 mb-6" aria-labelledby="mercado-analises">
+            <h2 id="mercado-analises" class="text-lg font-black text-gray-900 dark:text-white mb-2">Análises recentes com dados de mercado</h2>
+            <p class="text-sm text-gray-600 dark:text-slate-400 mb-4 max-w-3xl">
+                Os números acima ganham contexto nas análises editoriais do portal (Selic, IPCA, câmbio, cripto e impacto no bolso) — não são apenas um painel isolado.
+            </p>
+            <ul class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {% for item in related_analyses %}
+                <li>
+                    <a href="/noticia/{{ item.id }}?lang={{ lang }}" class="block rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-4 hover:border-blue-400 dark:hover:border-[#4ade80] transition">
+                        <span class="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-[#4ade80]">{{ item.tag }}</span>
+                        <p class="mt-1 text-sm font-bold text-gray-900 dark:text-white leading-snug">{{ item.titulo }}</p>
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+            <p class="mt-4 text-xs text-gray-500 dark:text-slate-500">
+                Metodologia: <a href="/metodologia?lang={{ lang }}" class="underline hover:text-blue-600 dark:hover:text-[#4ade80]">como produzimos análises originais</a>
+            </p>
+        </section>
+        {% endif %}
+
         <p class="text-center mt-8">
             <a href="/?lang={{ lang }}" class="text-sm font-bold text-blue-600 dark:text-[#4ade80] hover:underline">{{ t('back_home') }}</a>
         </p>
     </main>
 
     {% include "partials/_footer.html" %}
+    {% include "partials/_cookie_banner.html" %}
 
     <script id="market-charts-data" type="application/json">{{ charts | tojson }}</script>
     <script>

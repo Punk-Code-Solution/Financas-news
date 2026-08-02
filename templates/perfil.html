@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="{{ html_lang }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Perfil — Finanças News</title>
+    <meta name="robots" content="noindex, follow">
+    {% include "partials/_seo_brand.html" %}
+    <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
+    {% include "partials/_styles.html" %}
+    <script>
+        if (localStorage.getItem('color-theme') === 'dark') document.documentElement.classList.add('dark');
+    </script>
+</head>
+<body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 min-h-screen flex flex-col">
+    <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] py-4">
+        <div class="mx-auto w-full max-w-7xl px-4 flex justify-between items-center">
+            <a href="/?lang={{ lang }}" class="text-xl font-black tracking-tighter">
+                <span class="text-green-600 dark:text-[#4ade80]">Finanças</span><span class="text-gray-900 dark:text-white"> News</span>
+            </a>
+            <form method="post" action="/logout"><button type="submit" class="text-sm font-semibold text-gray-600 dark:text-slate-400">Sair</button></form>
+        </div>
+    </nav>
+    <main class="flex-grow flex items-center justify-center px-4 py-10">
+        <div class="w-full max-w-md space-y-6">
+            <h1 class="text-2xl font-black text-gray-900 dark:text-white">Meu perfil</h1>
+            {% if profile_flash %}
+            <p class="text-sm {% if profile_flash_ok %}text-green-600{% else %}text-red-600{% endif %}">{{ profile_flash }}</p>
+            {% endif %}
+            <div class="rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-6 shadow-sm flex items-center gap-4">
+                <img src="{{ current_user.avatar_url }}" alt="" width="72" height="72" class="rounded-full object-cover bg-slate-700">
+                <div>
+                    <p class="font-black text-gray-900 dark:text-white">{{ current_user.name }}</p>
+                    <p class="text-sm text-gray-500 dark:text-slate-400">{{ current_user.email }}</p>
+                </div>
+            </div>
+            <form method="post" action="/perfil/avatar" enctype="multipart/form-data" class="space-y-3 rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-6 shadow-sm">
+                <p class="text-sm font-bold text-gray-900 dark:text-white">Trocar avatar</p>
+                <p class="text-xs text-gray-500">JPG, PNG, WEBP ou GIF — máx. 512 KB.</p>
+                <input type="file" name="avatar" accept="image/jpeg,image/png,image/webp,image/gif" required
+                       class="block w-full text-sm text-gray-600 dark:text-slate-400">
+                <button type="submit" class="px-4 py-2 text-sm font-bold rounded-lg bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-950">Enviar</button>
+            </form>
+        </div>
+    </main>
+    {% include "partials/_footer.html" %}
+    {% include "partials/_cookie_banner.html" %}
+</body>
+</html>

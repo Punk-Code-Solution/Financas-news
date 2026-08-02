@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="{{ html_lang }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metodologia editorial — Finanças News</title>
+    <meta name="description" content="Como o Finanças News produz análises originais com dados do BCB e mercado — não republicamos RSS.">
+    {% include "partials/_seo_brand.html" %}
+    <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
+    {% include "partials/_hreflang.html" %}
+    {% include "partials/_styles.html" %}
+    <script>
+        if (localStorage.getItem('color-theme') === 'dark') document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+    </script>
+</head>
+<body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 min-h-screen flex flex-col">
+    {% include "partials/_market_ticker.html" %}
+    <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] py-4">
+        <div class="container mx-auto px-4 max-w-3xl flex justify-between items-center gap-3">
+            <a href="/?lang={{ lang }}" class="text-xl font-black tracking-tighter">
+                <span class="text-green-600 dark:text-[#4ade80]">{{ t('brand_finance') }}</span><span class="text-gray-900 dark:text-white">{{ t('brand_news') }}</span>
+            </a>
+            <a href="/quem-somos?lang={{ lang }}" class="text-sm font-semibold text-gray-600 dark:text-slate-400">{{ t('nav_about') }}</a>
+        </div>
+    </nav>
+    <main class="container mx-auto px-4 py-10 max-w-3xl flex-grow">
+        <p class="text-xs font-bold uppercase tracking-[0.2em] text-blue-600 dark:text-[#4ade80]">Transparência editorial</p>
+        <h1 class="mt-2 font-serif text-3xl md:text-4xl font-black text-gray-900 dark:text-white">Metodologia</h1>
+        <p class="mt-4 text-lg text-gray-700 dark:text-slate-300 leading-relaxed">
+            O Finanças News <strong class="text-gray-900 dark:text-white">não republica feeds RSS</strong>.
+            Fontes RSS e reportagens de terceiros servem apenas como ponto de partida factual;
+            o texto publicado é uma <strong class="text-gray-900 dark:text-white">análise editorial original</strong>
+            cruzada com dados oficiais e contexto do acervo.
+        </p>
+
+        <section class="mt-10 space-y-6">
+            <div>
+                <h2 class="text-xl font-bold text-blue-600 dark:text-[#4ade80] mb-2">1. Sinal factual</h2>
+                <p class="text-gray-700 dark:text-slate-300 leading-relaxed">Coleta multi-fonte (G1 Economia, InfoMoney, Cointelegraph, Investing, Exame e outras). Mantemos o link da reportagem original para transparência.</p>
+            </div>
+            <div>
+                <h2 class="text-xl font-bold text-blue-600 dark:text-[#4ade80] mb-2">2. Dados próprios citados</h2>
+                <p class="text-gray-700 dark:text-slate-300 leading-relaxed">Cruzamos Selic, IPCA e demais séries do Banco Central, cotações (AwesomeAPI) e histórico do portal. Números aparecem na análise, no painel <a href="/mercado?lang={{ lang }}" class="underline font-semibold text-blue-600 dark:text-[#4ade80]">/mercado</a> e no bloco “impacto no bolso”.</p>
+            </div>
+            <div>
+                <h2 class="text-xl font-bold text-blue-600 dark:text-[#4ade80] mb-2">3. Lentes e valor agregado</h2>
+                <p class="text-gray-700 dark:text-slate-300 leading-relaxed">Cada matéria traz tempo de leitura, lentes analíticas, FAQ, cenários e orientação prática — sinais de originalidade que vão além de um resumo genérico.</p>
+            </div>
+            <div>
+                <h2 class="text-xl font-bold text-blue-600 dark:text-[#4ade80] mb-2">4. Qualidade e thin content</h2>
+                <p class="text-gray-700 dark:text-slate-300 leading-relaxed">Artigos com corpo curto (&lt; 800 caracteres de análise) ficam fora do sitemap e podem receber <code class="text-sm">noindex</code>. Ferramenta operacional: <code class="text-sm">tools/purge_thin_news.py</code> (limiar alinhado ao sitemap).</p>
+            </div>
+            <div>
+                <h2 class="text-xl font-bold text-blue-600 dark:text-[#4ade80] mb-2">5. Afiliados</h2>
+                <p class="text-gray-700 dark:text-slate-300 leading-relaxed">Links de parceiros só aparecem <em>dentro</em> de páginas com análise editorial completa — nunca como landing só de CTA. Disclaimer de afiliado é exibido junto ao bloco.</p>
+            </div>
+        </section>
+
+        <p class="mt-10 text-sm text-gray-500 dark:text-slate-500">
+            Também em <a href="/quem-somos?lang={{ lang }}" class="underline">Quem somos</a> ·
+            <a href="/privacidade?lang={{ lang }}" class="underline">Privacidade</a>
+        </p>
+    </main>
+    {% include "partials/_footer.html" %}
+    {% include "partials/_cookie_banner.html" %}
+</body>
+</html>

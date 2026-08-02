@@ -86,6 +86,7 @@ def run() -> int:
         r = client.get("/robots.txt")
         check("robots: Disallow busca ?q=", "Disallow: /*?q=" in r.text)
         check("robots: Disallow paginação ?page=", "Disallow: /*?page=" in r.text)
+        check("robots: Disallow /login", "Disallow: /login" in r.text)
         check("robots: Sitemap", "Sitemap: https://financas-news.net.br/sitemap.xml" in r.text)
         check("robots: feed.xml", "/feed.xml" in r.text)
 
@@ -101,9 +102,13 @@ def run() -> int:
         check("CSP header", "default-src 'self'" in csp and "cdn.jsdelivr.net" in csp)
 
         # Páginas
-        for path in ["/", "/quem-somos", "/privacidade", "/termos", "/mercado"]:
+        for path in ["/", "/quem-somos", "/privacidade", "/termos", "/mercado", "/login", "/cadastro", "/metodologia"]:
             r = client.get(path)
             check(f"GET {path}", r.status_code == 200 and "FINAN" in r.text.upper(), f"status={r.status_code}")
+
+        r = client.get("/sitemap.xml")
+        check("sitemap inclui /mercado", r.status_code == 200 and "/mercado" in r.text)
+        check("sitemap inclui /metodologia", "/metodologia" in r.text)
 
         r = client.get("/mercado")
         check("Mercado: Selic/IPCA", "14.25" in r.text or "Selic" in r.text)

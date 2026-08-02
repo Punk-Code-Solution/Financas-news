@@ -120,6 +120,51 @@ def send_email(to: list[str], subject: str, html: str, text: str) -> dict[str, A
     return {"ok": False, "error": "Provedor indisponivel"}
 
 
+def build_verification_email(*, name: str, token: str, ttl_hours: int = 48) -> dict[str, str]:
+    safe_name = escape((name or "olá").strip() or "olá")
+    verify_url = f"{SITE_ORIGIN}/verificar-email?token={token}"
+    subject = "Confirme seu e-mail — Finanças News"
+    text = (
+        f"Olá, {name or 'olá'}!\n\n"
+        "Bem-vindo à comunidade Finanças News. Confirme seu e-mail para ativar a conta:\n\n"
+        f"{verify_url}\n\n"
+        f"O link expira em {ttl_hours} horas e só pode ser usado uma vez.\n"
+        "Se você não criou esta conta, ignore este e-mail.\n\n"
+        "— Equipe Finanças News"
+    )
+    html = f"""<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>{escape(subject)}</title></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" style="max-width:560px;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;">
+        <tr><td style="padding:28px 32px;">
+          <p style="margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#16a34a;">Finanças News</p>
+          <h1 style="margin:0 0 16px;font-size:22px;">Confirme seu e-mail</h1>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.6;">Olá, <strong>{safe_name}</strong>!</p>
+          <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#475569;">
+            Clique no botão abaixo para ativar sua conta na comunidade. O link expira em {ttl_hours} horas.
+          </p>
+          <p style="margin:0 0 24px;">
+            <a href="{escape(verify_url)}" style="display:inline-block;padding:12px 22px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;">
+              Verificar e-mail
+            </a>
+          </p>
+          <p style="margin:0;font-size:12px;line-height:1.5;color:#64748b;">Se o botão não funcionar, copie e cole este link:<br>{escape(verify_url)}</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+    return {"subject": subject, "text": text, "html": html, "verify_url": verify_url}
+
+
+def send_verification_email(*, email: str, name: str, token: str, ttl_hours: int = 48) -> dict[str, Any]:
+    payload = build_verification_email(name=name, token=token, ttl_hours=ttl_hours)
+    result = send_email([email], payload["subject"], payload["html"], payload["text"])
+    return {**result, "verify_url": payload["verify_url"]}
+
+
 def _format_macro_panel(bcb: dict[str, dict[str, Any]], market: dict[str, Any]) -> str:
     lines: list[str] = []
     selic = (bcb.get("Selic meta (% a.a.)") or {}).get("valor")
@@ -196,6 +241,140 @@ def send_weekly_digest(client) -> dict[str, Any]:
         return {"ok": False, "error": "Nenhum inscrito", "digest_preview": digest["subject"]}
     result = send_email(recipients, digest["subject"], digest["html"], digest["text"])
     return {**result, "recipients": len(recipients), "items": len(digest["items"])}
+
+
+DAILY_DIGEST_EXTRA = 8
+
+
+def build_daily_digest(client, *, extra_n: int = DAILY_DIGEST_EXTRA) -> dict[str, Any]:
+    """Digest 2x/dia: notícia principal (home_priority) + links das demais recentes."""
+    import core
+
+    main_row = client.execute(
+        """
+        SELECT id, titulo, resumo, tag,
+               COALESCE(home_priority, 0) AS prio,
+               COALESCE(NULLIF(published_at, ''), created_at) AS data_publicacao
+        FROM news
+        WHERE LENGTH(COALESCE(resumo, '')) >= 400
+        ORDER BY COALESCE(home_priority, 0) DESC, id DESC
+        LIMIT 1
+        """
+    ).rows
+    others = client.execute(
+        """
+        SELECT id, titulo, tag
+        FROM news
+        WHERE LENGTH(COALESCE(resumo, '')) >= 400
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        [max(1, extra_n) + 1],
+    ).rows
+
+    market = core.fetch_market_snapshot(blocking=False)
+    bcb = core.fetch_bcb_snapshot(blocking=False)
+    macro = _format_macro_panel(bcb, market)
+
+    headline: dict[str, str] | None = None
+    main_id: int | None = None
+    if main_row:
+        r = main_row[0]
+        main_id = int(r[0])
+        headline = {
+            "titulo": str(r[1] or ""),
+            "resumo": str(r[2] or "")[:400],
+            "tag": str(r[3] or ""),
+            "url": f"{SITE_ORIGIN}/noticia/{main_id}",
+        }
+
+    links: list[dict[str, str]] = []
+    for row in others or []:
+        nid = int(row[0])
+        if main_id is not None and nid == main_id:
+            continue
+        if len(links) >= max(1, extra_n):
+            break
+        links.append(
+            {
+                "titulo": str(row[1] or ""),
+                "tag": str(row[2] or ""),
+                "url": f"{SITE_ORIGIN}/noticia/{nid}",
+            }
+        )
+
+    period = "manhã" if datetime_hour_local() < 14 else "tarde"
+    subject = f"Finanças News — Destaque da {period}"
+    text_parts = [subject, "", f"Painel macro: {macro}", ""]
+    html_parts = [
+        f"<h1>{escape(subject)}</h1>",
+        f"<p><strong>Painel macro:</strong> {escape(macro)}</p>",
+    ]
+    if headline:
+        text_parts.extend(
+            [
+                "Notícia principal:",
+                f"{headline['titulo']} ({headline['tag']})",
+                headline["resumo"],
+                headline["url"],
+                "",
+            ]
+        )
+        html_parts.extend(
+            [
+                "<h2>Notícia principal</h2>",
+                f"<p><a href=\"{escape(headline['url'])}\"><strong>{escape(headline['titulo'])}</strong></a>"
+                f" <em>({escape(headline['tag'])})</em></p>",
+                f"<p>{escape(headline['resumo'])}</p>",
+            ]
+        )
+    if links:
+        text_parts.append("Outras análises:")
+        html_parts.append("<h2>Outras análises</h2><ul>")
+        for item in links:
+            text_parts.append(f"- {item['titulo']} ({item['tag']}) — {item['url']}")
+            html_parts.append(
+                f"<li><a href=\"{escape(item['url'])}\">{escape(item['titulo'])}</a>"
+                f" <em>({escape(item['tag'])})</em></li>"
+            )
+        html_parts.append("</ul>")
+    html_parts.append(f'<p><a href="{SITE_ORIGIN}">Abrir o portal</a></p>')
+
+    return {
+        "subject": subject,
+        "text": "\n".join(text_parts),
+        "html": "".join(html_parts),
+        "headline": headline,
+        "links": links,
+        "macro": macro,
+        "period": period,
+    }
+
+
+def datetime_hour_local() -> int:
+    from datetime import datetime
+
+    try:
+        from zoneinfo import ZoneInfo
+
+        return datetime.now(ZoneInfo("America/Sao_Paulo")).hour
+    except Exception:
+        return datetime.now().hour
+
+
+def send_daily_digest(client) -> dict[str, Any]:
+    digest = build_daily_digest(client)
+    recipients = _subscriber_emails(client)
+    if not recipients:
+        return {"ok": False, "error": "Nenhum inscrito", "digest_preview": digest["subject"]}
+    result = send_email(recipients, digest["subject"], digest["html"], digest["text"])
+    return {
+        **result,
+        "recipients": len(recipients),
+        "links": len(digest["links"]),
+        "has_headline": bool(digest["headline"]),
+        "period": digest["period"],
+    }
 
 
 def build_urgency_alert(
