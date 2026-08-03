@@ -12,12 +12,20 @@ from typing import Any
 
 import requests
 
-DIGEST_TOP_N = 5
+# Digests: no máximo 1–2 matérias de urgência Alta (home_priority).
+DIGEST_TOP_N = 2
+DIGEST_MIN_PRIORITY = 80  # alinhado a core.HOME_HEADLINE_MIN_PRIORITY
+DAILY_DIGEST_LOOKBACK_HOURS = 16
+WEEKLY_DIGEST_LOOKBACK_DAYS = 7
+# Compat legado (antes: 8 links extras no digest diário).
+DAILY_DIGEST_EXTRA = 0
 
 # Mensagem de UI quando o mailer falha ou não está configurado (cadastro / reenvio).
 MAIL_SEND_FAIL_USER_MSG = (
     "Não foi possível enviar o e-mail. Tente mais tarde ou contate o suporte."
 )
+
+BRAND_NAME = "Clareza Capital"
 
 
 def _env(key: str, default: str = "") -> str:
@@ -30,7 +38,13 @@ def site_origin() -> str:
 
 
 def newsletter_from() -> str:
-    return _env("NEWSLETTER_FROM", "newsletter@financas-news.net.br")
+    """Remetente com display name Clareza Capital (Resend/SMTP)."""
+    raw = _env("NEWSLETTER_FROM", "newsletter@financas-news.net.br")
+    if not raw:
+        return f"{BRAND_NAME} <newsletter@financas-news.net.br>"
+    if "<" in raw:
+        return raw
+    return f"{BRAND_NAME} <{raw}>"
 
 
 # Compat: módulos/testes que ainda importam constantes de módulo.
@@ -263,176 +277,7 @@ def _format_macro_panel(bcb: dict[str, dict[str, Any]], market: dict[str, Any]) 
     btc = market.get("Bitcoin (BTC/BRL)") or market.get("Bitcoin (BTC/BRL)")
     if isinstance(btc, dict) and btc.get("cotacao"):
         lines.append(f"BTC/BRL: {btc.get('cotacao')}")
-    return " | ".join(lines) if lines else "Painel macro indisponivel no momento."
-
-
-def build_weekly_digest(client, *, top_n: int = DIGEST_TOP_N) -> dict[str, Any]:
-    """Monta digest semanal: top N notícias + painel macro."""
-    import core
-
-    result = client.execute(
-        """
-        SELECT id, titulo, resumo, tag,
-               COALESCE(NULLIF(published_at, ''), created_at) AS data_publicacao
-        FROM news
-        ORDER BY id DESC LIMIT ?
-        """,
-        [max(1, top_n)],
-    )
-    rows = list(result.rows or [])
-    market = core.fetch_market_snapshot(blocking=False)
-    bcb = core.fetch_bcb_snapshot(blocking=False)
-    macro = _format_macro_panel(bcb, market)
-
-    items: list[dict[str, str]] = []
-    for row in rows:
-        nid = int(row[0])
-        titulo = str(row[1] or "")
-        resumo = str(row[2] or "")[:280]
-        tag = str(row[3] or "")
-        url = f"{SITE_ORIGIN}/noticia/{nid}"
-        items.append({"titulo": titulo, "resumo": resumo, "tag": tag, "url": url})
-
-    subject = "Clareza Capital — Resumo semanal do mercado"
-    text_parts = [subject, "", f"Painel macro: {macro}", "", "Destaques da semana:"]
-    html_parts = [
-        f"<h1>{escape(subject)}</h1>",
-        f"<p><strong>Painel macro:</strong> {escape(macro)}</p>",
-        "<h2>Destaques</h2><ul>",
-    ]
-    for item in items:
-        text_parts.append(f"- {item['titulo']} ({item['tag']})\n  {item['url']}")
-        html_parts.append(
-            f"<li><a href=\"{escape(item['url'])}\">{escape(item['titulo'])}</a>"
-            f" <em>({escape(item['tag'])})</em><br>{escape(item['resumo'])}</li>"
-        )
-    html_parts.append("</ul>")
-    html_parts.append(f'<p><a href="{SITE_ORIGIN}">Ver mais no portal</a></p>')
-
-    return {
-        "subject": subject,
-        "text": "\n".join(text_parts),
-        "html": "".join(html_parts),
-        "items": items,
-        "macro": macro,
-    }
-
-
-def send_weekly_digest(client) -> dict[str, Any]:
-    digest = build_weekly_digest(client)
-    recipients = _subscriber_emails(client)
-    if not recipients:
-        return {"ok": False, "error": "Nenhum inscrito", "digest_preview": digest["subject"]}
-    result = send_email(recipients, digest["subject"], digest["html"], digest["text"])
-    return {**result, "recipients": len(recipients), "items": len(digest["items"])}
-
-
-DAILY_DIGEST_EXTRA = 8
-
-
-def build_daily_digest(client, *, extra_n: int = DAILY_DIGEST_EXTRA) -> dict[str, Any]:
-    """Digest 2x/dia: notícia principal (home_priority) + links das demais recentes."""
-    import core
-
-    main_row = client.execute(
-        """
-        SELECT id, titulo, resumo, tag,
-               COALESCE(home_priority, 0) AS prio,
-               COALESCE(NULLIF(published_at, ''), created_at) AS data_publicacao
-        FROM news
-        WHERE LENGTH(COALESCE(resumo, '')) >= 400
-        ORDER BY COALESCE(home_priority, 0) DESC, id DESC
-        LIMIT 1
-        """
-    ).rows
-    others = client.execute(
-        """
-        SELECT id, titulo, tag
-        FROM news
-        WHERE LENGTH(COALESCE(resumo, '')) >= 400
-        ORDER BY id DESC
-        LIMIT ?
-        """,
-        [max(1, extra_n) + 1],
-    ).rows
-
-    market = core.fetch_market_snapshot(blocking=False)
-    bcb = core.fetch_bcb_snapshot(blocking=False)
-    macro = _format_macro_panel(bcb, market)
-
-    headline: dict[str, str] | None = None
-    main_id: int | None = None
-    if main_row:
-        r = main_row[0]
-        main_id = int(r[0])
-        headline = {
-            "titulo": str(r[1] or ""),
-            "resumo": str(r[2] or "")[:400],
-            "tag": str(r[3] or ""),
-            "url": f"{SITE_ORIGIN}/noticia/{main_id}",
-        }
-
-    links: list[dict[str, str]] = []
-    for row in others or []:
-        nid = int(row[0])
-        if main_id is not None and nid == main_id:
-            continue
-        if len(links) >= max(1, extra_n):
-            break
-        links.append(
-            {
-                "titulo": str(row[1] or ""),
-                "tag": str(row[2] or ""),
-                "url": f"{SITE_ORIGIN}/noticia/{nid}",
-            }
-        )
-
-    period = "manhã" if datetime_hour_local() < 14 else "tarde"
-    subject = f"Clareza Capital — Destaque da {period}"
-    text_parts = [subject, "", f"Painel macro: {macro}", ""]
-    html_parts = [
-        f"<h1>{escape(subject)}</h1>",
-        f"<p><strong>Painel macro:</strong> {escape(macro)}</p>",
-    ]
-    if headline:
-        text_parts.extend(
-            [
-                "Notícia principal:",
-                f"{headline['titulo']} ({headline['tag']})",
-                headline["resumo"],
-                headline["url"],
-                "",
-            ]
-        )
-        html_parts.extend(
-            [
-                "<h2>Notícia principal</h2>",
-                f"<p><a href=\"{escape(headline['url'])}\"><strong>{escape(headline['titulo'])}</strong></a>"
-                f" <em>({escape(headline['tag'])})</em></p>",
-                f"<p>{escape(headline['resumo'])}</p>",
-            ]
-        )
-    if links:
-        text_parts.append("Outras análises:")
-        html_parts.append("<h2>Outras análises</h2><ul>")
-        for item in links:
-            text_parts.append(f"- {item['titulo']} ({item['tag']}) — {item['url']}")
-            html_parts.append(
-                f"<li><a href=\"{escape(item['url'])}\">{escape(item['titulo'])}</a>"
-                f" <em>({escape(item['tag'])})</em></li>"
-            )
-        html_parts.append("</ul>")
-    html_parts.append(f'<p><a href="{SITE_ORIGIN}">Abrir o portal</a></p>')
-
-    return {
-        "subject": subject,
-        "text": "\n".join(text_parts),
-        "html": "".join(html_parts),
-        "headline": headline,
-        "links": links,
-        "macro": macro,
-        "period": period,
-    }
+    return " | ".join(lines) if lines else "Painel macro indisponível no momento."
 
 
 def datetime_hour_local() -> int:
@@ -446,8 +291,311 @@ def datetime_hour_local() -> int:
         return datetime.now().hour
 
 
+def _now_local():
+    from datetime import datetime
+
+    try:
+        from zoneinfo import ZoneInfo
+
+        return datetime.now(ZoneInfo("America/Sao_Paulo")).replace(tzinfo=None)
+    except Exception:
+        return datetime.now()
+
+
+def _privacy_url() -> str:
+    return f"{site_origin()}/privacidade"
+
+
+def _fetch_important_news(
+    client,
+    *,
+    max_items: int = DIGEST_TOP_N,
+    min_priority: int = DIGEST_MIN_PRIORITY,
+    lookback_hours: int,
+) -> list[dict[str, str]]:
+    """Seleciona até max_items matérias Alta (home_priority) na janela recente."""
+    import core
+
+    limit = max(20, max_items * 10)
+    try:
+        result = client.execute(
+            """
+            SELECT id, titulo, resumo, tag,
+                   COALESCE(home_priority, 0) AS prio,
+                   COALESCE(NULLIF(published_at, ''), created_at) AS data_publicacao
+            FROM news
+            WHERE COALESCE(home_priority, 0) >= ?
+              AND LENGTH(COALESCE(resumo, '')) >= 200
+            ORDER BY COALESCE(home_priority, 0) DESC, id DESC
+            LIMIT ?
+            """,
+            [min_priority, limit],
+        )
+    except Exception:
+        return []
+
+    cutoff = _now_local().timestamp() - max(1, lookback_hours) * 3600
+    items: list[dict[str, str]] = []
+    origin = site_origin()
+    for row in result.rows or []:
+        prio = int(row[4] or 0)
+        if prio < min_priority:
+            continue
+        published = core.parse_article_datetime(row[5] if len(row) > 5 else None)
+        if published is not None and published.timestamp() < cutoff:
+            continue
+        nid = int(row[0])
+        titulo = str(row[1] or "").strip()
+        if not titulo:
+            continue
+        resumo = str(row[2] or "").strip()
+        if len(resumo) > 320:
+            resumo = resumo[:317].rstrip() + "…"
+        items.append(
+            {
+                "titulo": titulo,
+                "resumo": resumo,
+                "tag": str(row[3] or "Economia"),
+                "url": f"{origin}/noticia/{nid}",
+                "priority": str(prio),
+            }
+        )
+        if len(items) >= max(1, max_items):
+            break
+    return items
+
+
+def _subject_from_items(items: list[dict[str, str]], *, fallback: str) -> str:
+    if not items:
+        return fallback
+    title = items[0]["titulo"].strip()
+    if len(items) == 1:
+        return f"{BRAND_NAME}: {title[:110]}"
+    return f"{BRAND_NAME}: {title[:70]} · e mais 1 destaque"
+
+
+def _digest_intro(items: list[dict[str, str]], *, kind: str) -> str:
+    n = len(items)
+    if kind == "weekly":
+        if n <= 1:
+            return (
+                "Selecionamos o destaque mais importante da semana — "
+                "urgência editorial Alta, com impacto direto no mercado."
+            )
+        return (
+            "Dois destaques de urgência Alta da semana: o essencial para acompanhar "
+            "sem ruído, com leitura objetiva."
+        )
+    # daily
+    period = "manhã" if datetime_hour_local() < 14 else "tarde"
+    if n <= 1:
+        return (
+            f"Um alerta da {period}: matéria de urgência Alta que vale sua atenção agora. "
+            "Priorizamos o que move o mercado — não a lista completa do dia."
+        )
+    return (
+        f"Dois pontos da {period} com urgência Alta. "
+        "Só o que mais importa neste momento, sem sobrecarregar sua caixa de entrada."
+    )
+
+
+def _lgpd_footer_text() -> str:
+    return (
+        f"Você recebe este e-mail por estar inscrito na newsletter do {BRAND_NAME}. "
+        f"Para exercer direitos LGPD (acesso, correção, eliminação ou revogação), "
+        f"consulte: {_privacy_url()}"
+    )
+
+
+def _render_digest_email(
+    *,
+    subject: str,
+    intro: str,
+    items: list[dict[str, str]],
+    macro: str,
+    eyebrow: str,
+) -> tuple[str, str]:
+    """Retorna (text, html) com layout limpo Clareza Capital + rodapé LGPD."""
+    origin = site_origin()
+    privacy = _privacy_url()
+    text_parts = [
+        subject,
+        "",
+        intro,
+        "",
+        f"Contexto de mercado: {macro}",
+        "",
+    ]
+    for i, item in enumerate(items, start=1):
+        text_parts.extend(
+            [
+                f"{i}. {item['titulo']} ({item['tag']})",
+                item["resumo"],
+                f"Ler: {item['url']}",
+                "",
+            ]
+        )
+    text_parts.extend([f"Portal: {origin}", "", _lgpd_footer_text()])
+
+    articles_html: list[str] = []
+    for item in items:
+        articles_html.append(
+            f"""
+          <tr><td style="padding:0 0 20px;">
+            <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;">
+              {escape(item['tag'])}
+            </p>
+            <h2 style="margin:0 0 10px;font-size:18px;line-height:1.35;color:#0f172a;">
+              <a href="{escape(item['url'])}" style="color:#0f172a;text-decoration:none;">{escape(item['titulo'])}</a>
+            </h2>
+            <p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#475569;">{escape(item['resumo'])}</p>
+            <a href="{escape(item['url'])}" style="display:inline-block;padding:10px 18px;background:#0f766e;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:700;font-size:13px;">
+              Ler análise completa
+            </a>
+          </td></tr>"""
+        )
+
+    html = f"""<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>{escape(subject)}</title></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+  <span style="display:none!important;visibility:hidden;opacity:0;height:0;width:0;overflow:hidden;">
+    {escape(intro[:140])}
+  </span>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" style="max-width:560px;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;">
+        <tr><td style="padding:28px 32px;">
+          <p style="margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#0f766e;">{escape(BRAND_NAME)}</p>
+          <p style="margin:0 0 6px;font-size:12px;color:#64748b;">{escape(eyebrow)}</p>
+          <h1 style="margin:0 0 14px;font-size:20px;font-weight:700;color:#0f172a;line-height:1.3;">{escape(subject)}</h1>
+          <p style="margin:0 0 18px;font-size:15px;line-height:1.6;color:#475569;">{escape(intro)}</p>
+          <p style="margin:0 0 22px;padding:12px 14px;background:#f1f5f9;border-radius:8px;font-size:13px;line-height:1.5;color:#334155;">
+            <strong>Contexto:</strong> {escape(macro)}
+          </p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            {"".join(articles_html)}
+          </table>
+          <hr style="border:none;border-top:1px solid #e2e8f0;margin:8px 0 16px;">
+          <p style="margin:0 0 8px;font-size:13px;">
+            <a href="{escape(origin)}" style="color:#0f766e;font-weight:700;text-decoration:none;">Abrir o portal {escape(BRAND_NAME)}</a>
+          </p>
+          <p style="margin:0;font-size:11px;line-height:1.55;color:#94a3b8;">
+            Você recebe este e-mail por estar inscrito na newsletter do {escape(BRAND_NAME)}.
+            Para exercer direitos LGPD (acesso, correção, eliminação ou revogação do consentimento),
+            acesse a <a href="{escape(privacy)}" style="color:#64748b;">política de privacidade</a>.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+    return "\n".join(text_parts), html
+
+
+def build_weekly_digest(client, *, top_n: int = DIGEST_TOP_N) -> dict[str, Any]:
+    """Digest semanal: no máximo 1–2 matérias de urgência Alta + painel macro."""
+    import core
+
+    items = _fetch_important_news(
+        client,
+        max_items=max(1, min(top_n, DIGEST_TOP_N)),
+        lookback_hours=WEEKLY_DIGEST_LOOKBACK_DAYS * 24,
+    )
+    market = core.fetch_market_snapshot(blocking=False)
+    bcb = core.fetch_bcb_snapshot(blocking=False)
+    macro = _format_macro_panel(bcb, market)
+    intro = _digest_intro(items, kind="weekly")
+    subject = _subject_from_items(
+        items,
+        fallback=f"{BRAND_NAME} — Resumo semanal do mercado",
+    )
+    text, html = _render_digest_email(
+        subject=subject,
+        intro=intro,
+        items=items,
+        macro=macro,
+        eyebrow="Resumo semanal · só o essencial",
+    )
+    return {
+        "subject": subject,
+        "text": text,
+        "html": html,
+        "items": items,
+        "macro": macro,
+        "skip_send": len(items) == 0,
+    }
+
+
+def send_weekly_digest(client) -> dict[str, Any]:
+    digest = build_weekly_digest(client)
+    if digest.get("skip_send"):
+        return {
+            "ok": True,
+            "skipped": True,
+            "reason": "sem noticias de alta importancia na janela",
+            "items": 0,
+        }
+    recipients = _subscriber_emails(client)
+    if not recipients:
+        return {"ok": False, "error": "Nenhum inscrito", "digest_preview": digest["subject"]}
+    result = send_email(recipients, digest["subject"], digest["html"], digest["text"])
+    return {**result, "recipients": len(recipients), "items": len(digest["items"])}
+
+
+def build_daily_digest(client, *, max_items: int = DIGEST_TOP_N, extra_n: int | None = None) -> dict[str, Any]:
+    """Digest (cron até 2x/dia): 1–2 matérias Alta na janela recente; sem lista longa."""
+    import core
+
+    # extra_n legado ignorado — volume reduzido de propósito.
+    _ = extra_n
+    cap = max(1, min(max_items, DIGEST_TOP_N))
+    items = _fetch_important_news(
+        client,
+        max_items=cap,
+        lookback_hours=DAILY_DIGEST_LOOKBACK_HOURS,
+    )
+    market = core.fetch_market_snapshot(blocking=False)
+    bcb = core.fetch_bcb_snapshot(blocking=False)
+    macro = _format_macro_panel(bcb, market)
+    period = "manhã" if datetime_hour_local() < 14 else "tarde"
+    intro = _digest_intro(items, kind="daily")
+    subject = _subject_from_items(
+        items,
+        fallback=f"{BRAND_NAME} — Destaque da {period}",
+    )
+    text, html = _render_digest_email(
+        subject=subject,
+        intro=intro,
+        items=items,
+        macro=macro,
+        eyebrow=f"Destaque da {period} · urgência Alta",
+    )
+    headline = items[0] if items else None
+    return {
+        "subject": subject,
+        "text": text,
+        "html": html,
+        "items": items,
+        "headline": headline,
+        "links": [],
+        "macro": macro,
+        "period": period,
+        "skip_send": len(items) == 0,
+    }
+
+
 def send_daily_digest(client) -> dict[str, Any]:
     digest = build_daily_digest(client)
+    if digest.get("skip_send"):
+        return {
+            "ok": True,
+            "skipped": True,
+            "reason": "sem noticias de alta importancia na janela",
+            "items": 0,
+            "links": 0,
+            "has_headline": False,
+            "period": digest["period"],
+        }
     recipients = _subscriber_emails(client)
     if not recipients:
         return {"ok": False, "error": "Nenhum inscrito", "digest_preview": digest["subject"]}
@@ -455,7 +603,8 @@ def send_daily_digest(client) -> dict[str, Any]:
     return {
         **result,
         "recipients": len(recipients),
-        "links": len(digest["links"]),
+        "items": len(digest["items"]),
+        "links": 0,
         "has_headline": bool(digest["headline"]),
         "period": digest["period"],
     }
@@ -468,21 +617,55 @@ def build_urgency_alert(
     resumo: str,
     priority: int,
 ) -> dict[str, str]:
-    subject = f"Alerta Clareza Capital — {titulo[:120]}"
-    url = f"{SITE_ORIGIN}/noticia/{news_id}"
+    _ = priority  # limiar aplicado em send_urgency_alert
+    origin = site_origin()
+    privacy = _privacy_url()
+    title = (titulo or "").strip() or "Atualização de mercado"
+    subject = f"{BRAND_NAME}: {title[:110]}"
+    url = f"{origin}/noticia/{news_id}"
+    summary = (resumo or "").strip()
+    if len(summary) > 320:
+        summary = summary[:317].rstrip() + "…"
+    intro = (
+        "Alerta de urgência Alta: publicamos uma análise que pode afetar decisões "
+        "no curto prazo. Leitura rápida abaixo."
+    )
     text = (
         f"{subject}\n\n"
-        f"Categoria: {tag}\n"
-        f"Prioridade editorial: {priority}\n\n"
-        f"{resumo[:400]}\n\n"
-        f"Leia: {url}"
+        f"{intro}\n\n"
+        f"{title} ({tag})\n"
+        f"{summary}\n\n"
+        f"Ler: {url}\n\n"
+        f"{_lgpd_footer_text()}"
     )
-    html = (
-        f"<h1>{escape(subject)}</h1>"
-        f"<p><strong>Categoria:</strong> {escape(tag)}</p>"
-        f"<p>{escape(resumo[:400])}</p>"
-        f'<p><a href="{escape(url)}">Ler matéria completa</a></p>'
-    )
+    html = f"""<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>{escape(subject)}</title></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" style="max-width:560px;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;">
+        <tr><td style="padding:28px 32px;">
+          <p style="margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#0f766e;">{escape(BRAND_NAME)}</p>
+          <p style="margin:0 0 8px;font-size:12px;font-weight:700;color:#b91c1c;">Alerta · urgência Alta</p>
+          <h1 style="margin:0 0 12px;font-size:20px;font-weight:700;line-height:1.3;">{escape(title)}</h1>
+          <p style="margin:0 0 10px;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.04em;">{escape(tag or "Economia")}</p>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#475569;">{escape(intro)}</p>
+          <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#334155;">{escape(summary)}</p>
+          <p style="margin:0 0 20px;">
+            <a href="{escape(url)}" style="display:inline-block;padding:12px 20px;background:#0f766e;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;">
+              Ler análise completa
+            </a>
+          </p>
+          <hr style="border:none;border-top:1px solid #e2e8f0;margin:8px 0 16px;">
+          <p style="margin:0;font-size:11px;line-height:1.55;color:#94a3b8;">
+            Você recebe este alerta por estar inscrito na newsletter do {escape(BRAND_NAME)}.
+            Direitos LGPD: <a href="{escape(privacy)}" style="color:#64748b;">política de privacidade</a>.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
     return {"subject": subject, "text": text, "html": html}
 
 

@@ -1780,12 +1780,14 @@ def _persist_generated_news(noticias_geradas: list[dict[str, Any]]) -> int:
 
 @app.get("/api/newsletter-digest")
 def newsletter_digest(request: Request, token: str | None = None):
-    """Digest semanal: top 5 + painel macro para inscritos (cron com ROBO_TOKEN)."""
+    """Digest semanal: 1–2 matérias Alta + painel macro (cron com ROBO_TOKEN)."""
     require_robo_auth(request, token)
     if not is_send_configured():
         raise HTTPException(status_code=503, detail="Provedor de envio nao configurado")
     client = get_db()
     result = send_weekly_digest(client)
+    if result.get("skipped"):
+        return {"status": "Ignorado", **result}
     if not result.get("ok"):
         raise HTTPException(status_code=400, detail=result.get("error", "Falha no envio"))
     return {"status": "Sucesso", **result}
@@ -1793,12 +1795,14 @@ def newsletter_digest(request: Request, token: str | None = None):
 
 @app.get("/api/newsletter-digest-diario")
 def newsletter_digest_diario(request: Request, token: str | None = None):
-    """Digest 2x/dia: manchete (home_priority) + links das demais (cron manhã/tarde)."""
+    """Digest até 2x/dia: 1–2 matérias Alta; não envia se não houver conteúdo importante."""
     require_robo_auth(request, token)
     if not is_send_configured():
         raise HTTPException(status_code=503, detail="Provedor de envio nao configurado")
     client = get_db()
     result = send_daily_digest(client)
+    if result.get("skipped"):
+        return {"status": "Ignorado", **result}
     if not result.get("ok"):
         raise HTTPException(status_code=400, detail=result.get("error", "Falha no envio"))
     return {"status": "Sucesso", **result}

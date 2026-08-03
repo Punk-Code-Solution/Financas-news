@@ -89,7 +89,7 @@ financas_auto/
 ├── core.py                 # Pipeline RSS → IA → imagem, radar, macro-watch, i18n IA
 ├── db.py                   # Conexão Turso, schema, FTS5, contexto editorial
 ├── monetization.py         # Receita + afiliados contextuais (env-driven)
-├── newsletter_service.py   # Digest semanal e alertas de urgência
+├── newsletter_service.py   # Digest (1–2 Alta) e alertas de urgência
 ├── article_enrichment.py   # Relacionados, entidades, painéis do artigo
 ├── educational_guides.py   # Guias evergreen (Selic, IPCA, câmbio, renda fixa)
 ├── i18n.py                 # PT/EN/JA, intros de categoria, canônicas
@@ -342,8 +342,8 @@ Todas as respostas recebem:
 | `GET /api/radar-semanal` | Gera o Radar da semana (análise própria do acervo; `force=1` regenera) |
 | `GET /api/macro-watch` | Compara Selic/IPCA com snapshot anterior; gera matéria se mudou |
 | `GET /api/traduzir-pendentes` | Traduz título+resumo pendentes para EN/JA (`limit`, default 10) |
-| `GET /api/newsletter-digest` | Envia digest semanal aos inscritos (exige provedor de envio) |
-| `GET /api/newsletter-digest-diario` | Digest 2x/dia: manchete (`home_priority`) + links das demais |
+| `GET /api/newsletter-digest` | Digest semanal: 1–2 matérias Alta; não envia se vazio |
+| `GET /api/newsletter-digest-diario` | Até 2x/dia: 1–2 matérias Alta (`home_priority` ≥ 80); skip se vazio |
 | `GET /api/newsletter-alerta` | Reenvio manual de alerta de urgência (`news_id` obrigatório) |
 | `POST /api/newsletter` | Captura de e-mail (local ou redirect externo) |
 | `GET /ping` | Health check |
@@ -379,13 +379,14 @@ TURSO_DATABASE_URL=       # URL libsql:// do Turso
 TURSO_AUTH_TOKEN=         # Token de autenticação Turso
 ```
 
-### Newsletter 2x/dia (cron sugerido)
+### Newsletter (cron sugerido)
 
 Agendar no Render (ou similar), com `Authorization: Bearer $ROBO_TOKEN`:
 
-- Manhã (ex. 08:00 America/Sao_Paulo): `GET /api/newsletter-digest-diario`
-- Tarde (ex. 17:00): `GET /api/newsletter-digest-diario`
+- Até 2×/dia (ex. 08:00 e 17:00 America/Sao_Paulo): `GET /api/newsletter-digest-diario`
 - Semanal (opcional): `GET /api/newsletter-digest`
+
+Cada digest inclui **no máximo 1–2** matérias de urgência Alta (`home_priority` ≥ 80). Se não houver conteúdo importante na janela, a API responde `Ignorado` e **não envia** e-mail. Assunto e layout usam a marca **Clareza Capital**; rodapé com link de privacidade (LGPD).
 
 ### Thin content
 
@@ -569,7 +570,7 @@ uvicorn main:app --reload
 - [x] Mitigações anti-spam Google (thin 800, metodologia, mercado editorial, afiliados)
 - [x] Comunidade: users, login/OAuth Google, comentários, cookies LGPD
 - [x] Verificação de e-mail no cadastro local (link + bloqueio de login)
-- [x] Newsletter digest 2x/dia (`/api/newsletter-digest-diario`)
+- [x] Newsletter digest 2x/dia (`/api/newsletter-digest-diario`) — máx. 1–2 Alta; skip se vazio
 
 ### Curto prazo (0–30 dias)
 
