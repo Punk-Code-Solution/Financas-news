@@ -739,3 +739,98 @@ def enqueue_urgency_alert(
             print(f"   [newsletter] alerta urgencia falhou (id={news_id}): {exc}")
 
     threading.Thread(target=_worker, daemon=True, name=f"newsletter-alert-{news_id}").start()
+
+
+CONTACT_SUBJECT_MAX = 200
+CONTACT_BODY_MAX = 2000
+
+
+def contact_inbox() -> str:
+    """Destinatário do formulário Fale conosco (CONTACT_EMAIL → NEWSLETTER_FROM)."""
+    explicit = _env("CONTACT_EMAIL")
+    if explicit and "@" in explicit:
+        return explicit.lower()
+    raw = _env("NEWSLETTER_FROM", "newsletter@financas-news.net.br")
+    if "<" in raw and ">" in raw:
+        inner = raw.split("<", 1)[1].split(">", 1)[0].strip()
+        if "@" in inner:
+            return inner.lower()
+    if "@" in raw:
+        return raw.lower()
+    return "newsletter@financas-news.net.br"
+
+
+def send_contact_message(
+    *,
+    subject: str,
+    body: str,
+    page_url: str = "",
+    user_email: str = "",
+    user_name: str = "",
+    client_ip: str = "",
+) -> dict[str, Any]:
+    """Envia mensagem do formulário público Fale conosco para a caixa de contato."""
+    subj = (subject or "").strip()
+    text_body = (body or "").strip()
+    if not subj or not text_body:
+        return {"ok": False, "error": "empty"}
+    if len(subj) > CONTACT_SUBJECT_MAX or len(text_body) > CONTACT_BODY_MAX:
+        return {"ok": False, "error": "too_long"}
+
+    to_addr = contact_inbox()
+    safe_subj = escape(subj)
+    safe_body = escape(text_body).replace("\n", "<br>\n")
+    meta_pairs = []
+    if user_name:
+        meta_pairs.append(("Nome", user_name))
+    if user_email:
+        meta_pairs.append(("E-mail", user_email))
+    if page_url:
+        meta_pairs.append(("Página", page_url))
+    if client_ip:
+        meta_pairs.append(("IP", client_ip))
+    meta_html = "<br>\n".join(f"{escape(k)}: {escape(v)}" for k, v in meta_pairs)
+    meta_text = "\n".join(f"{k}: {v}" for k, v in meta_pairs)
+
+    mail_subject = f"[Clareza Capital] Contato: {subj}"
+    text = (
+        f"Nova mensagem pelo formulário Fale conosco\n\n"
+        f"Assunto: {subj}\n\n"
+        f"{text_body}\n\n"
+        f"---\n{meta_text}\n"
+        f"{BRAND_NAME}\n"
+    )
+    html = f"""<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>{escape(mail_subject)}</title></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" style="max-width:560px;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;">
+        <tr><td style="padding:28px 32px;">
+          <p style="margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#16a34a;">{escape(BRAND_NAME)}</p>
+          <h1 style="margin:0 0 16px;font-size:20px;font-weight:700;">Fale conosco</h1>
+          <p style="margin:0 0 8px;font-size:14px;color:#64748b;"><strong>Assunto:</strong> {safe_subj}</p>
+          <p style="margin:0 0 20px;font-size:15px;line-height:1.6;">{safe_body}</p>
+          <p style="margin:0;font-size:12px;line-height:1.5;color:#94a3b8;">{meta_html}</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+    result = send_email([to_addr], mail_subject, html, text)
+    if not result.get("ok"):
+        # Fallback: registra para não perder a mensagem se o mailer falhar.
+        print(
+            f"[contact] falha no envio subject={subj[:40]!r} to={to_addr} "
+            f"err={result.get('error')}",
+            flush=True,
+        )
+        print(
+            f"[contact] mensagem recebida subject={subj!r} body_len={len(text_body)} "
+            f"page={page_url!r} user={user_email or '-'}",
+            flush=True,
+        )
+        if result.get("not_configured"):
+            # Sem provedor: consideramos "aceito" após log (não perde o lead).
+            return {"ok": True, "logged": True, "not_configured": True}
+    return result

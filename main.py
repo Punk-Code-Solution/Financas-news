@@ -35,8 +35,11 @@ from educational_guides import (
     guides_for_tag,
 )
 from newsletter_service import (
+    CONTACT_BODY_MAX,
+    CONTACT_SUBJECT_MAX,
     enqueue_urgency_alert,
     is_send_configured,
+    send_contact_message,
     send_daily_digest,
     send_urgency_alert,
     send_weekly_digest,
@@ -58,6 +61,7 @@ from i18n import (
     build_hreflang_map,
     build_i18n_context,
     resolve_lang,
+    translate as i18n_translate,
 )
 import community_auth as community
 from community_auth import CONSENT_COOKIE, SESSION_USER_KEY
@@ -868,6 +872,65 @@ async def newsletter_signup(email: str = Form(...)):
     client.close()
     return RedirectResponse(url="/?newsletter=ok", status_code=303)
 
+
+CONTACT_FORM_COOLDOWN_SEC = 60
+
+
+@app.post("/fale-conosco")
+async def fale_conosco(
+    request: Request,
+    subject: str = Form(""),
+    body: str = Form(""),
+    page_url: str = Form(""),
+):
+    """Formulário público Fale conosco (AJAX JSON). Sem login obrigatório."""
+    lang = resolve_lang(request)
+    subj = (subject or "").strip()
+    text = (body or "").strip()
+    page = (page_url or "").strip()[:500]
+    if page and not (page.startswith("/") or page.startswith(SITE_ORIGIN)):
+        page = ""
+
+    last_at = request.session.get("contact_last_at")
+    now = time.time()
+    if isinstance(last_at, (int, float)) and (now - float(last_at)) < CONTACT_FORM_COOLDOWN_SEC:
+        return JSONResponse(
+            {"ok": False, "error": i18n_translate(lang, "contact_rate_limited")},
+            status_code=429,
+        )
+
+    if not subj or not text:
+        return JSONResponse(
+            {"ok": False, "error": i18n_translate(lang, "contact_required")},
+            status_code=400,
+        )
+    if len(subj) > CONTACT_SUBJECT_MAX or len(text) > CONTACT_BODY_MAX:
+        return JSONResponse(
+            {"ok": False, "error": i18n_translate(lang, "contact_too_long")},
+            status_code=400,
+        )
+
+    user = _current_user(request)
+    result = send_contact_message(
+        subject=subj,
+        body=text,
+        page_url=page,
+        user_email=str(user.get("email") or "") if user else "",
+        user_name=str(user.get("name") or "") if user else "",
+        client_ip=_client_ip(request) or "",
+    )
+    if not result.get("ok"):
+        return JSONResponse(
+            {"ok": False, "error": i18n_translate(lang, "contact_error")},
+            status_code=502,
+        )
+
+    request.session["contact_last_at"] = now
+    return JSONResponse(
+        {"ok": True, "message": i18n_translate(lang, "contact_success")},
+    )
+
+
 @app.get("/quem-somos", response_class=HTMLResponse)
 async def quem_somos(request: Request):
     return _render(request, "quem-somos.html")
@@ -1464,6 +1527,7 @@ def get_robots_txt():
         + "Disallow: /login\n"
         + "Disallow: /cadastro\n"
         + "Disallow: /perfil\n"
+        + "Disallow: /fale-conosco\n"
         + "Disallow: /verificar-email\n"
         + "Disallow: /reenviar-verificacao\n"
         + "Disallow: /auth/\n"

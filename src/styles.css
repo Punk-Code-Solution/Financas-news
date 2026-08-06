@@ -13,7 +13,8 @@
   .prose p {
     @apply mb-4;
   }
-  .not-prose {
-    /* Evita herança tipográfica do bloco .prose */
+  .not-prose,
+  .not-prose p {
+    margin-bottom: 0;
   }
 }

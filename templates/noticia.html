@@ -481,36 +481,223 @@
                 {% endif %}
             </div>
 
-            <div class="px-6 md:px-12 pb-6 md:pb-12 pt-6 mt-2">
-                <div class="rounded-2xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-[#0f172a] p-5 md:p-6">
-                    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-                        <div class="flex items-start gap-4 min-w-0">
-                            <span class="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-100 dark:bg-slate-800 text-blue-700 dark:text-[#4ade80] font-black text-sm">FN</span>
-                            <div>
-                                <p class="text-base font-black text-gray-900 dark:text-white">{{ t('analysis_team') }}</p>
-                                <div class="mt-3 flex flex-wrap gap-2">
-                                    {% for src in enrichment.data_source_links or [] %}
-                                    <a href="{{ src.url }}" {% if src.externo %}target="_blank" rel="noopener noreferrer"{% endif %}
-                                       class="text-[10px] font-bold uppercase px-2.5 py-1 rounded-full bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-400 hover:border-blue-400 dark:hover:border-[#4ade80] hover:text-blue-600 dark:hover:text-[#4ade80] transition">
-                                        {{ src.nome }}
-                                    </a>
-                                    {% endfor %}
-                                    {% if noticia[5] %}
-                                    <a href="/?categoria={{ noticia[5]|urlencode }}&lang={{ lang }}" class="text-[10px] font-bold uppercase px-2.5 py-1 rounded-full bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-400 hover:border-blue-400 dark:hover:border-[#4ade80] hover:text-blue-600 dark:hover:text-[#4ade80] transition">
-                                        {{ tr_tag(noticia[5]) }}
-                                    </a>
-                                    {% endif %}
-                                </div>
+            <div class="px-6 md:px-12 pb-6 md:pb-12 pt-6 mt-2 not-prose">
+                <div class="fn-team-card">
+                    <div class="fn-team-card__main">
+                        <span class="fn-team-card__avatar" aria-hidden="true">CC</span>
+                        <div class="fn-team-card__meta">
+                            <p class="fn-team-card__title">{{ t('analysis_team') }}</p>
+                            <div class="fn-team-card__tags">
+                                {% for src in enrichment.data_source_links or [] %}
+                                <a href="{{ src.url }}" {% if src.externo %}target="_blank" rel="noopener noreferrer"{% endif %}
+                                   class="fn-team-card__tag">
+                                    {{ src.nome }}
+                                </a>
+                                {% endfor %}
+                                {% if noticia[5] %}
+                                <a href="/?categoria={{ noticia[5]|urlencode }}&lang={{ lang }}" class="fn-team-card__tag">
+                                    {{ tr_tag(noticia[5]) }}
+                                </a>
+                                {% endif %}
                             </div>
                         </div>
+                    </div>
+                    <div class="fn-team-card__actions">
+                        <button type="button" id="fn-contact-open"
+                           class="fn-team-card__btn fn-team-card__btn--outline"
+                           title="{{ t('contact_us') }}"
+                           aria-haspopup="dialog"
+                           aria-controls="fn-contact-modal">
+                            {{ t('contact_us') }}
+                        </button>
                         {% if fonte_url %}
-                        <a href="{{ fonte_url }}" target="_blank" rel="noopener noreferrer" class="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-950 text-sm font-bold hover:bg-blue-700 dark:hover:bg-emerald-400 transition shadow-sm" title="{{ t('open_original') }}">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                        <a href="{{ fonte_url }}" target="_blank" rel="noopener noreferrer"
+                           class="fn-team-card__btn fn-team-card__btn--primary"
+                           title="{{ t('open_original') }}">
+                            <svg class="fn-team-card__btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
                             {{ t('see_on_source', source=fonte_nome or t('original_site')) }}
                         </a>
                         {% endif %}
                     </div>
                 </div>
+                <style>
+                    /* Layout do card da equipe — CSS próprio (não depende do purge do Tailwind) */
+                    .fn-team-card {
+                        display: flex;
+                        flex-direction: column;
+                        align-items: stretch;
+                        gap: 1.25rem;
+                        padding: 1.25rem;
+                        border-radius: 1rem;
+                        border: 1px solid #e5e7eb;
+                        background: #f9fafb;
+                        width: 100%;
+                        box-sizing: border-box;
+                    }
+                    .dark .fn-team-card {
+                        border-color: #334155;
+                        background: #0f172a;
+                    }
+                    @media (min-width: 768px) {
+                        .fn-team-card {
+                            flex-direction: row;
+                            flex-wrap: nowrap;
+                            align-items: center;
+                            justify-content: space-between;
+                            padding: 1.5rem;
+                            gap: 1.5rem;
+                        }
+                    }
+                    .fn-team-card__main {
+                        display: flex;
+                        align-items: flex-start;
+                        gap: 1rem;
+                        flex: 1 1 auto;
+                        min-width: 0;
+                        max-width: 100%;
+                    }
+                    .fn-team-card__avatar {
+                        display: inline-flex;
+                        flex-shrink: 0;
+                        align-items: center;
+                        justify-content: center;
+                        width: 3rem;
+                        height: 3rem;
+                        border-radius: 9999px;
+                        background: #dbeafe;
+                        color: #1d4ed8;
+                        font-size: 0.875rem;
+                        font-weight: 900;
+                    }
+                    .dark .fn-team-card__avatar {
+                        background: #1e293b;
+                        color: #4ade80;
+                    }
+                    .fn-team-card__meta {
+                        flex: 1 1 auto;
+                        min-width: 0;
+                    }
+                    .fn-team-card .fn-team-card__title {
+                        margin: 0;
+                        font-size: 1rem;
+                        font-weight: 900;
+                        line-height: 1.35;
+                        color: #111827;
+                        overflow-wrap: anywhere;
+                    }
+                    @media (min-width: 768px) {
+                        .fn-team-card .fn-team-card__title {
+                            font-size: 1.125rem;
+                            overflow-wrap: break-word;
+                        }
+                    }
+                    .dark .fn-team-card__title { color: #fff; }
+                    .fn-team-card__tags {
+                        display: flex;
+                        flex-direction: row;
+                        flex-wrap: wrap;
+                        align-items: center;
+                        gap: 0.5rem;
+                        margin-top: 0.75rem;
+                    }
+                    .fn-team-card__tag {
+                        display: inline-flex;
+                        align-items: center;
+                        flex: 0 0 auto;
+                        padding: 0.25rem 0.625rem;
+                        border-radius: 9999px;
+                        border: 1px solid #e5e7eb;
+                        background: #fff;
+                        color: #4b5563;
+                        font-size: 10px;
+                        font-weight: 700;
+                        text-transform: uppercase;
+                        text-decoration: none;
+                        line-height: 1.25;
+                        transition: border-color .15s, color .15s;
+                    }
+                    .dark .fn-team-card__tag {
+                        background: #1e293b;
+                        border-color: #475569;
+                        color: #94a3b8;
+                    }
+                    .fn-team-card__tag:hover {
+                        border-color: #60a5fa;
+                        color: #2563eb;
+                    }
+                    .dark .fn-team-card__tag:hover {
+                        border-color: #4ade80;
+                        color: #4ade80;
+                    }
+                    .fn-team-card__actions {
+                        display: flex;
+                        flex-direction: column;
+                        align-items: stretch;
+                        gap: 0.75rem;
+                        flex: 0 0 auto;
+                        width: 100%;
+                    }
+                    .fn-team-card__actions > * {
+                        width: 100%;
+                    }
+                    @media (min-width: 640px) {
+                        .fn-team-card__actions {
+                            flex-direction: row;
+                            flex-wrap: wrap;
+                            align-items: center;
+                            width: auto;
+                        }
+                        .fn-team-card__actions > * {
+                            width: auto;
+                        }
+                    }
+                    .fn-team-card__btn {
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 0.5rem;
+                        padding: 0.75rem 1.25rem;
+                        border-radius: 0.75rem;
+                        font-size: 0.875rem;
+                        font-weight: 700;
+                        line-height: 1.25;
+                        white-space: nowrap;
+                        text-decoration: none;
+                        cursor: pointer;
+                        border: none;
+                        box-sizing: border-box;
+                        transition: background-color .15s, border-color .15s;
+                    }
+                    .fn-team-card__btn-icon {
+                        width: 1rem;
+                        height: 1rem;
+                        flex-shrink: 0;
+                    }
+                    .fn-team-card__btn--outline {
+                        border: 1px solid #2563eb;
+                        background: #fff;
+                        color: #2563eb;
+                    }
+                    .dark .fn-team-card__btn--outline {
+                        border-color: #4ade80;
+                        background: transparent;
+                        color: #4ade80;
+                    }
+                    .fn-team-card__btn--outline:hover { background: #eff6ff; }
+                    .dark .fn-team-card__btn--outline:hover { background: #1e293b; }
+                    .fn-team-card__btn--primary {
+                        background: #2563eb;
+                        color: #fff;
+                        box-shadow: 0 1px 2px rgba(0,0,0,.05);
+                    }
+                    .dark .fn-team-card__btn--primary {
+                        background: #4ade80;
+                        color: #020617;
+                    }
+                    .fn-team-card__btn--primary:hover { background: #1d4ed8; }
+                    .dark .fn-team-card__btn--primary:hover { background: #34d399; }
+                </style>
+                {% include "partials/_contact_modal.html" %}
             </div>
 
             {% include "partials/_comments.html" %}

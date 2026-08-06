@@ -1,0 +1,298 @@
+{# Modal Fale conosco — formulário público (sem login). #}
+<div id="fn-contact-modal" class="fn-contact-modal" hidden role="dialog" aria-modal="true" aria-labelledby="fn-contact-modal-title">
+    <div class="fn-contact-modal__backdrop" data-fn-contact-close></div>
+    <div class="fn-contact-modal__card">
+        <div class="fn-contact-modal__head">
+            <h2 id="fn-contact-modal-title" class="fn-contact-modal__title">{{ t('contact_us') }}</h2>
+            <button type="button" class="fn-contact-modal__close" data-fn-contact-close aria-label="{{ t('contact_close') }}">&times;</button>
+        </div>
+        <form id="fn-contact-form" method="post" action="/fale-conosco" class="fn-contact-modal__form" novalidate>
+            <input type="hidden" name="page_url" id="fn-contact-page-url" value="">
+            <div class="fn-contact-modal__field">
+                <label class="fn-contact-modal__label" for="fn-contact-subject">{{ t('contact_subject') }}</label>
+                <input id="fn-contact-subject" name="subject" type="text" maxlength="200" required
+                       autocomplete="off"
+                       placeholder="{{ t('contact_subject_placeholder') }}"
+                       class="fn-contact-modal__input">
+                <span id="fn-contact-subject-count" class="fn-contact-modal__count" aria-live="polite">0/200</span>
+            </div>
+            <div class="fn-contact-modal__field">
+                <label class="fn-contact-modal__label" for="fn-contact-body">{{ t('contact_description') }}</label>
+                <textarea id="fn-contact-body" name="body" maxlength="2000" required rows="6"
+                          placeholder="{{ t('contact_description_placeholder') }}"
+                          class="fn-contact-modal__textarea"></textarea>
+                <span id="fn-contact-body-count" class="fn-contact-modal__count" aria-live="polite">0/2000</span>
+            </div>
+            <p id="fn-contact-msg" class="fn-contact-modal__msg" role="status" aria-live="polite"></p>
+            <div class="fn-contact-modal__actions">
+                <button type="button" class="fn-contact-modal__btn fn-contact-modal__btn--ghost" data-fn-contact-close>
+                    {{ t('contact_cancel') }}
+                </button>
+                <button type="submit" id="fn-contact-submit" class="fn-contact-modal__btn fn-contact-modal__btn--primary"
+                        data-label-send="{{ t('contact_send') }}"
+                        data-label-sending="{{ t('contact_sending') }}">
+                    {{ t('contact_send') }}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+<style>
+.fn-contact-modal[hidden] { display: none !important; }
+.fn-contact-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+.fn-contact-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.55);
+}
+.fn-contact-modal__card {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 26rem;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 1rem;
+    padding: 1.25rem;
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.2);
+}
+.dark .fn-contact-modal__card {
+    background: #1e293b;
+    border-color: #334155;
+}
+.fn-contact-modal__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+.fn-contact-modal__title {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #0f172a;
+}
+.dark .fn-contact-modal__title { color: #f8fafc; }
+.fn-contact-modal__close {
+    border: none;
+    background: transparent;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    color: #64748b;
+}
+.fn-contact-modal__field { margin-bottom: 0.85rem; }
+.fn-contact-modal__label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 0.3rem;
+}
+.dark .fn-contact-modal__label { color: #e2e8f0; }
+.fn-contact-modal__count {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #94a3b8;
+    text-align: right;
+    white-space: nowrap;
+}
+.fn-contact-modal__input,
+.fn-contact-modal__textarea {
+    display: block;
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.6rem;
+    padding: 0.55rem 0.7rem;
+    font-size: 0.875rem;
+    color: #0f172a;
+    background: #fff;
+    box-sizing: border-box;
+}
+.fn-contact-modal__textarea {
+    resize: vertical;
+    min-height: 7rem;
+    line-height: 1.45;
+}
+.dark .fn-contact-modal__input,
+.dark .fn-contact-modal__textarea {
+    background: #0f172a;
+    border-color: #475569;
+    color: #f8fafc;
+}
+.fn-contact-modal__input:focus,
+.fn-contact-modal__textarea:focus {
+    outline: 2px solid #2563eb;
+    outline-offset: 1px;
+}
+.dark .fn-contact-modal__input:focus,
+.dark .fn-contact-modal__textarea:focus {
+    outline-color: #4ade80;
+}
+.fn-contact-modal__msg {
+    margin: 0 0 0.75rem;
+    font-size: 0.75rem;
+    min-height: 1rem;
+}
+.fn-contact-modal__msg.is-ok { color: #16a34a; }
+.fn-contact-modal__msg.is-err { color: #dc2626; }
+.fn-contact-modal__actions {
+    display: flex;
+    gap: 0.6rem;
+    justify-content: flex-end;
+}
+.fn-contact-modal__btn {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 0.6rem;
+    padding: 0.55rem 0.9rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+.fn-contact-modal__btn:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+.fn-contact-modal__btn--primary {
+    background: #2563eb;
+    color: #fff;
+}
+.dark .fn-contact-modal__btn--primary {
+    background: #4ade80;
+    color: #0f172a;
+}
+.fn-contact-modal__btn--ghost {
+    background: transparent;
+    border-color: #cbd5e1;
+    color: #475569;
+}
+.dark .fn-contact-modal__btn--ghost {
+    border-color: #475569;
+    color: #cbd5e1;
+}
+</style>
+<script>
+(function () {
+    var openBtn = document.getElementById('fn-contact-open');
+    var modal = document.getElementById('fn-contact-modal');
+    if (!openBtn || !modal) return;
+
+    var form = document.getElementById('fn-contact-form');
+    var subjectEl = document.getElementById('fn-contact-subject');
+    var bodyEl = document.getElementById('fn-contact-body');
+    var subjectCount = document.getElementById('fn-contact-subject-count');
+    var bodyCount = document.getElementById('fn-contact-body-count');
+    var pageUrlEl = document.getElementById('fn-contact-page-url');
+    var submitBtn = document.getElementById('fn-contact-submit');
+    var msg = document.getElementById('fn-contact-msg');
+    var closeTimer = null;
+
+    function updateCount(el, counter, max) {
+        if (!el || !counter) return;
+        counter.textContent = String(el.value.length) + '/' + String(max);
+    }
+
+    function openModal() {
+        if (pageUrlEl) pageUrlEl.value = window.location.pathname + window.location.search;
+        if (msg) { msg.textContent = ''; msg.className = 'fn-contact-modal__msg'; }
+        modal.hidden = false;
+        document.documentElement.style.overflow = 'hidden';
+        if (subjectEl) subjectEl.focus();
+    }
+
+    function closeModal() {
+        modal.hidden = true;
+        document.documentElement.style.overflow = '';
+        if (closeTimer) {
+            clearTimeout(closeTimer);
+            closeTimer = null;
+        }
+    }
+
+    function resetForm() {
+        if (form) form.reset();
+        updateCount(subjectEl, subjectCount, 200);
+        updateCount(bodyEl, bodyCount, 2000);
+        if (msg) { msg.textContent = ''; msg.className = 'fn-contact-modal__msg'; }
+    }
+
+    openBtn.addEventListener('click', openModal);
+    modal.querySelectorAll('[data-fn-contact-close]').forEach(function (el) {
+        el.addEventListener('click', closeModal);
+    });
+    document.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Escape' && !modal.hidden) closeModal();
+    });
+
+    if (subjectEl) {
+        subjectEl.addEventListener('input', function () { updateCount(subjectEl, subjectCount, 200); });
+        updateCount(subjectEl, subjectCount, 200);
+    }
+    if (bodyEl) {
+        bodyEl.addEventListener('input', function () { updateCount(bodyEl, bodyCount, 2000); });
+        updateCount(bodyEl, bodyCount, 2000);
+    }
+
+    if (form) {
+        form.addEventListener('submit', function (ev) {
+            ev.preventDefault();
+            var sendLabel = (submitBtn && submitBtn.getAttribute('data-label-send')) || 'Enviar';
+            var sendingLabel = (submitBtn && submitBtn.getAttribute('data-label-sending')) || 'Enviando…';
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = sendingLabel;
+            }
+            if (msg) { msg.textContent = ''; msg.className = 'fn-contact-modal__msg'; }
+
+            var fd = new FormData(form);
+            fetch('/fale-conosco', {
+                method: 'POST',
+                body: fd,
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin'
+            }).then(function (r) {
+                return r.json().then(function (d) { return { r: r, d: d }; });
+            }).then(function (pack) {
+                if (!pack.d || !pack.d.ok) {
+                    if (msg) {
+                        msg.textContent = (pack.d && pack.d.error) || {{ t("contact_error")|tojson }};
+                        msg.className = 'fn-contact-modal__msg is-err';
+                    }
+                    return;
+                }
+                if (msg) {
+                    msg.textContent = pack.d.message || {{ t("contact_success")|tojson }};
+                    msg.className = 'fn-contact-modal__msg is-ok';
+                }
+                closeTimer = setTimeout(function () {
+                    resetForm();
+                    closeModal();
+                }, 1400);
+            }).catch(function () {
+                if (msg) {
+                    msg.textContent = {{ t("contact_error")|tojson }};
+                    msg.className = 'fn-contact-modal__msg is-err';
+                }
+            }).finally(function () {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = sendLabel;
+                }
+            });
+        });
+    }
+})();
+</script>
