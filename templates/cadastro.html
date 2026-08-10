@@ -16,10 +16,10 @@
 <body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 min-h-screen flex flex-col">
     <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] py-4">
         <div class="mx-auto w-full max-w-7xl px-4 flex justify-between items-center">
-            <a href="/?lang={{ lang }}" class="text-xl font-black tracking-tighter">
+            <a href="{{ lp('/') }}" class="text-xl font-black tracking-tighter">
                 <span class="text-green-600 dark:text-[#4ade80]">Clareza</span><span class="text-gray-900 dark:text-white"> Capital</span>
             </a>
-            <a href="/login?lang={{ lang }}" class="text-sm font-semibold text-blue-600 dark:text-[#4ade80]">Já tenho conta</a>
+            <a href="{{ lp('/login') }}" class="text-sm font-semibold text-blue-600 dark:text-[#4ade80]">Já tenho conta</a>
         </div>
     </nav>
     <main class="flex-grow flex items-center justify-center px-4 py-10">
@@ -60,7 +60,7 @@
                 {% endif %}
                 <p class="mt-6 text-center text-sm text-gray-600 dark:text-slate-400">
                     Já tem conta?
-                    <a href="/login?lang={{ lang }}" class="font-semibold text-blue-600 dark:text-[#4ade80] hover:underline">Entrar</a>
+                    <a href="{{ lp('/login') }}" class="font-semibold text-blue-600 dark:text-[#4ade80] hover:underline">Entrar</a>
                 </p>
             </div>
         </div>

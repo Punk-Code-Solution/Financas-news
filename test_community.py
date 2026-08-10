@@ -80,23 +80,21 @@ def test_consent_cookie_parse():
 
 def test_daily_digest_payload():
     client = MagicMock()
-    client.execute.side_effect = [
-        MagicMock(rows=[(10, "Selic sobe", "Texto longo da manchete" * 5, "Juros", 90, "01/08/2026")]),
-        MagicMock(
-            rows=[
-                (10, "Selic sobe", "Juros"),
-                (9, "Dólar cai", "Dólar"),
-                (8, "IPCA", "Inflação"),
-            ]
-        ),
-    ]
+    long_resumo = "A" * 220
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    client.execute.return_value = MagicMock(
+        rows=[
+            (10, "Selic sobe", long_resumo, "Juros", 100, now),
+            (9, "Dólar cai", long_resumo, "Dólar", 90, now),
+        ]
+    )
     with patch("core.fetch_market_snapshot", return_value={}), patch(
         "core.fetch_bcb_snapshot", return_value={}
     ):
         digest = build_daily_digest(client, extra_n=5)
     assert digest["headline"] is not None
     assert digest["headline"]["titulo"] == "Selic sobe"
-    assert any(x["titulo"] == "Dólar cai" for x in digest["links"])
+    assert any(x["titulo"] == "Dólar cai" for x in digest.get("items") or [])
     assert "subject" in digest and "html" in digest and "text" in digest
     assert "Clareza Capital" in digest["subject"]
 

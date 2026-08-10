@@ -334,6 +334,10 @@ def ensure_schema(client: DbClient) -> None:
                 ("resumo_en", "TEXT"),
                 ("titulo_ja", "TEXT"),
                 ("resumo_ja", "TEXT"),
+                ("author_id", "INTEGER"),
+                ("content_origin", "TEXT"),
+                ("moderation_status", "TEXT"),
+                ("boost_until", "TEXT"),
             ]:
                 try:
                     _ = client.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")
@@ -398,11 +402,79 @@ def ensure_schema(client: DbClient) -> None:
                 ("email_verified", "INTEGER DEFAULT 1"),
                 ("email_verify_token", "TEXT"),
                 ("email_verify_sent_at", "TEXT"),
+                ("role", "TEXT"),
+                ("pix_key", "TEXT"),
             ):
                 try:
                     _ = client.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type}")
                 except Exception:
                     pass
+
+            _ = client.execute("""
+                CREATE TABLE IF NOT EXISTS columnist_applications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    pitch TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    admin_note TEXT,
+                    created_at TEXT NOT NULL,
+                    reviewed_at TEXT
+                )
+            """)
+
+            _ = client.execute("""
+                CREATE TABLE IF NOT EXISTS page_views (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    news_id INTEGER NOT NULL,
+                    author_id INTEGER NOT NULL,
+                    viewer_hash TEXT NOT NULL,
+                    viewer_user_id INTEGER,
+                    day TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(news_id, viewer_hash, day)
+                )
+            """)
+
+            _ = client.execute("""
+                CREATE TABLE IF NOT EXISTS wallet_ledger (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
+                    amount_brl REAL NOT NULL,
+                    news_id INTEGER,
+                    meta_json TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
+
+            _ = client.execute("""
+                CREATE TABLE IF NOT EXISTS payout_requests (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    amount_brl REAL NOT NULL,
+                    pix_key TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    admin_note TEXT,
+                    created_at TEXT NOT NULL,
+                    reviewed_at TEXT
+                )
+            """)
+
+            _ = client.execute("""
+                CREATE TABLE IF NOT EXISTS boost_orders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    news_id INTEGER NOT NULL,
+                    plan_id TEXT NOT NULL,
+                    amount_brl REAL NOT NULL,
+                    status TEXT NOT NULL,
+                    external_ref TEXT UNIQUE,
+                    mp_payment_id TEXT,
+                    boost_until TEXT,
+                    created_at TEXT NOT NULL,
+                    paid_at TEXT
+                )
+            """)
 
             _ = client.execute("""
                 CREATE TABLE IF NOT EXISTS comments (
@@ -438,6 +510,11 @@ def ensure_schema(client: DbClient) -> None:
                 "CREATE INDEX IF NOT EXISTS idx_users_google ON users(google_id)",
                 "CREATE INDEX IF NOT EXISTS idx_users_verify_token ON users(email_verify_token)",
                 "CREATE INDEX IF NOT EXISTS idx_comments_news ON comments(news_id, id)",
+                "CREATE INDEX IF NOT EXISTS idx_news_author ON news(author_id, id DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_news_moderation ON news(moderation_status, id DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_page_views_day ON page_views(day, author_id)",
+                "CREATE INDEX IF NOT EXISTS idx_wallet_user ON wallet_ledger(user_id, id DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_boost_ref ON boost_orders(external_ref)",
             ):
                 try:
                     _ = client.execute(sql)

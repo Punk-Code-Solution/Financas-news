@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="{{ html_lang }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t('columnist_dashboard_title') }} — {{ t('site_name') }}</title>
+    <meta name="robots" content="noindex, follow">
+    {% include "partials/_seo_brand.html" %}
+    <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
+    {% include "partials/_styles.html" %}
+    <script>if (localStorage.getItem('color-theme') === 'dark') document.documentElement.classList.add('dark');</script>
+</head>
+<body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 min-h-screen flex flex-col">
+    <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] py-4">
+        <div class="mx-auto w-full max-w-7xl px-4 flex flex-wrap gap-3 justify-between items-center">
+            <a href="{{ lp('/') }}" class="text-xl font-black tracking-tighter">
+                <span class="text-green-600 dark:text-[#4ade80]">{{ t('brand_finance') }}</span><span class="text-gray-900 dark:text-white"> {{ t('brand_news') }}</span>
+            </a>
+            <div class="flex gap-3 text-sm font-semibold">
+                <a href="{{ lp('/colunista/novo') }}" class="text-blue-600 dark:text-[#4ade80]">{{ t('columnist_new_article') }}</a>
+                {% if is_admin %}<a href="{{ lp('/admin/colunistas') }}">Admin</a>{% endif %}
+            </div>
+        </div>
+    </nav>
+    <main class="flex-grow mx-auto w-full max-w-4xl px-4 py-10 space-y-8">
+        <div>
+            <h1 class="text-2xl font-black text-gray-900 dark:text-white">{{ t('columnist_dashboard_title') }}</h1>
+            <p class="text-sm text-gray-500 mt-1">{{ t('columnist_dashboard_blurb') }}</p>
+        </div>
+        {% if flash %}
+        <p class="text-sm {% if flash_ok %}text-green-600{% else %}text-red-600{% endif %}">{{ flash }}</p>
+        {% endif %}
+
+        <section class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div class="rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-5">
+                <p class="text-xs uppercase font-bold text-gray-500">Views</p>
+                <p class="text-2xl font-black mt-1">{{ views_total }}</p>
+            </div>
+            <div class="rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-5">
+                <p class="text-xs uppercase font-bold text-gray-500">{{ t('columnist_balance') }}</p>
+                <p class="text-2xl font-black mt-1">R$ {{ '%.2f'|format(balance) }}</p>
+                <p class="text-[11px] text-gray-500 mt-1">{{ t('columnist_share_note', pct=(share_rate * 100)|int) }}</p>
+            </div>
+            <div class="rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-5">
+                <form method="post" action="/colunista/pix" class="space-y-2">
+                    <label class="text-xs uppercase font-bold text-gray-500">PIX
+                        <input name="pix_key" value="{{ current_user.pix_key or '' }}" maxlength="120"
+                            class="mt-1 w-full rounded-lg border border-gray-300 dark:border-slate-600 bg-gray-50 dark:bg-[#0f172a] px-2 py-1.5 text-sm" placeholder="CPF, e-mail ou chave">
+                    </label>
+                    <button class="text-xs font-bold text-blue-600 dark:text-[#4ade80]">Salvar PIX</button>
+                </form>
+                <form method="post" action="/colunista/saque" class="mt-3">
+                    <button class="px-3 py-1.5 rounded-lg bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-950 text-xs font-bold">{{ t('columnist_request_payout') }}</button>
+                </form>
+            </div>
+        </section>
+
+        <section>
+            <h2 class="text-lg font-black mb-3">{{ t('columnist_my_articles') }}</h2>
+            <ul class="space-y-2">
+                {% for a in articles %}
+                <li class="rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-4 flex flex-wrap gap-3 justify-between items-center">
+                    <div>
+                        <a href="{{ lp('/noticia/' ~ a.id) }}" class="font-bold text-gray-900 dark:text-white hover:underline">{{ a.titulo }}</a>
+                        <p class="text-xs text-gray-500 mt-1">{{ a.moderation_status }} · prioridade {{ a.home_priority }}{% if a.boost_until %} · boost até {{ a.boost_until }}{% endif %}</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2 text-xs font-bold">
+                        {% if a.moderation_status != 'published' %}
+                        <a href="{{ lp('/colunista/editar/' ~ a.id) }}" class="text-blue-600 dark:text-[#4ade80]">Editar</a>
+                        {% endif %}
+                        {% if a.moderation_status == 'published' %}
+                        <a href="{{ lp('/colunista/impulsionar/' ~ a.id) }}" class="text-amber-600">{{ t('columnist_boost') }}</a>
+                        {% endif %}
+                    </div>
+                </li>
+                {% else %}
+                <li class="text-sm text-gray-500">{{ t('columnist_no_articles') }}</li>
+                {% endfor %}
+            </ul>
+        </section>
+
+        {% if ledger %}
+        <section>
+            <h2 class="text-lg font-black mb-3">{{ t('columnist_ledger') }}</h2>
+            <ul class="text-sm space-y-1">
+                {% for e in ledger %}
+                <li class="flex justify-between border-b border-gray-100 dark:border-slate-800 py-2">
+                    <span>{{ e.kind }} {% if e.news_id %}(#{{ e.news_id }}){% endif %}</span>
+                    <span class="{% if e.amount_brl >= 0 %}text-green-600{% else %}text-red-600{% endif %}">R$ {{ '%.2f'|format(e.amount_brl) }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endif %}
+    </main>
+    {% include "partials/_footer.html" %}
+</body>
+</html>

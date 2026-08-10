@@ -18,9 +18,13 @@
             </div>
         </div>
         <form id="fn-avatar-form" method="post" action="/perfil/avatar" enctype="multipart/form-data" class="fn-user-modal__form">
-            <label class="fn-user-modal__label" for="fn-avatar-input">Trocar imagem de perfil</label>
+            <p class="fn-user-modal__label" id="fn-avatar-label">Trocar imagem de perfil</p>
             <p class="fn-user-modal__hint">JPG, PNG, WEBP ou GIF — máx. 512 KB</p>
-            <input id="fn-avatar-input" type="file" name="avatar" accept="image/jpeg,image/png,image/webp,image/gif" required class="fn-user-modal__file">
+            <label class="fn-file-pick" for="fn-avatar-input">
+                <input id="fn-avatar-input" type="file" name="avatar" accept="image/jpeg,image/png,image/webp,image/gif" required class="fn-file-pick__input" aria-labelledby="fn-avatar-label">
+                <span class="fn-file-pick__btn">Escolher imagem</span>
+                <span id="fn-avatar-filename" class="fn-file-pick__name">Nenhum arquivo</span>
+            </label>
             <button type="submit" id="fn-avatar-submit" class="fn-user-modal__btn fn-user-modal__btn--primary">Salvar imagem</button>
             <p id="fn-avatar-msg" class="fn-user-modal__msg" role="status" aria-live="polite"></p>
         </form>
@@ -134,13 +138,67 @@
     font-size: 0.7rem;
     color: #64748b;
 }
-.fn-user-modal__file {
-    display: block;
-    width: 100%;
-    margin-bottom: 0.6rem;
-    font-size: 0.75rem;
-    color: #475569;
+.fn-file-pick {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    margin-bottom: 0.7rem;
+    cursor: pointer;
 }
+.fn-file-pick__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+.fn-file-pick__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 0.55rem 0.9rem;
+    border-radius: 0.6rem;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    color: #0f172a;
+    font-size: 0.8rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+.fn-file-pick:hover .fn-file-pick__btn,
+.fn-file-pick__input:focus-visible + .fn-file-pick__btn {
+    border-color: #2563eb;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+.dark .fn-file-pick__btn {
+    border-color: #475569;
+    background: #0f172a;
+    color: #e2e8f0;
+}
+.dark .fn-file-pick:hover .fn-file-pick__btn,
+.dark .fn-file-pick__input:focus-visible + .fn-file-pick__btn {
+    border-color: #4ade80;
+    background: #052e16;
+    color: #4ade80;
+}
+.fn-file-pick__name {
+    min-width: 0;
+    font-size: 0.75rem;
+    color: #64748b;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.dark .fn-file-pick__name { color: #94a3b8; }
+.fn-file-pick__name.is-chosen { color: #0f172a; font-weight: 600; }
+.dark .fn-file-pick__name.is-chosen { color: #e2e8f0; }
 .fn-user-modal__btn {
     display: inline-flex;
     width: 100%;
@@ -226,6 +284,18 @@
     var input = document.getElementById('fn-avatar-input');
     var submitBtn = document.getElementById('fn-avatar-submit');
     var msg = document.getElementById('fn-avatar-msg');
+    var filenameEl = document.getElementById('fn-avatar-filename');
+
+    function setFilename(file) {
+        if (!filenameEl) return;
+        if (!file) {
+            filenameEl.textContent = 'Nenhum arquivo';
+            filenameEl.classList.remove('is-chosen');
+            return;
+        }
+        filenameEl.textContent = file.name;
+        filenameEl.classList.add('is-chosen');
+    }
     var logoutForm = document.getElementById('fn-logout-form');
     var logoutBtn = document.getElementById('fn-logout-btn');
 
@@ -233,6 +303,7 @@
         input.addEventListener('change', function () {
             var file = input.files && input.files[0];
             revokePreview();
+            setFilename(file);
             if (!file) {
                 setAvatars(committedSrc, true);
                 return;
@@ -281,6 +352,7 @@
                       msg.className = 'fn-user-modal__msg is-ok';
                   }
                   form.reset();
+                  setFilename(null);
               }).catch(function () {
                   revokePreview();
                   setAvatars(committedSrc, false);
@@ -306,5 +378,5 @@
 })();
 </script>
 {% else %}
-<a href="/login?lang={{ lang }}" class="text-xs font-bold text-blue-600 dark:text-[#4ade80] hover:underline whitespace-nowrap px-1">Entrar</a>
+<a href="{{ lp('/login') }}" class="text-xs font-bold text-blue-600 dark:text-[#4ade80] hover:underline whitespace-nowrap px-1">Entrar</a>
 {% endif %}

@@ -25,10 +25,10 @@
     {% include "partials/_market_ticker.html" %}
     <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] py-4">
         <div class="container mx-auto px-4 max-w-3xl flex justify-between items-center gap-3">
-            <a href="/?lang={{ lang }}" class="text-xl font-black tracking-tighter">
+            <a href="{{ lp('/') }}" class="text-xl font-black tracking-tighter">
                 <span class="text-green-600 dark:text-[#4ade80]">{{ t('brand_finance') }}</span><span class="text-gray-900 dark:text-white">{{ t('brand_news') }}</span>
             </a>
-            <a href="/quem-somos?lang={{ lang }}" class="text-sm font-semibold text-gray-600 dark:text-slate-400">{{ t('nav_about') }}</a>
+            <a href="{{ lp('/quem-somos') }}" class="text-sm font-semibold text-gray-600 dark:text-slate-400">{{ t('nav_about') }}</a>
         </div>
     </nav>
     <main class="container mx-auto px-4 py-10 max-w-3xl flex-grow">
@@ -48,7 +48,7 @@
             </div>
             <div>
                 <h2 class="text-xl font-bold text-blue-600 dark:text-[#4ade80] mb-2">2. Dados próprios citados</h2>
-                <p class="text-gray-700 dark:text-slate-300 leading-relaxed">Cruzamos Selic, IPCA e demais séries do Banco Central, cotações (AwesomeAPI) e histórico do portal. Números aparecem na análise, no painel <a href="/mercado?lang={{ lang }}" class="underline font-semibold text-blue-600 dark:text-[#4ade80]">/mercado</a> e no bloco “impacto no bolso”.</p>
+                <p class="text-gray-700 dark:text-slate-300 leading-relaxed">Cruzamos Selic, IPCA e demais séries do Banco Central, cotações (AwesomeAPI) e histórico do portal. Números aparecem na análise, no painel <a href="{{ lp('/mercado') }}" class="underline font-semibold text-blue-600 dark:text-[#4ade80]">/mercado</a> e no bloco “impacto no bolso”.</p>
             </div>
             <div>
                 <h2 class="text-xl font-bold text-blue-600 dark:text-[#4ade80] mb-2">3. Lentes e valor agregado</h2>
@@ -65,8 +65,8 @@
         </section>
 
         <p class="mt-10 text-sm text-gray-500 dark:text-slate-500">
-            Também em <a href="/quem-somos?lang={{ lang }}" class="underline">Quem somos</a> ·
-            <a href="/privacidade?lang={{ lang }}" class="underline">Privacidade</a>
+            Também em <a href="{{ lp('/quem-somos') }}" class="underline">Quem somos</a> ·
+            <a href="{{ lp('/privacidade') }}" class="underline">Privacidade</a>
         </p>
     </main>
     {% include "partials/_footer.html" %}

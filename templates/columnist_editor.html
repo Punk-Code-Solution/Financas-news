@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="{{ html_lang }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t('columnist_editor_title') }} — {{ t('site_name') }}</title>
+    <meta name="robots" content="noindex, follow">
+    {% include "partials/_seo_brand.html" %}
+    <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
+    {% include "partials/_styles.html" %}
+    <script>if (localStorage.getItem('color-theme') === 'dark') document.documentElement.classList.add('dark');</script>
+</head>
+<body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 min-h-screen flex flex-col">
+    <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] py-4">
+        <div class="mx-auto w-full max-w-7xl px-4 flex justify-between items-center">
+            <a href="{{ lp('/colunista') }}" class="text-sm font-semibold text-blue-600 dark:text-[#4ade80]">← Painel</a>
+        </div>
+    </nav>
+    <main class="flex-grow mx-auto w-full max-w-3xl px-4 py-10">
+        <h1 class="text-2xl font-black mb-2">{{ t('columnist_editor_title') }}</h1>
+        <p class="text-xs text-amber-700 dark:text-amber-300 mb-6">{{ t('columnist_disclaimer_short') }}</p>
+        {% if flash %}
+        <p class="mb-4 text-sm {% if flash_ok %}text-green-600{% else %}text-red-600{% endif %}">{{ flash }}</p>
+        {% endif %}
+        <form method="post" action="{{ form_action }}" enctype="multipart/form-data" class="space-y-4 rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-6">
+            <label class="block text-sm font-bold">Título
+                <input name="titulo" required maxlength="200" value="{{ article.titulo if article else '' }}"
+                    class="mt-1 w-full rounded-xl border border-gray-300 dark:border-slate-600 bg-gray-50 dark:bg-[#0f172a] px-3 py-2 text-sm">
+            </label>
+            <label class="block text-sm font-bold">Categoria
+                <select name="tag" class="mt-1 w-full rounded-xl border border-gray-300 dark:border-slate-600 bg-gray-50 dark:bg-[#0f172a] px-3 py-2 text-sm">
+                    {% for c in categorias %}
+                    <option value="{{ c }}" {% if article and article.tag == c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="block text-sm font-bold">Resumo
+                <textarea name="resumo" required rows="3" maxlength="800"
+                    class="mt-1 w-full rounded-xl border border-gray-300 dark:border-slate-600 bg-gray-50 dark:bg-[#0f172a] px-3 py-2 text-sm">{{ article.resumo if article else '' }}</textarea>
+            </label>
+            <label class="block text-sm font-bold">Análise / texto completo
+                <textarea name="body" required rows="16"
+                    class="mt-1 w-full rounded-xl border border-gray-300 dark:border-slate-600 bg-gray-50 dark:bg-[#0f172a] px-3 py-2 text-sm">{{ article.body if article else '' }}</textarea>
+            </label>
+            <label class="block text-sm font-bold">Imagem de capa (opcional)
+                <input type="file" name="cover" accept="image/jpeg,image/png,image/webp"
+                    class="mt-1 block w-full text-sm text-gray-600 dark:text-slate-400">
+                <span class="text-xs text-gray-500 font-normal">JPG, PNG ou WEBP — máx. 1 MB.</span>
+                {% if article and article.imagem_url %}
+                <img src="{{ article.imagem_url }}" alt="" class="mt-2 max-h-32 rounded-lg object-cover">
+                {% endif %}
+            </label>
+            <div class="flex flex-wrap gap-3">
+                <button type="submit" name="action" value="draft" class="px-4 py-2 rounded-xl border border-gray-300 dark:border-slate-600 text-sm font-bold">Salvar rascunho</button>
+                <button type="submit" name="action" value="submit" class="px-4 py-2 rounded-xl bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-950 text-sm font-bold">Enviar para revisão</button>
+            </div>
+        </form>
+    </main>
+    {% include "partials/_footer.html" %}
+</body>
+</html>

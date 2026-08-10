@@ -174,6 +174,7 @@ Na página do artigo, o bloco de afiliado escolhe o programa conforme a **tag** 
 - **Afiliados:** estrutura + mapeamento contextual prontos; links de rastreio pendentes de cadastro nos programas.
 - **Amazon:** aguardando tag de associado.
 - **Newsletter:** captura local/externa pronta; envio (digest/alerta) exige provedor configurado (Resend, SMTP ou webhook).
+- **Colunistas:** participação **estimada** (não rateio literal do AdSense por URL) = pageviews × `COLUMNIST_SITE_RPM_BRL` × `COLUMNIST_SHARE_RATE` (30–40%). Destaque pago via Mercado Pago (`MERCADOPAGO_ACCESS_TOKEN`). Admin: `COLUMNIST_ADMIN_EMAILS`. Termos: `/termos-colunista`.
 
 ---
 
@@ -304,6 +305,9 @@ Snapshot anterior de indicadores macro (Selic, IPCA) para detectar mudanças e g
 | `/metodologia` | Transparência editorial (não republicação RSS) |
 | `/quem-somos` | Sobre o portal |
 | `/login` `/cadastro` `/perfil` | Comunidade (sessão cookie; noindex) |
+| `/colunista` `/colunista/candidatar` `/colunista/novo` | Painel e CMS do colunista (login + role) |
+| `/admin/colunistas` | Aprovar candidaturas, artigos e saques PIX (`COLUMNIST_ADMIN_EMAILS`) |
+| `/termos-colunista` | Termos do programa (participação estimada, moderação, boost) |
 | `/privacidade` | Política de privacidade |
 | `/termos` | Termos de uso |
 
@@ -312,7 +316,7 @@ Snapshot anterior de indicadores macro (Selic, IPCA) para detectar mudanças e g
 | Rota | Função |
 |------|--------|
 | `/sitemap.xml` | Home, institucionais, guias `/artigo/*` e até 500 notícias (`lastmod`, sem duplicar guias) |
-| `/robots.txt` | Allow público; `Disallow` em `/api/`, `/ping`, `?q=` e `?page=`; aponta sitemap e feed |
+| `/robots.txt` | Allow público; `Disallow` em `/api/`, `/ping`, conta, `/colunista`, `/admin/`, `?q=`, `?page=` e `?lang=pt`; `Allow` em `?lang=en`/`ja`; aponta sitemap e feed |
 | `/feed.xml` | Feed RSS 2.0 das notícias recentes |
 | `/feed.atom` | Feed Atom equivalente |
 | `/ads.txt` | Verificação Google AdSense |
@@ -346,6 +350,9 @@ Todas as respostas recebem:
 | `GET /api/newsletter-digest-diario` | Até 2x/dia: 1–2 matérias Alta (`home_priority` ≥ 80); skip se vazio |
 | `GET /api/newsletter-alerta` | Reenvio manual de alerta de urgência (`news_id` obrigatório) |
 | `POST /api/newsletter` | Captura de e-mail (local ou redirect externo) |
+| `POST /api/columnists/credit-daily` | Credita participação estimada do dia (ADMIN/ROBO token) |
+| `POST /api/columnists/expire-boosts` | Expira destaques pagos vencidos (ADMIN/ROBO token) |
+| `POST /webhooks/mercadopago` | Webhook PIX → ativa boost |
 | `GET /ping` | Health check |
 
 Auth das rotas de robô/newsletter de envio: mesma regra de `ROBO_TOKEN` (Bearer preferencial).
@@ -407,6 +414,7 @@ Use no Search Console ao pedir reconsideração. Evidências no código/site:
 | `/mercado` com valor (dados + links análises) | OK | `mercado.html` + sitemap |
 | Thin fora do índice | OK — purge 800 = sitemap; noindex thin | `purge_thin_news.py`, `_render_noticia_page` |
 | Doorways busca/paginação/conta | OK — noindex + robots Disallow | `robots.txt`, i18n canônica |
+| Alternates `?lang=pt` (GSC “canônica adequada”) | OK — PT sem query; robots Disallow `lang=pt`; EN/JA permitidos | `localized_path`, `lang_switch_url`, `robots.txt` |
 | Categorias vazias | OK — noindex | `index()` |
 | Exemplos de qualidade | Análises com LENGTH(resumo)≥800, guias `/artigo/*`, painel `/mercado`, `/metodologia` | produção |
 
@@ -571,13 +579,15 @@ uvicorn main:app --reload
 - [x] Comunidade: users, login/OAuth Google, comentários, cookies LGPD
 - [x] Verificação de e-mail no cadastro local (link + bloqueio de login)
 - [x] Newsletter digest 2x/dia (`/api/newsletter-digest-diario`) — máx. 1–2 Alta; skip se vazio
+- [x] **Colunistas:** candidatura + moderação, CMS, byline, destaque pago (PIX/Mercado Pago), carteira com participação estimada 30–40% (pageviews × RPM)
+- [x] GSC “página alternativa com tag canônica”: links PT sem `?lang=pt` + robots Disallow (FN-26)
 
 ### Curto prazo (0–30 dias)
 
-- [ ] Agendar no Render: robô, capas, radar, macro-watch, traduzir, digest diário (manhã/tarde)
-- [ ] Configurar `SESSION_SECRET`, `IP_HASH_SALT` e `GOOGLE_OAUTH_*` em produção
+- [ ] Agendar no Render: robô, capas, radar, macro-watch, traduzir, digest diário (manhã/tarde), `POST /api/columnists/credit-daily`, `POST /api/columnists/expire-boosts`
+- [ ] Configurar `SESSION_SECRET`, `IP_HASH_SALT`, `GOOGLE_OAUTH_*`, `COLUMNIST_ADMIN_EMAILS`, `MERCADOPAGO_ACCESS_TOKEN`, `COLUMNIST_SHARE_RATE` / `COLUMNIST_SITE_RPM_BRL` em produção
 - [ ] Migrar crons restantes de `?token=` para `Authorization: Bearer` (e rotacionar se houve vazamento em logs)
-- [ ] Reaplicar ao Google AdSense / reconsideração Search Console (§11b)
+- [ ] Reaplicar ao Google AdSense / reconsideração Search Console (§11b) — UGC de colunistas exige moderação rigorosa
 - [ ] Cadastrar programas de afiliados (Binance, Amazon) e preencher URLs no env
 
 ### Médio prazo (1–3 meses)
@@ -585,7 +595,7 @@ uvicorn main:app --reload
 - [ ] Newsletter ativa em produção (Beehiiv/Mailchimp via webhook ou Resend)
 - [ ] Relatório semanal premium (assinatura)
 - [ ] Métricas de tráfego (Google Analytics / Plausible)
-- [ ] Painel admin para revisar artigos antes de publicar
+- [x] Painel admin para revisar artigos de colunistas (`/admin/colunistas`)
 
 ### Longo prazo (3–6 meses)
 

@@ -34,12 +34,12 @@
 
     <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] transition-colors duration-200 pt-4 pb-4">
         <div class="container mx-auto px-4 max-w-7xl flex flex-wrap justify-between items-center gap-3">
-            <a href="/?lang={{ lang }}" class="text-xl sm:text-2xl font-black tracking-tighter">
+            <a href="{{ lp('/') }}" class="text-xl sm:text-2xl font-black tracking-tighter">
                 <span class="text-green-600 dark:text-[#4ade80]">{{ t('brand_finance') }}</span><span class="text-gray-900 dark:text-white">{{ t('brand_news') }}</span>
             </a>
             <div class="flex items-center gap-2 sm:gap-3">
-                <a href="/mercado?lang={{ lang }}" class="text-sm font-bold text-blue-600 dark:text-[#4ade80]">{{ t('nav_market') }}</a>
-                <a href="/?lang={{ lang }}" class="text-sm font-semibold text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white transition-colors">&larr; {{ t('back') }}</a>
+                <a href="{{ lp('/mercado') }}" class="text-sm font-bold text-blue-600 dark:text-[#4ade80]">{{ t('nav_market') }}</a>
+                <a href="{{ lp('/') }}" class="text-sm font-semibold text-gray-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white transition-colors">&larr; {{ t('back') }}</a>
                 {% include "partials/_lang_switcher.html" %}
                 <button id="theme-toggle" type="button" aria-label="{{ t('theme_toggle') }}" class="inline-flex items-center justify-center min-h-11 min-w-11 text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 focus:outline-none rounded-lg text-sm p-2.5 transition-colors">
                     <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
@@ -106,7 +106,7 @@
             <ul class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {% for item in related_analyses %}
                 <li>
-                    <a href="/noticia/{{ item.id }}?lang={{ lang }}" class="block rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-4 hover:border-blue-400 dark:hover:border-[#4ade80] transition">
+                    <a href="{{ lp('/noticia/' ~ item.id) }}" class="block rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-4 hover:border-blue-400 dark:hover:border-[#4ade80] transition">
                         <span class="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-[#4ade80]">{{ item.tag }}</span>
                         <p class="mt-1 text-sm font-bold text-gray-900 dark:text-white leading-snug">{{ item.titulo }}</p>
                     </a>
@@ -114,13 +114,13 @@
                 {% endfor %}
             </ul>
             <p class="mt-4 text-xs text-gray-500 dark:text-slate-500">
-                Metodologia: <a href="/metodologia?lang={{ lang }}" class="underline hover:text-blue-600 dark:hover:text-[#4ade80]">como produzimos análises originais</a>
+                Metodologia: <a href="{{ lp('/metodologia') }}" class="underline hover:text-blue-600 dark:hover:text-[#4ade80]">como produzimos análises originais</a>
             </p>
         </section>
         {% endif %}
 
         <p class="text-center mt-8">
-            <a href="/?lang={{ lang }}" class="text-sm font-bold text-blue-600 dark:text-[#4ade80] hover:underline">{{ t('back_home') }}</a>
+            <a href="{{ lp('/') }}" class="text-sm font-bold text-blue-600 dark:text-[#4ade80] hover:underline">{{ t('back_home') }}</a>
         </p>
     </main>
 

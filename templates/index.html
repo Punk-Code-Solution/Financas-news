@@ -285,7 +285,7 @@
         <div class="container mx-auto px-4 pt-3 pb-2">
             <div class="flex flex-wrap justify-between items-center gap-x-3 gap-y-2">
                 <div class="flex items-baseline gap-3 min-w-0 shrink-0">
-                    <a href="/?lang={{ lang }}" class="text-xl sm:text-2xl font-black tracking-tighter shrink-0">
+                    <a href="{{ lp('/') }}" class="text-xl sm:text-2xl font-black tracking-tighter shrink-0">
                         <span class="text-green-600 dark:text-[#4ade80]">{{ t('brand_finance') }}</span><span class="text-gray-900 dark:text-white">{{ t('brand_news') }}</span>
                     </a>
                     <span id="masthead-date" class="hidden lg:inline-block border-l border-gray-300 dark:border-slate-700 pl-3 text-[11px] font-semibold uppercase tracking-widest text-gray-500 dark:text-slate-500"></span>
@@ -293,7 +293,7 @@
 
                 <div class="flex items-center gap-2 shrink-0 ml-auto">
                     <form action="/" method="GET" class="relative hidden sm:block">
-                        <input type="hidden" name="lang" value="{{ lang }}">
+                        {% if lang != 'pt' %}<input type="hidden" name="lang" value="{{ lang }}">{% endif %}
                         <input type="text" name="q" value="{{ q if q else '' }}" placeholder="{{ t('search_placeholder') }}"
                                class="bg-gray-100 dark:bg-[#1e293b] border border-gray-300 dark:border-slate-700 text-gray-800 dark:text-slate-200 text-sm rounded-full px-4 py-1.5 focus:outline-none focus:border-blue-500 dark:focus:border-slate-500 placeholder-gray-500 dark:placeholder-slate-500 w-40 lg:w-48 transition-colors">
                         <button type="submit" class="absolute right-3 top-2 text-gray-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-white">
@@ -323,15 +323,15 @@
             </div>
 
             <div class="filter-scroll flex items-center gap-1 overflow-x-auto mt-2 pb-2 -mx-1 px-1">
-                <a href="/?lang={{ lang }}" class="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition {% if not categoria_ativa and not q %}bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-900{% else %}text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800{% endif %}">{{ t('latest') }}</a>
-                <a href="/mercado?lang={{ lang }}" class="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800">{{ t('nav_market') }}</a>
+                <a href="{{ lp('/') }}" class="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition {% if not categoria_ativa and not q %}bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-900{% else %}text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800{% endif %}">{{ t('latest') }}</a>
+                <a href="{{ lp('/mercado') }}" class="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800">{{ t('nav_market') }}</a>
                 {% for cat in categorias %}
-                <a href="/?categoria={{ cat | urlencode }}&lang={{ lang }}" class="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition {% if categoria_ativa == cat %}bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-900{% else %}text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800{% endif %}">{{ tr_tag(cat) }}</a>
+                <a href="{{ lp('/?categoria=' ~ (cat | urlencode)) }}" class="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition {% if categoria_ativa == cat %}bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-900{% else %}text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800{% endif %}">{{ tr_tag(cat) }}</a>
                 {% endfor %}
             </div>
 
             <form action="/" method="GET" class="relative sm:hidden mt-1 pb-1">
-                <input type="hidden" name="lang" value="{{ lang }}">
+                {% if lang != 'pt' %}<input type="hidden" name="lang" value="{{ lang }}">{% endif %}
                 <input type="text" name="q" value="{{ q if q else '' }}" placeholder="{{ t('search_placeholder') }}"
                        class="w-full bg-gray-100 dark:bg-[#1e293b] border border-gray-300 dark:border-slate-700 text-gray-800 dark:text-slate-200 text-sm rounded-full px-4 py-1.5 focus:outline-none focus:border-blue-500 placeholder-gray-500">
                 <button type="submit" class="absolute right-3 top-2 text-gray-500 dark:text-slate-400">
@@ -368,7 +368,7 @@
                 <p class="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-2">{{ t('category_related_guides', tag=tr_tag(categoria_ativa)) }}</p>
                 <div class="flex flex-wrap gap-2">
                     {% for guide in category_guides %}
-                    <a href="/artigo/{{ guide.slug }}?lang={{ lang }}"
+                    <a href="{{ lp('/artigo/' ~ guide.slug) }}"
                        class="text-xs font-bold px-3 py-1.5 rounded-full border border-blue-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-blue-700 dark:text-[#4ade80] hover:border-blue-400 transition">
                         {{ guide.titulo[:72] }}{% if guide.titulo|length > 72 %}…{% endif %}
                     </a>
@@ -403,7 +403,7 @@
                         <ul class="mt-1 divide-y divide-gray-100 dark:divide-slate-800">
                             {% for n in trilha_news %}
                             <li>
-                                <a href="/noticia/{{ n[0] }}?lang={{ lang }}" class="group flex items-start gap-3 py-2.5">
+                                <a href="{{ lp('/noticia/' ~ n[0]) }}" class="group flex items-start gap-3 py-2.5">
                                     <span class="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-600 dark:bg-[#4ade80]"></span>
                                     <span class="font-serif text-sm md:text-base font-bold leading-snug text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#4ade80] transition line-clamp-2">{{ n[1] }}</span>
                                 </a>
@@ -417,7 +417,7 @@
                 <div class="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 lg:auto-rows-fr gap-4">
                     {% for n in secondary_news %}
                     <article class="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-slate-800 rounded-xl overflow-hidden hover:border-blue-300 dark:hover:border-slate-600 transition">
-                        <a href="/noticia/{{ n[0] }}?lang={{ lang }}" class="flex h-full group">
+                        <a href="{{ lp('/noticia/' ~ n[0]) }}" class="flex h-full group">
                             <img src="{{ article_cover(n[11], n[5]) }}" data-fallback="{{ category_image(n[5]) }}" alt="{{ n[1] }}" loading="lazy" class="w-28 sm:w-32 lg:w-40 h-full min-h-[7.5rem] object-cover object-center shrink-0">
                             <div class="p-4 flex flex-col justify-center">
                                 <span class="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-[#4ade80]">{{ tr_tag(n[5]) }}</span>
@@ -483,12 +483,12 @@
                 <section class="mt-8">
                     <div class="flex items-center justify-between border-b-2 border-gray-900 dark:border-white pb-2 mb-5">
                         <h2 class="text-xl font-black text-gray-900 dark:text-white">{{ t('other_analyses') }}</h2>
-                        <a href="/?lang={{ lang }}" class="text-xs font-semibold text-blue-600 dark:text-[#4ade80] hover:underline">{{ t('see_all') }}</a>
+                        <a href="{{ lp('/') }}" class="text-xs font-semibold text-blue-600 dark:text-[#4ade80] hover:underline">{{ t('see_all') }}</a>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-0">
                         {% for n in suggested_news %}
                         <article class="relative py-5 border-b border-gray-200 dark:border-slate-800 min-w-0 overflow-hidden">
-                            <a href="/noticia/{{ n[0] }}?lang={{ lang }}" class="group flex gap-4 min-w-0">
+                            <a href="{{ lp('/noticia/' ~ n[0]) }}" class="group flex gap-4 min-w-0">
                                 <img src="{{ article_cover(n[11], n[5]) }}" data-fallback="{{ category_image(n[5]) }}" alt="{{ n[1] }}" loading="lazy" class="w-28 h-24 md:w-32 md:h-28 rounded-lg object-cover object-center shrink-0">
                                 <div class="relative min-w-0 flex-1 overflow-hidden pr-20 md:pr-24">
                                     {% set sent = (n[6] | default('Neutro', true)) | lower %}

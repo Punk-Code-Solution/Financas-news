@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="{{ html_lang }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t('columnist_boost') }} — {{ t('site_name') }}</title>
+    <meta name="robots" content="noindex, follow">
+    {% include "partials/_seo_brand.html" %}
+    <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
+    {% include "partials/_styles.html" %}
+    <script>if (localStorage.getItem('color-theme') === 'dark') document.documentElement.classList.add('dark');</script>
+</head>
+<body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 min-h-screen flex flex-col">
+    <main class="flex-grow mx-auto w-full max-w-xl px-4 py-10">
+        <a href="{{ lp('/colunista') }}" class="text-sm text-blue-600 dark:text-[#4ade80]">← Painel</a>
+        <h1 class="text-2xl font-black mt-4 mb-2">{{ t('columnist_boost') }}</h1>
+        <p class="text-sm text-gray-600 dark:text-slate-400 mb-6">{{ article.titulo }}</p>
+        {% if flash %}
+        <p class="mb-4 text-sm {% if flash_ok %}text-green-600{% else %}text-red-600{% endif %}">{{ flash }}</p>
+        {% endif %}
+        {% if pix %}
+        <div class="rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-6 space-y-3">
+            <p class="text-sm font-bold">Pague com PIX (Mercado Pago)</p>
+            <p class="text-xs text-gray-500">Pedido #{{ order_id }} · R$ {{ '%.2f'|format(amount_brl) }}</p>
+            {% if pix.qr_code_base64 %}
+            <img alt="QR Code PIX" class="mx-auto w-48 h-48" src="data:image/png;base64,{{ pix.qr_code_base64 }}">
+            {% endif %}
+            {% if pix.qr_code %}
+            <textarea readonly class="w-full text-xs rounded-lg border p-2 bg-gray-50 dark:bg-[#0f172a]">{{ pix.qr_code }}</textarea>
+            {% endif %}
+            {% if pix.ticket_url %}
+            <a href="{{ pix.ticket_url }}" target="_blank" rel="noopener" class="inline-block text-sm font-bold text-blue-600">Abrir no Mercado Pago</a>
+            {% endif %}
+            <form method="post" action="/colunista/impulsionar/{{ article.id }}/confirmar" class="pt-2">
+                <input type="hidden" name="order_id" value="{{ order_id }}">
+                <input type="hidden" name="payment_id" value="{{ pix.payment_id }}">
+                <button class="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold">Já paguei — verificar</button>
+            </form>
+        </div>
+        {% else %}
+        <form method="post" action="/colunista/impulsionar/{{ article.id }}" class="space-y-3">
+            {% for plan in plans %}
+            <label class="flex items-center justify-between gap-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-4 cursor-pointer">
+                <span>
+                    <input type="radio" name="plan_id" value="{{ plan.id }}" {% if loop.first %}checked{% endif %}>
+                    <strong class="ml-2">{{ plan.label }}</strong>
+                </span>
+                <span class="font-black">R$ {{ '%.2f'|format(plan.price_brl) }}</span>
+            </label>
+            {% endfor %}
+            {% if mp_ready %}
+            <button class="w-full px-4 py-3 rounded-xl bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-950 text-sm font-bold">Gerar PIX</button>
+            {% else %}
+            <p class="text-sm text-amber-700">Pagamentos PIX ainda não configurados (MERCADOPAGO_ACCESS_TOKEN). Em modo admin de testes, use simulação:</p>
+            <button name="simulate" value="1" class="w-full px-4 py-3 rounded-xl border text-sm font-bold">Simular pagamento (dev)</button>
+            {% endif %}
+        </form>
+        {% endif %}
+    </main>
+</body>
+</html>

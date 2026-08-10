@@ -3,7 +3,7 @@
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-8 text-center">
             {# Coluna 1 — marca #}
             <div class="flex flex-col items-center">
-                <a href="/?lang={{ lang }}" class="inline-flex flex-col items-center gap-1 group">
+                <a href="{{ lp('/') }}" class="inline-flex flex-col items-center gap-1 group">
                     <span class="text-xl font-black tracking-tight text-gray-900 dark:text-white">
                         <span class="text-green-600 dark:text-[#4ade80]">{{ t('brand_finance') }}</span> {{ t('brand_news') }}
                     </span>
@@ -17,22 +17,25 @@
                 <p class="text-sm font-bold text-gray-900 dark:text-white mb-4">{{ footer_connect_label }}</p>
                 <ul class="space-y-2 text-sm text-gray-600 dark:text-slate-400">
                     <li>
-                        <a href="/mercado?lang={{ lang }}" class="hover:text-blue-600 dark:hover:text-[#4ade80] transition">{{ t('nav_market') }}</a>
+                        <a href="{{ lp('/mercado') }}" class="hover:text-blue-600 dark:hover:text-[#4ade80] transition">{{ t('nav_market') }}</a>
                     </li>
                     <li>
-                        <a href="/quem-somos?lang={{ lang }}" class="hover:text-blue-600 dark:hover:text-[#4ade80] transition">{{ t('nav_about') }}</a>
+                        <a href="{{ lp('/quem-somos') }}" class="hover:text-blue-600 dark:hover:text-[#4ade80] transition">{{ t('nav_about') }}</a>
                     </li>
                     <li>
-                        <a href="/metodologia?lang={{ lang }}" class="hover:text-blue-600 dark:hover:text-[#4ade80] transition">Metodologia</a>
+                        <a href="{{ lp('/metodologia') }}" class="hover:text-blue-600 dark:hover:text-[#4ade80] transition">Metodologia</a>
                     </li>
                     <li>
-                        <a href="/login?lang={{ lang }}" class="hover:text-blue-600 dark:hover:text-[#4ade80] transition">Comunidade</a>
+                        <a href="{{ lp('/colunista') }}" class="hover:text-blue-600 dark:hover:text-[#4ade80] transition">{{ t('nav_columnist') }}</a>
                     </li>
                     <li>
-                        <a href="/termos?lang={{ lang }}" class="hover:text-blue-600 dark:hover:text-[#4ade80] transition">{{ t('nav_terms') }}</a>
+                        <a href="{{ lp('/login') }}" class="hover:text-blue-600 dark:hover:text-[#4ade80] transition">Comunidade</a>
                     </li>
                     <li>
-                        <a href="/privacidade?lang={{ lang }}" class="hover:text-blue-600 dark:hover:text-[#4ade80] transition">{{ t('nav_privacy') }}</a>
+                        <a href="{{ lp('/termos') }}" class="hover:text-blue-600 dark:hover:text-[#4ade80] transition">{{ t('nav_terms') }}</a>
+                    </li>
+                    <li>
+                        <a href="{{ lp('/privacidade') }}" class="hover:text-blue-600 dark:hover:text-[#4ade80] transition">{{ t('nav_privacy') }}</a>
                     </li>
                     <li>
                         <a href="https://www.punkcodesolution.com.br/" target="_blank" rel="noopener noreferrer" class="hover:text-blue-600 dark:hover:text-[#4ade80] transition">{{ footer_developer }}</a>

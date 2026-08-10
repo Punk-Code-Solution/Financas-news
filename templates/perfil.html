@@ -15,7 +15,7 @@
 <body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 min-h-screen flex flex-col">
     <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] py-4">
         <div class="mx-auto w-full max-w-7xl px-4 flex justify-between items-center">
-            <a href="/?lang={{ lang }}" class="text-xl font-black tracking-tighter">
+            <a href="{{ lp('/') }}" class="text-xl font-black tracking-tighter">
                 <span class="text-green-600 dark:text-[#4ade80]">Clareza</span><span class="text-gray-900 dark:text-white"> Capital</span>
             </a>
             <form method="post" action="/logout"><button type="submit" class="text-sm font-semibold text-gray-600 dark:text-slate-400">Sair</button></form>
@@ -37,10 +37,44 @@
             <form method="post" action="/perfil/avatar" enctype="multipart/form-data" class="space-y-3 rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-6 shadow-sm">
                 <p class="text-sm font-bold text-gray-900 dark:text-white">Trocar avatar</p>
                 <p class="text-xs text-gray-500">JPG, PNG, WEBP ou GIF — máx. 512 KB.</p>
-                <input type="file" name="avatar" accept="image/jpeg,image/png,image/webp,image/gif" required
-                       class="block w-full text-sm text-gray-600 dark:text-slate-400">
+                <label class="fn-profile-file" for="perfil-avatar-input">
+                    <input id="perfil-avatar-input" type="file" name="avatar" accept="image/jpeg,image/png,image/webp,image/gif" required class="fn-profile-file__input">
+                    <span class="fn-profile-file__btn">Escolher imagem</span>
+                    <span id="perfil-avatar-filename" class="fn-profile-file__name">Nenhum arquivo</span>
+                </label>
                 <button type="submit" class="px-4 py-2 text-sm font-bold rounded-lg bg-blue-600 dark:bg-[#4ade80] text-white dark:text-slate-950">Enviar</button>
             </form>
+            <style>
+            .fn-profile-file { position: relative; display: flex; align-items: center; gap: 0.65rem; cursor: pointer; }
+            .fn-profile-file__input { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+            .fn-profile-file__btn {
+                display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+                padding: 0.55rem 0.9rem; border-radius: 0.6rem; border: 1px solid #cbd5e1;
+                background: #f8fafc; color: #0f172a; font-size: 0.8rem; font-weight: 700;
+            }
+            .fn-profile-file:hover .fn-profile-file__btn,
+            .fn-profile-file__input:focus-visible + .fn-profile-file__btn { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; }
+            .dark .fn-profile-file__btn { border-color: #475569; background: #0f172a; color: #e2e8f0; }
+            .dark .fn-profile-file:hover .fn-profile-file__btn,
+            .dark .fn-profile-file__input:focus-visible + .fn-profile-file__btn { border-color: #4ade80; background: #052e16; color: #4ade80; }
+            .fn-profile-file__name { min-width: 0; font-size: 0.75rem; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .dark .fn-profile-file__name { color: #94a3b8; }
+            .fn-profile-file__name.is-chosen { color: #0f172a; font-weight: 600; }
+            .dark .fn-profile-file__name.is-chosen { color: #e2e8f0; }
+            </style>
+            <script>
+            (function () {
+                var input = document.getElementById('perfil-avatar-input');
+                var nameEl = document.getElementById('perfil-avatar-filename');
+                if (!input || !nameEl) return;
+                input.addEventListener('change', function () {
+                    var file = input.files && input.files[0];
+                    nameEl.textContent = file ? file.name : 'Nenhum arquivo';
+                    nameEl.classList.toggle('is-chosen', !!file);
+                });
+            })();
+            </script>
+            <p class="text-center"><a href="/colunista" class="text-sm font-bold text-blue-600 dark:text-[#4ade80]">Área do colunista →</a></p>
         </div>
     </main>
     {% include "partials/_footer.html" %}

@@ -64,6 +64,10 @@ def test_robots_references_feed():
         client = TestClient(main.app)
         r = client.get("/robots.txt")
         assert "/feed.xml" in r.text
+        assert "Disallow: /*?lang=pt" in r.text
+        assert "Allow: /*?lang=en" in r.text
+        assert "Allow: /*?lang=ja" in r.text
+        assert "Disallow: /colunista" in r.text
 
 
 def test_category_intro_block():

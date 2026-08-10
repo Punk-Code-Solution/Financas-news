@@ -384,6 +384,27 @@ UI: dict[str, dict[str, str]] = {
         "cross_links": "Links cruzados",
         "see_on_source": "Ver no {source}",
         "contact_us": "Fale conosco",
+        "columnist_byline": "Coluna · {name}",
+        "columnist_badge": "Colunista",
+        "columnist_disclaimer_short": "Opinião do colunista. Não é recomendação de investimento. Conteúdo sujeito à moderação do Clareza Capital.",
+        "columnist_apply_title": "Quero ser colunista",
+        "columnist_apply_blurb": "Publique análises financeiras no Clareza Capital. Após aprovação, seus artigos passam por revisão editorial antes de ir ao ar.",
+        "columnist_terms_link": "Leia os termos do programa",
+        "columnist_pitch_label": "Apresentação",
+        "columnist_pitch_placeholder": "Conte sua experiência e o tipo de análise que pretende publicar…",
+        "columnist_apply_submit": "Enviar candidatura",
+        "columnist_dashboard_title": "Painel do colunista",
+        "columnist_dashboard_blurb": "Gerencie artigos, destaque pago e participação estimada na receita publicitária.",
+        "columnist_new_article": "Novo artigo",
+        "columnist_balance": "Saldo estimado",
+        "columnist_share_note": "Participação estimada de cerca de {pct}% (pageviews × RPM do site).",
+        "columnist_request_payout": "Solicitar saque PIX",
+        "columnist_my_articles": "Meus artigos",
+        "columnist_no_articles": "Nenhum artigo ainda.",
+        "columnist_ledger": "Extrato da carteira",
+        "columnist_editor_title": "Escrever análise",
+        "columnist_boost": "Impulsionar",
+        "nav_columnist": "Colunista",
         "contact_subject": "Assunto",
         "contact_description": "Descrição",
         "contact_send": "Enviar",
@@ -598,6 +619,27 @@ UI: dict[str, dict[str, str]] = {
         "cross_links": "Cross links",
         "see_on_source": "View on {source}",
         "contact_us": "Contact us",
+        "columnist_byline": "Column · {name}",
+        "columnist_badge": "Columnist",
+        "columnist_disclaimer_short": "Columnist opinion. Not investment advice. Moderated by Clareza Capital.",
+        "columnist_apply_title": "Become a columnist",
+        "columnist_apply_blurb": "Publish financial analysis on Clareza Capital. After approval, articles are reviewed before going live.",
+        "columnist_terms_link": "Read the program terms",
+        "columnist_pitch_label": "Pitch",
+        "columnist_pitch_placeholder": "Share your background and the analysis you want to publish…",
+        "columnist_apply_submit": "Submit application",
+        "columnist_dashboard_title": "Columnist dashboard",
+        "columnist_dashboard_blurb": "Manage articles, paid boosts and estimated ad-revenue share.",
+        "columnist_new_article": "New article",
+        "columnist_balance": "Estimated balance",
+        "columnist_share_note": "Estimated share around {pct}% (pageviews × site RPM).",
+        "columnist_request_payout": "Request PIX payout",
+        "columnist_my_articles": "My articles",
+        "columnist_no_articles": "No articles yet.",
+        "columnist_ledger": "Wallet ledger",
+        "columnist_editor_title": "Write analysis",
+        "columnist_boost": "Boost",
+        "nav_columnist": "Columnist",
         "contact_subject": "Subject",
         "contact_description": "Description",
         "contact_send": "Send",
@@ -812,6 +854,27 @@ UI: dict[str, dict[str, str]] = {
         "cross_links": "関連リンク",
         "see_on_source": "{source}で見る",
         "contact_us": "お問い合わせ",
+        "columnist_byline": "コラム · {name}",
+        "columnist_badge": "コラムニスト",
+        "columnist_disclaimer_short": "コラムニストの見解です。投資助言ではありません。Clareza Capitalが審査します。",
+        "columnist_apply_title": "コラムニストになる",
+        "columnist_apply_blurb": "Clareza Capitalで金融分析を公開できます。承認後、公開前に編集審査があります。",
+        "columnist_terms_link": "プログラム規約を読む",
+        "columnist_pitch_label": "自己紹介",
+        "columnist_pitch_placeholder": "経験と書きたい分析について…",
+        "columnist_apply_submit": "応募する",
+        "columnist_dashboard_title": "コラムニスト管理",
+        "columnist_dashboard_blurb": "記事、有料ブースト、推定広告収益の分配を管理します。",
+        "columnist_new_article": "新規記事",
+        "columnist_balance": "推定残高",
+        "columnist_share_note": "推定分配は約{pct}%（PV×サイトRPM）。",
+        "columnist_request_payout": "PIX出金を申請",
+        "columnist_my_articles": "自分の記事",
+        "columnist_no_articles": "まだ記事がありません。",
+        "columnist_ledger": "ウォレット明細",
+        "columnist_editor_title": "分析を書く",
+        "columnist_boost": "ブースト",
+        "nav_columnist": "コラム",
         "contact_subject": "件名",
         "contact_description": "内容",
         "contact_send": "送信",
@@ -1012,11 +1075,24 @@ def translate_urgency(lang: str, value: object) -> str:
 
 
 def lang_switch_url(request: Request, target_lang: str) -> str:
+    """PT = URL limpa (canônica). EN/JA = ?lang= só no seletor."""
     path = request.url.path or "/"
-    params = dict(request.query_params)
-    params["lang"] = target_lang
+    params = {k: v for k, v in request.query_params.items() if k != "lang"}
+    if target_lang and target_lang != DEFAULT_LANG:
+        params["lang"] = target_lang
     query = urlencode(params)
-    return f"{path}?{query}" if query else f"{path}?lang={target_lang}"
+    return f"{path}?{query}" if query else path
+
+
+def localized_path(path: str, lang: str) -> str:
+    """Link interno: PT sem query; EN/JA com ?lang=."""
+    base = (path or "/").strip() or "/"
+    if not lang or lang == DEFAULT_LANG:
+        return base
+    sep = "&" if "?" in base else "?"
+    if "lang=" in base:
+        return base
+    return f"{base}{sep}lang={lang}"
 
 
 def absolute_url(site_origin: str, path: str, query: dict[str, str] | None = None) -> str:
@@ -1092,8 +1168,9 @@ def build_i18n_context(request: Request) -> dict[str, Any]:
         "robots_noindex": robots_noindex,
         "hreflang_urls": hreflang_urls,
         "default_og_image": f"{site_origin}/media/default/economia.svg?v=3",
-        # Artigos editoriais são PT; UI institucional pode usar variantes.
+        # Institucionais: hreflang EN/JA. Artigos sobrescrevem via _render_noticia_page.
         "hreflang_full": True,
+        "lp": lambda path, current=lang: localized_path(path, current),
         "t": t,
         "tr_tag": lambda tag: translate_tag(lang, tag),
         "category_intro": lambda tag: category_intro(lang, tag),
@@ -1118,15 +1195,31 @@ def build_i18n_context(request: Request) -> dict[str, Any]:
         "site_topic_keywords": SITE_TOPIC_KEYWORDS,
         "seo_topic_links": [
             {
-                "href": f"/?categoria={quote(tag)}&lang={lang}",
+                "href": (
+                    f"/?categoria={quote(tag)}&lang={lang}"
+                    if lang != DEFAULT_LANG
+                    else f"/?categoria={quote(tag)}"
+                ),
                 "label": translate_tag(lang, tag),
             }
             for tag in SITE_TOPIC_KEYWORDS
         ],
         "footer_guide_links": [
-            {"href": f"/artigo/selic?lang={lang}", "label": t("footer_guide_selic")},
-            {"href": f"/artigo/ipca?lang={lang}", "label": t("footer_guide_ipca")},
-            {"href": f"/artigo/cambio?lang={lang}", "label": t("footer_guide_cambio")},
-            {"href": f"/artigo/renda-fixa?lang={lang}", "label": t("footer_guide_renda_fixa")},
+            {
+                "href": f"/artigo/selic?lang={lang}" if lang != DEFAULT_LANG else "/artigo/selic",
+                "label": t("footer_guide_selic"),
+            },
+            {
+                "href": f"/artigo/ipca?lang={lang}" if lang != DEFAULT_LANG else "/artigo/ipca",
+                "label": t("footer_guide_ipca"),
+            },
+            {
+                "href": f"/artigo/cambio?lang={lang}" if lang != DEFAULT_LANG else "/artigo/cambio",
+                "label": t("footer_guide_cambio"),
+            },
+            {
+                "href": f"/artigo/renda-fixa?lang={lang}" if lang != DEFAULT_LANG else "/artigo/renda-fixa",
+                "label": t("footer_guide_renda_fixa"),
+            },
         ],
     }

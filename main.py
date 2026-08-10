@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote_plus
 from fastapi import FastAPI, Request, Response, HTTPException, Form, File, UploadFile
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -60,11 +61,13 @@ from i18n import (
     absolute_url,
     build_hreflang_map,
     build_i18n_context,
+    localized_path,
     resolve_lang,
     translate as i18n_translate,
 )
 import community_auth as community
 from community_auth import CONSENT_COOKIE, SESSION_USER_KEY
+import columnists
 
 _ = load_dotenv()
 
@@ -176,9 +179,69 @@ def _current_user(request: Request):
     if not uid:
         return None
     try:
-        return community.find_user_by_id(get_db(), int(uid))
+        user = community.find_user_by_id(get_db(), int(uid))
+        return columnists.enrich_user_role(get_db(), user)
     except Exception:
         return None
+
+
+def _require_login(request: Request, next_path: str = "/"):
+    user = _current_user(request)
+    if not user:
+        raise HTTPException(
+            status_code=303,
+            headers={"Location": f"/login?next={next_path}"},
+        )
+    if not user.get("email_verified", True):
+        return RedirectResponse("/verificar-email", status_code=303)
+    return user
+
+
+def _require_columnist(request: Request):
+    user = _current_user(request)
+    if not user:
+        return RedirectResponse("/login?next=/colunista", status_code=303)
+    if not columnists.is_columnist_user(user):
+        return RedirectResponse("/colunista/candidatar", status_code=303)
+    return user
+
+
+def _require_admin_user(request: Request):
+    user = _current_user(request)
+    if not user or not columnists.is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Acesso restrito.")
+    return user
+
+
+def _extract_admin_token(request: Request, token: str | None = None) -> str:
+    auth = request.headers.get("authorization") or ""
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    header = request.headers.get("x-admin-token") or request.headers.get("x-robo-token") or ""
+    if header.strip():
+        return header.strip()
+    return (token or request.query_params.get("token") or "").strip()
+
+
+def require_admin_or_robo(request: Request, token: str | None = None) -> None:
+    """Cron/admin API: ADMIN_TOKEN ou ROBO_TOKEN (Bearer / header / query)."""
+    expected_admin = columnists.get_admin_token()
+    expected_robo = get_robo_token()
+    provided = _extract_admin_token(request, token)
+    if not expected_admin and not expected_robo:
+        raise HTTPException(status_code=503, detail="ADMIN_TOKEN/ROBO_TOKEN nao configurado")
+    ok = False
+    if expected_admin and columnists.tokens_match(provided, expected_admin):
+        ok = True
+    if expected_robo and columnists.tokens_match(provided, expected_robo):
+        ok = True
+    if not ok:
+        raise HTTPException(status_code=401, detail="Nao autorizado")
+
+
+def _and_published(sql_has_where: bool) -> str:
+    joiner = " AND " if sql_has_where else " WHERE "
+    return joiner + columnists.PUBLISHED_SQL
 
 
 def _safe_next_url(raw: str | None, default: str = "/") -> str:
@@ -451,6 +514,9 @@ def _load_home_listing(
                         + """
                         WHERE id IN (SELECT rowid FROM news_fts WHERE news_fts MATCH ?)
                           AND tag = ?
+                        """
+                        + _and_published(True)
+                        + """
                         ORDER BY id DESC LIMIT ? OFFSET ?
                         """,
                         [fts_q, categoria, fetch_limit, offset],
@@ -460,6 +526,9 @@ def _load_home_listing(
                         NEWS_LIST_SELECT
                         + """
                         WHERE id IN (SELECT rowid FROM news_fts WHERE news_fts MATCH ?)
+                        """
+                        + _and_published(True)
+                        + """
                         ORDER BY id DESC LIMIT ? OFFSET ?
                         """,
                         [fts_q, fetch_limit, offset],
@@ -484,17 +553,17 @@ def _load_home_listing(
                 params.append(categoria)
             params.extend([fetch_limit, offset])
             result = client.execute(
-                NEWS_LIST_SELECT + f" WHERE {where_sql} ORDER BY id DESC LIMIT ? OFFSET ?",
+                NEWS_LIST_SELECT + f" WHERE {where_sql}" + _and_published(True) + " ORDER BY id DESC LIMIT ? OFFSET ?",
                 params,
             )
     elif categoria:
         result = client.execute(
-            NEWS_LIST_SELECT + " WHERE tag = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+            NEWS_LIST_SELECT + " WHERE tag = ?" + _and_published(True) + " ORDER BY id DESC LIMIT ? OFFSET ?",
             [categoria, fetch_limit, offset],
         )
     else:
         result = client.execute(
-            NEWS_LIST_SELECT + " ORDER BY id DESC LIMIT ? OFFSET ?",
+            NEWS_LIST_SELECT + " WHERE " + columnists.PUBLISHED_SQL + " ORDER BY id DESC LIMIT ? OFFSET ?",
             [fetch_limit, offset],
         )
 
@@ -536,7 +605,11 @@ def _load_home_listing(
 def _load_headline_news(categoria: str | None) -> list[Any]:
     """Manchetes importantes (urgência Alta) para o hero da home."""
     client = get_db()
-    where = "WHERE COALESCE(home_priority, 0) >= ?"
+    try:
+        columnists.expire_boosts(client)
+    except Exception:
+        pass
+    where = "WHERE COALESCE(home_priority, 0) >= ?" + _and_published(True)
     params: list[Any] = [core.HOME_HEADLINE_MIN_PRIORITY]
     if categoria:
         where += " AND tag = ?"
@@ -754,6 +827,52 @@ def _render_noticia_page(
     thin_article = resumo_len < THIN_RESUMO_CHARS
 
     user = _current_user(request)
+
+    columnist_author = None
+    columnist_body = None
+    is_columnist_article = False
+    try:
+        meta = client.execute(
+            """
+            SELECT author_id, content_origin, moderation_status, conteudo_extra
+            FROM news WHERE id = ? LIMIT 1
+            """,
+            [int(noticia_id)],
+        )
+        if meta.rows:
+            author_id = meta.rows[0][0]
+            origin = str(meta.rows[0][1] or "")
+            mod_status = str(meta.rows[0][2] or columnists.STATUS_PUBLISHED)
+            extra = meta.rows[0][3]
+            is_columnist_article = origin == columnists.ORIGIN_COLUMNIST
+            if is_columnist_article:
+                columnist_body = str(extra or impacto or "")
+                columnist_author = columnists.get_author_public(client, int(author_id) if author_id else None)
+                allowed = mod_status == columnists.STATUS_PUBLISHED
+                if not allowed and user:
+                    if columnists.is_admin_user(user) or (
+                        author_id is not None and int(user["id"]) == int(author_id)
+                    ):
+                        allowed = True
+                if not allowed:
+                    raise HTTPException(status_code=404, detail="Notícia não encontrada")
+                if mod_status == columnists.STATUS_PUBLISHED and author_id:
+                    try:
+                        columnists.record_page_view(
+                            client,
+                            int(noticia_id),
+                            author_id=int(author_id),
+                            ip=_client_ip(request),
+                            user_agent=request.headers.get("user-agent"),
+                            viewer_user_id=int(user["id"]) if user else None,
+                        )
+                    except Exception:
+                        pass
+    except HTTPException:
+        raise
+    except Exception as exc:
+        print(f"Aviso: meta colunista /noticia/{noticia_id}: {exc}", flush=True)
+
     comments: list[dict[str, Any]] = []
     try:
         comments = community.list_comments(
@@ -783,13 +902,16 @@ def _render_noticia_page(
             "canonical_url": article_canonical,
             "hreflang_urls": article_hreflang,
             "hreflang_full": hreflang_full,
-            "robots_noindex": thin_article,
+            "robots_noindex": thin_article or is_columnist_article,
             "published_iso": published_iso,
             "updated_iso": updated_iso,
             "content_translated": lang != "pt" and _article_has_translation(noticia, lang),
             "comments": comments,
             "comment_flash": request.query_params.get("comment_msg"),
             "comment_flash_ok": request.query_params.get("comment_ok") == "1",
+            "columnist_author": columnist_author,
+            "columnist_body": columnist_body,
+            "is_columnist_article": is_columnist_article,
         },
     )
     response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=60"
@@ -807,10 +929,11 @@ def ver_noticia(request: Request, noticia_id: int):
     noticia = result.rows[0]
     guide_slug = _guide_slug_from_link(noticia[4] if len(noticia) > 4 else None)
     if guide_slug and get_guide_by_slug(guide_slug):
-        target = f"/artigo/{guide_slug}"
         lang = (request.query_params.get("lang") or "").strip().lower()
-        if lang in SUPPORTED_LANGS:
-            target = f"{target}?lang={lang}"
+        target = localized_path(
+            f"/artigo/{guide_slug}",
+            lang if lang in SUPPORTED_LANGS else "pt",
+        )
         return RedirectResponse(url=target, status_code=301)
 
     return _render_noticia_page(request, noticia_id, noticia)
@@ -1531,10 +1654,20 @@ def get_robots_txt():
         + "Disallow: /verificar-email\n"
         + "Disallow: /reenviar-verificacao\n"
         + "Disallow: /auth/\n"
+        + "Disallow: /colunista\n"
+        + "Disallow: /admin/\n"
         + "Disallow: /*?q=\n"
         + "Disallow: /*?*q=\n"
         + "Disallow: /*?page=\n"
         + "Disallow: /*?*page=\n"
+        + "Disallow: /*?lang=pt\n"
+        + "Disallow: /*?*lang=pt\n"
+        + "Allow: /*?lang=en\n"
+        + "Allow: /*?*lang=en\n"
+        + "Allow: /*?lang=ja\n"
+        + "Allow: /*?*lang=ja\n"
+        + "Disallow: /*?lang=\n"
+        + "Disallow: /*?*lang=\n"
         + f"Sitemap: {SITE_ORIGIN}/sitemap.xml\n"
         + f"Sitemap: {SITE_ORIGIN}/feed.xml\n"
     )
@@ -2110,6 +2243,438 @@ def atualizar_artigos(request: Request, token: str | None = None, limit: int = 1
     resultado = core.refresh_stale_articles(limit=limit)
     _invalidate_home_cache()
     return {"status": "Sucesso", **resultado}
+
+
+# ==========================================
+# COLUNISTAS (publicação, boost, carteira)
+# ==========================================
+
+
+@app.get("/termos-colunista", response_class=HTMLResponse)
+def termos_colunista(request: Request):
+    return _render(request, "columnist_terms.html", {})
+
+
+@app.get("/colunista", response_class=HTMLResponse)
+def columnist_home(request: Request):
+    user = _current_user(request)
+    if not user:
+        return RedirectResponse("/login?next=/colunista", status_code=303)
+    if not columnists.is_columnist_user(user):
+        return RedirectResponse("/colunista/candidatar", status_code=303)
+    client = get_db()
+    flash = request.query_params.get("msg")
+    flash_ok = request.query_params.get("ok") == "1"
+    return _render(
+        request,
+        "columnist_dashboard.html",
+        {
+            "articles": columnists.list_author_articles(client, int(user["id"])),
+            "balance": columnists.wallet_balance(client, int(user["id"])),
+            "views_total": columnists.count_views(client, author_id=int(user["id"])),
+            "ledger": columnists.list_ledger(client, int(user["id"])),
+            "share_rate": columnists.columnist_share_rate(),
+            "is_admin": columnists.is_admin_user(user),
+            "flash": flash,
+            "flash_ok": flash_ok,
+        },
+    )
+
+
+@app.get("/colunista/candidatar", response_class=HTMLResponse)
+def columnist_apply_get(request: Request):
+    user = _current_user(request)
+    if not user:
+        return RedirectResponse("/login?next=/colunista/candidatar", status_code=303)
+    if columnists.is_columnist_user(user) and not columnists.is_admin_user(user):
+        return RedirectResponse("/colunista", status_code=303)
+    client = get_db()
+    return _render(
+        request,
+        "columnist_apply.html",
+        {
+            "application": columnists.get_application(client, int(user["id"])),
+            "flash": request.query_params.get("msg"),
+            "flash_ok": request.query_params.get("ok") == "1",
+        },
+    )
+
+
+@app.post("/colunista/candidatar")
+async def columnist_apply_post(request: Request, pitch: str = Form(...)):
+    user = _current_user(request)
+    if not user:
+        return RedirectResponse("/login?next=/colunista/candidatar", status_code=303)
+    try:
+        columnists.submit_application(get_db(), int(user["id"]), pitch)
+        return RedirectResponse("/colunista/candidatar?ok=1&msg=Candidatura+enviada.", status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(
+            f"/colunista/candidatar?ok=0&msg={quote_plus(str(exc))}",
+            status_code=303,
+        )
+
+
+@app.get("/colunista/novo", response_class=HTMLResponse)
+def columnist_new_get(request: Request):
+    user = _require_columnist(request)
+    if isinstance(user, RedirectResponse):
+        return user
+    return _render(
+        request,
+        "columnist_editor.html",
+        {
+            "article": None,
+            "categorias": CATEGORIAS,
+            "form_action": "/colunista/novo",
+            "flash": request.query_params.get("msg"),
+            "flash_ok": request.query_params.get("ok") == "1",
+        },
+    )
+
+
+@app.post("/colunista/novo")
+async def columnist_new_post(
+    request: Request,
+    titulo: str = Form(...),
+    resumo: str = Form(...),
+    body: str = Form(...),
+    tag: str = Form("Economia"),
+    action: str = Form("draft"),
+    cover: UploadFile | None = File(None),
+):
+    user = _require_columnist(request)
+    if isinstance(user, RedirectResponse):
+        return user
+    try:
+        imagem_url = None
+        if cover and cover.filename:
+            data = await cover.read()
+            if data:
+                imagem_url = columnists.save_columnist_cover(
+                    int(user["id"]), cover.filename, data
+                )
+        news_id = columnists.create_article(
+            get_db(),
+            user_id=int(user["id"]),
+            author_name=str(user["name"]),
+            titulo=titulo,
+            resumo=resumo,
+            body=body,
+            tag=tag,
+            submit=action == "submit",
+            imagem_url=imagem_url,
+        )
+        _invalidate_home_cache()
+        msg = "Enviado+para+revisao." if action == "submit" else "Rascunho+salvo."
+        return RedirectResponse(f"/colunista?ok=1&msg={msg}", status_code=303)
+    except (ValueError, RuntimeError) as exc:
+        return RedirectResponse(
+            f"/colunista/novo?ok=0&msg={quote_plus(str(exc))}",
+            status_code=303,
+        )
+
+
+@app.get("/colunista/editar/{news_id}", response_class=HTMLResponse)
+def columnist_edit_get(request: Request, news_id: int):
+    user = _require_columnist(request)
+    if isinstance(user, RedirectResponse):
+        return user
+    article = columnists.get_article_for_author(get_db(), news_id, int(user["id"]))
+    if not article:
+        raise HTTPException(status_code=404, detail="Artigo não encontrado")
+    return _render(
+        request,
+        "columnist_editor.html",
+        {
+            "article": article,
+            "categorias": CATEGORIAS,
+            "form_action": f"/colunista/editar/{news_id}",
+            "flash": request.query_params.get("msg"),
+            "flash_ok": request.query_params.get("ok") == "1",
+        },
+    )
+
+
+@app.post("/colunista/editar/{news_id}")
+async def columnist_edit_post(
+    request: Request,
+    news_id: int,
+    titulo: str = Form(...),
+    resumo: str = Form(...),
+    body: str = Form(...),
+    tag: str = Form("Economia"),
+    action: str = Form("draft"),
+    cover: UploadFile | None = File(None),
+):
+    user = _require_columnist(request)
+    if isinstance(user, RedirectResponse):
+        return user
+    try:
+        imagem_url = None
+        if cover and cover.filename:
+            data = await cover.read()
+            if data:
+                imagem_url = columnists.save_columnist_cover(
+                    int(user["id"]), cover.filename, data
+                )
+        columnists.update_article(
+            get_db(),
+            news_id=news_id,
+            user_id=int(user["id"]),
+            titulo=titulo,
+            resumo=resumo,
+            body=body,
+            tag=tag,
+            submit=action == "submit",
+            is_admin=columnists.is_admin_user(user),
+            imagem_url=imagem_url,
+        )
+        _invalidate_home_cache()
+        return RedirectResponse("/colunista?ok=1&msg=Artigo+atualizado.", status_code=303)
+    except (ValueError, PermissionError) as exc:
+        return RedirectResponse(
+            f"/colunista/editar/{news_id}?ok=0&msg={quote_plus(str(exc))}",
+            status_code=303,
+        )
+
+
+@app.post("/colunista/pix")
+async def columnist_pix(request: Request, pix_key: str = Form("")):
+    user = _require_columnist(request)
+    if isinstance(user, RedirectResponse):
+        return user
+    columnists.set_user_pix_key(get_db(), int(user["id"]), pix_key)
+    return RedirectResponse("/colunista?ok=1&msg=Chave+PIX+salva.", status_code=303)
+
+
+@app.post("/colunista/saque")
+async def columnist_payout(request: Request):
+    user = _require_columnist(request)
+    if isinstance(user, RedirectResponse):
+        return user
+    try:
+        columnists.request_payout(get_db(), int(user["id"]))
+        return RedirectResponse("/colunista?ok=1&msg=Saque+solicitado.", status_code=303)
+    except ValueError as exc:
+        return RedirectResponse(
+            f"/colunista?ok=0&msg={quote_plus(str(exc))}",
+            status_code=303,
+        )
+
+
+@app.get("/colunista/impulsionar/{news_id}", response_class=HTMLResponse)
+def columnist_boost_get(request: Request, news_id: int):
+    user = _require_columnist(request)
+    if isinstance(user, RedirectResponse):
+        return user
+    article = columnists.get_article_for_author(get_db(), news_id, int(user["id"]))
+    if not article:
+        raise HTTPException(status_code=404, detail="Artigo não encontrado")
+    return _render(
+        request,
+        "columnist_boost.html",
+        {
+            "article": article,
+            "plans": list(columnists.boost_plans().values()),
+            "mp_ready": columnists.mp_configured(),
+            "pix": None,
+            "flash": request.query_params.get("msg"),
+            "flash_ok": request.query_params.get("ok") == "1",
+        },
+    )
+
+
+@app.post("/colunista/impulsionar/{news_id}")
+async def columnist_boost_post(
+    request: Request,
+    news_id: int,
+    plan_id: str = Form(...),
+    simulate: str = Form(""),
+):
+    user = _require_columnist(request)
+    if isinstance(user, RedirectResponse):
+        return user
+    client = get_db()
+    try:
+        order = columnists.create_boost_order(
+            client, user_id=int(user["id"]), news_id=news_id, plan_id=plan_id
+        )
+    except ValueError as exc:
+        return RedirectResponse(
+            f"/colunista/impulsionar/{news_id}?ok=0&msg={quote_plus(str(exc))}",
+            status_code=303,
+        )
+
+    if simulate == "1" and not columnists.mp_configured():
+        columnists.activate_boost(client, int(order["id"]))
+        _invalidate_home_cache()
+        return RedirectResponse("/colunista?ok=1&msg=Destaque+ativado+(simulacao).", status_code=303)
+
+    try:
+        origin = (os.getenv("SITE_ORIGIN") or str(request.base_url)).rstrip("/")
+        pix = columnists.mp_create_pix_payment(
+            amount_brl=float(order["amount_brl"]),
+            description=f"Destaque Clareza Capital — {order['plan']['label']}",
+            external_reference=order["external_ref"],
+            payer_email=str(user["email"]),
+            notification_url=f"{origin}/webhooks/mercadopago",
+        )
+        if pix.get("payment_id"):
+            client.execute(
+                "UPDATE boost_orders SET mp_payment_id = ? WHERE id = ?",
+                [str(pix["payment_id"]), int(order["id"])],
+            )
+        article = columnists.get_article_for_author(client, news_id, int(user["id"]))
+        return _render(
+            request,
+            "columnist_boost.html",
+            {
+                "article": article,
+                "plans": list(columnists.boost_plans().values()),
+                "mp_ready": True,
+                "pix": pix,
+                "order_id": order["id"],
+                "amount_brl": order["amount_brl"],
+                "flash": None,
+                "flash_ok": True,
+            },
+        )
+    except Exception as exc:
+        return RedirectResponse(
+            f"/colunista/impulsionar/{news_id}?ok=0&msg={quote_plus(str(exc)[:180])}",
+            status_code=303,
+        )
+
+
+@app.post("/colunista/impulsionar/{news_id}/confirmar")
+async def columnist_boost_confirm(
+    request: Request,
+    news_id: int,
+    order_id: int = Form(...),
+    payment_id: str = Form(""),
+):
+    user = _require_columnist(request)
+    if isinstance(user, RedirectResponse):
+        return user
+    client = get_db()
+    try:
+        if payment_id:
+            pay = columnists.mp_get_payment(payment_id)
+            if str(pay.get("status")) in ("approved", "authorized"):
+                columnists.activate_boost(client, int(order_id))
+                _invalidate_home_cache()
+                return RedirectResponse("/colunista?ok=1&msg=Destaque+ativado.", status_code=303)
+        return RedirectResponse(
+            f"/colunista/impulsionar/{news_id}?ok=0&msg=Pagamento+ainda+nao+confirmado.",
+            status_code=303,
+        )
+    except Exception as exc:
+        return RedirectResponse(
+            f"/colunista/impulsionar/{news_id}?ok=0&msg={quote_plus(str(exc)[:180])}",
+            status_code=303,
+        )
+
+
+@app.post("/webhooks/mercadopago")
+async def webhook_mercadopago(request: Request):
+    """Webhook MP: ativa boost quando payment approved."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    data_id = None
+    if isinstance(payload, dict):
+        data_id = (payload.get("data") or {}).get("id") or payload.get("id")
+    if not data_id and request.query_params.get("data.id"):
+        data_id = request.query_params.get("data.id")
+    if not data_id:
+        return JSONResponse({"ok": True, "ignored": True})
+    try:
+        pay = columnists.mp_get_payment(data_id)
+        if str(pay.get("status")) not in ("approved", "authorized"):
+            return JSONResponse({"ok": True, "status": pay.get("status")})
+        ext = str(pay.get("external_reference") or "")
+        client = get_db()
+        order = columnists.find_boost_by_external_ref(client, ext)
+        if order:
+            columnists.activate_boost(client, int(order["id"]))
+            _invalidate_home_cache()
+        return JSONResponse({"ok": True})
+    except Exception as exc:
+        print(f"[mp webhook] {exc}", flush=True)
+        return JSONResponse({"ok": False}, status_code=500)
+
+
+@app.get("/admin/colunistas", response_class=HTMLResponse)
+def admin_columnists_get(request: Request):
+    _require_admin_user(request)
+    client = get_db()
+    return _render(
+        request,
+        "admin_columnists.html",
+        {
+            "applications": columnists.list_pending_applications(client),
+            "articles": columnists.list_pending_articles(client),
+            "payouts": columnists.list_pending_payouts(client),
+            "flash": request.query_params.get("msg"),
+            "flash_ok": request.query_params.get("ok") == "1",
+        },
+    )
+
+
+@app.post("/admin/colunistas/candidatura/{application_id}")
+async def admin_review_application(
+    request: Request,
+    application_id: int,
+    decision: str = Form(...),
+):
+    _require_admin_user(request)
+    columnists.review_application(
+        get_db(), application_id, approve=decision == "approve"
+    )
+    return RedirectResponse("/admin/colunistas?ok=1&msg=Candidatura+atualizada.", status_code=303)
+
+
+@app.post("/admin/colunistas/artigo/{news_id}")
+async def admin_review_article(
+    request: Request,
+    news_id: int,
+    decision: str = Form(...),
+    admin_note: str = Form(""),
+):
+    _require_admin_user(request)
+    columnists.review_article(
+        get_db(), news_id, approve=decision == "approve", admin_note=admin_note
+    )
+    _invalidate_home_cache()
+    return RedirectResponse("/admin/colunistas?ok=1&msg=Artigo+atualizado.", status_code=303)
+
+
+@app.post("/admin/colunistas/saque/{payout_id}")
+async def admin_settle_payout(
+    request: Request,
+    payout_id: int,
+    decision: str = Form(...),
+):
+    _require_admin_user(request)
+    columnists.settle_payout(get_db(), payout_id, paid=decision == "paid")
+    return RedirectResponse("/admin/colunistas?ok=1&msg=Saque+atualizado.", status_code=303)
+
+
+@app.post("/api/columnists/credit-daily")
+def api_columnists_credit_daily(request: Request, token: str | None = None, day: str | None = None):
+    require_admin_or_robo(request, token)
+    result = columnists.credit_daily_shares(get_db(), day=day)
+    return result
+
+
+@app.post("/api/columnists/expire-boosts")
+def api_columnists_expire_boosts(request: Request, token: str | None = None):
+    require_admin_or_robo(request, token)
+    n = columnists.expire_boosts(get_db())
+    _invalidate_home_cache()
+    return {"ok": True, "expired": n}
 
 
 if __name__ == "__main__":

@@ -87,6 +87,10 @@ def run() -> int:
         check("robots: Disallow busca ?q=", "Disallow: /*?q=" in r.text)
         check("robots: Disallow paginação ?page=", "Disallow: /*?page=" in r.text)
         check("robots: Disallow /login", "Disallow: /login" in r.text)
+        check("robots: Disallow ?lang=pt", "Disallow: /*?lang=pt" in r.text)
+        check("robots: Allow ?lang=en", "Allow: /*?lang=en" in r.text)
+        check("robots: Allow ?lang=ja", "Allow: /*?lang=ja" in r.text)
+        check("robots: Disallow /colunista", "Disallow: /colunista" in r.text)
         check("robots: Sitemap", "Sitemap: https://financas-news.net.br/sitemap.xml" in r.text)
         check("robots: feed.xml", "/feed.xml" in r.text)
 

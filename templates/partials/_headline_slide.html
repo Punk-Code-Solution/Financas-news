@@ -2,7 +2,7 @@
 <article class="headline-carousel__slide relative min-h-[380px] md:min-h-[480px] bg-slate-900 group" data-headline-slide>
     <img src="{{ article_cover(item[11], item[5]) }}" data-fallback="{{ category_image(item[5]) }}" alt="{{ item[1] }}" {% if headline_lazy %}loading="lazy"{% endif %} class="absolute inset-0 w-full h-full object-cover object-center transition duration-500 group-hover:scale-105">
     <div class="featured-gradient absolute inset-0"></div>
-    <a href="/noticia/{{ item[0] }}?lang={{ lang }}" class="absolute inset-0 flex flex-col justify-end p-6 md:p-8">
+    <a href="{{ lp('/noticia/' ~ item[0]) }}" class="absolute inset-0 flex flex-col justify-end p-6 md:p-8">
         <div class="flex items-center gap-2 mb-3 flex-wrap">
             {% if item|length > 15 and item[15] >= 80 %}
             <span class="bg-amber-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">{{ t('headline_badge') }}</span>

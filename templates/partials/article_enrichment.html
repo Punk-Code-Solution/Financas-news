@@ -192,14 +192,14 @@
             <p class="text-xs font-black uppercase tracking-wider text-blue-600 dark:text-[#4ade80]">{{ t('archive_context') }}</p>
             <h2 class="text-lg font-black text-gray-900 dark:text-white mt-1">
                 {% if acervo.total > 1 %}
-                {{ t('analyses_about', count=acervo.total) }} <a href="/?categoria={{ noticia[5] | urlencode }}&lang={{ lang }}" class="text-blue-600 dark:text-[#4ade80] hover:underline">{{ tr_tag(noticia[5]) }}</a>
+                {{ t('analyses_about', count=acervo.total) }} <a href="{{ lp('/?categoria=' ~ (noticia[5] | urlencode)) }}" class="text-blue-600 dark:text-[#4ade80] hover:underline">{{ tr_tag(noticia[5]) }}</a>
                 {% else %}
                 {{ t('related_stories') }}
                 {% endif %}
             </h2>
         </div>
         {% if acervo.total > 1 %}
-        <a href="/?categoria={{ noticia[5] | urlencode }}&lang={{ lang }}" class="text-xs font-semibold text-blue-600 dark:text-[#4ade80] hover:underline">{{ t('see_category') }}</a>
+        <a href="{{ lp('/?categoria=' ~ (noticia[5] | urlencode)) }}" class="text-xs font-semibold text-blue-600 dark:text-[#4ade80] hover:underline">{{ t('see_category') }}</a>
         {% endif %}
     </div>
 
@@ -220,7 +220,7 @@
             </p>
             <div class="space-y-2">
                 {% for rel in enrichment.related_articles %}
-                <a href="/noticia/{{ rel.id }}?lang={{ lang }}" class="group flex items-start gap-3 rounded-lg border border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-[#0f172a] p-3 hover:border-blue-400 dark:hover:border-slate-500 transition">
+                <a href="{{ lp('/noticia/' ~ rel.id) }}" class="group flex items-start gap-3 rounded-lg border border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-[#0f172a] p-3 hover:border-blue-400 dark:hover:border-slate-500 transition">
                     <span class="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-blue-600 dark:border-slate-600 dark:bg-slate-800 dark:text-[#4ade80]" aria-hidden="true">
                         <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4h7l5 5v11a1 1 0 01-1 1H7a1 1 0 01-1-1V5a1 1 0 011-1z"></path>
@@ -280,7 +280,7 @@
         <div class="flex flex-wrap gap-2">
             {% for ent in enrichment.related_entities %}
             {% if ent.url %}
-            <a href="{{ ent.url }}{% if 'lang=' not in ent.url %}{% if '?' in ent.url %}&{% else %}?{% endif %}lang={{ lang }}{% endif %}" class="inline-flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-full border border-blue-200 dark:border-slate-600 bg-white dark:bg-[#1e293b] text-gray-800 dark:text-slate-200 hover:border-blue-400 dark:hover:border-[#4ade80] hover:text-blue-600 dark:hover:text-[#4ade80] transition shadow-sm">
+            <a href="{{ lp(ent.url) }}" class="inline-flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-full border border-blue-200 dark:border-slate-600 bg-white dark:bg-[#1e293b] text-gray-800 dark:text-slate-200 hover:border-blue-400 dark:hover:border-[#4ade80] hover:text-blue-600 dark:hover:text-[#4ade80] transition shadow-sm">
                 <span class="text-blue-500 dark:text-[#4ade80]">#</span>{{ ent.nome }}
             </a>
             {% else %}

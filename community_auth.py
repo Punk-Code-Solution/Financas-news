@@ -296,16 +296,25 @@ def find_user_by_email(client, email: str) -> dict[str, Any] | None:
 
 
 def find_user_by_id(client, user_id: int) -> dict[str, Any] | None:
-    result = client.execute(
-        """
-        SELECT id, name, email, avatar_url, google_id, email_verified
-        FROM users WHERE id = ? LIMIT 1
-        """,
-        [int(user_id)],
-    )
+    try:
+        result = client.execute(
+            """
+            SELECT id, name, email, avatar_url, google_id, email_verified, role, pix_key
+            FROM users WHERE id = ? LIMIT 1
+            """,
+            [int(user_id)],
+        )
+    except Exception:
+        result = client.execute(
+            """
+            SELECT id, name, email, avatar_url, google_id, email_verified
+            FROM users WHERE id = ? LIMIT 1
+            """,
+            [int(user_id)],
+        )
     if not result.rows:
         return None
-    return _user_dict(result.rows[0], include_verify=True)
+    return _user_dict(result.rows[0], include_verify=True, include_role=True)
 
 
 def find_user_by_google_id(client, google_id: str) -> dict[str, Any] | None:
@@ -332,7 +341,13 @@ def _as_bool_flag(value: Any) -> bool:
         return str(value).strip().lower() in ("1", "true", "yes")
 
 
-def _user_dict(row, *, include_hash: bool = False, include_verify: bool = False) -> dict[str, Any]:
+def _user_dict(
+    row,
+    *,
+    include_hash: bool = False,
+    include_verify: bool = False,
+    include_role: bool = False,
+) -> dict[str, Any]:
     data = {
         "id": int(row[0]),
         "name": str(row[1] or ""),
@@ -348,12 +363,19 @@ def _user_dict(row, *, include_hash: bool = False, include_verify: bool = False)
             data["email_verify_token"] = row[7] if len(row) > 7 else None
             data["email_verify_sent_at"] = row[8] if len(row) > 8 else None
     elif include_verify and len(row) > 5:
-        # SELECT ... google_id, email_verified [, token, sent_at]
+        # SELECT ... google_id, email_verified [, role, pix_key] ou [, token, sent_at]
         data["email_verified"] = _as_bool_flag(row[5])
-        if len(row) > 6:
-            data["email_verify_token"] = row[6]
-        if len(row) > 7:
-            data["email_verify_sent_at"] = row[7]
+        if include_role and len(row) > 6:
+            data["role"] = str(row[6] or "user")
+            data["pix_key"] = row[7] if len(row) > 7 else None
+        else:
+            if len(row) > 6:
+                data["email_verify_token"] = row[6]
+            if len(row) > 7:
+                data["email_verify_sent_at"] = row[7]
+    if include_role and "role" not in data:
+        data["role"] = "user"
+        data["pix_key"] = None
     return data
 
 
