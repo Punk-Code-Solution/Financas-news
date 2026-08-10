@@ -5,6 +5,7 @@ import sqlite3
 import ssl
 import threading
 import time
+import unicodedata
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -298,13 +299,13 @@ def get_db() -> LocalDbClient | PooledClient:
     return _client
 
 
-def ensure_schema(client: DbClient) -> None:
+def ensure_schema(client: DbClient, *, force: bool = False) -> None:
     global _schema_ready
-    if _schema_ready:
+    if _schema_ready and not force:
         return
 
     with _schema_lock:
-        if _schema_ready:
+        if _schema_ready and not force:
             return
 
         try:
@@ -596,17 +597,17 @@ def _ensure_fts(client: DbClient) -> None:
         _fts_ready = False
 
 
-def sync_news_fts(client: DbClient | None = None) -> None:
+def sync_news_fts(client: DbClient | None = None) -> dict[str, Any]:
     """Reconstrói o índice FTS quando não há triggers (Turso)."""
-    if not fts_available():
-        return
     if _use_local_db():
-        return
+        return {"ok": True, "skipped": "local_db"}
     db = client or get_db()
     try:
         _ = db.execute("INSERT INTO news_fts(news_fts) VALUES('rebuild')")
-    except Exception:
-        pass
+        return {"ok": True, "rebuilt": True}
+    except Exception as exc:
+        print(f"Aviso: sync_news_fts: {exc}", flush=True)
+        return {"ok": False, "error": str(exc)[:180]}
 
 
 def fts_available() -> bool:
@@ -615,19 +616,117 @@ def fts_available() -> bool:
     return _fts_ready
 
 
+def _fold_fts_token(token: str) -> str:
+    nfkd = unicodedata.normalize("NFKD", (token or "").lower())
+    return "".join(ch for ch in nfkd if not unicodedata.combining(ch))
+
+
+# Sinônimos leves (token dobrado → extras). Não explodir o MATCH.
+_FTS_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "selic": ("copom", "juros"),
+    "copom": ("selic",),
+    "ipca": ("inflacao",),
+    "inflacao": ("ipca",),
+    "dolar": ("cambio", "usd"),
+    "cambio": ("dolar",),
+    "bitcoin": ("btc", "cripto"),
+    "btc": ("bitcoin",),
+    "cripto": ("bitcoin", "btc"),
+}
+
+
 def build_fts_match_query(q: str) -> str | None:
-    """Monta expressão FTS5 segura a partir do texto do usuário."""
+    """Monta expressão FTS5 segura (prefixos + sinônimos de mercado)."""
     tokens = re.findall(r"[0-9A-Za-zÀ-ÿ]{2,}", (q or "").strip(), flags=re.UNICODE)
     if not tokens:
         return None
     cleaned: list[str] = []
+    seen: set[str] = set()
+
+    def _add_term(raw: str) -> None:
+        safe = re.sub(r"[^\w]", "", raw, flags=re.UNICODE)
+        if len(safe) < 2:
+            return
+        key = safe.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        cleaned.append(f'"{safe}"*')
+
     for token in tokens[:8]:
-        safe = re.sub(r"[^\w]", "", token, flags=re.UNICODE)
-        if len(safe) >= 2:
-            cleaned.append(f'"{safe}"*')
+        _add_term(token)
+        folded = _fold_fts_token(token)
+        if folded:
+            _add_term(folded)
+            for extra in _FTS_SYNONYMS.get(folded, ()):
+                if len(cleaned) >= 16:
+                    break
+                _add_term(extra)
+        if len(cleaned) >= 16:
+            break
     if not cleaned:
         return None
     return " OR ".join(cleaned)
+
+
+def upsert_news_fts(client: DbClient | None, news_id: int, titulo: object, resumo: object) -> bool:
+    """Atualiza uma linha no índice FTS (Turso sem triggers). No-op no SQLite local."""
+    if _use_local_db() or not news_id:
+        return True
+    if not fts_available():
+        return False
+    db = client or get_db()
+    title = str(titulo or "")
+    summary = str(resumo or "")
+    try:
+        try:
+            _ = db.execute(
+                "INSERT INTO news_fts(news_fts, rowid, titulo, resumo) VALUES('delete', ?, ?, ?)",
+                [int(news_id), title, summary],
+            )
+        except Exception:
+            pass
+        _ = db.execute(
+            "INSERT INTO news_fts(rowid, titulo, resumo) VALUES (?, ?, ?)",
+            [int(news_id), title, summary],
+        )
+        return True
+    except Exception as exc:
+        print(f"Aviso: upsert news_fts id={news_id}: {exc}", flush=True)
+        return False
+
+
+def index_news_by_id(client: DbClient | None, news_id: int) -> bool:
+    db = client or get_db()
+    try:
+        result = db.execute(
+            "SELECT id, titulo, resumo FROM news WHERE id = ? LIMIT 1",
+            [int(news_id)],
+        )
+    except Exception:
+        return False
+    if not result.rows:
+        return False
+    row = result.rows[0]
+    return upsert_news_fts(db, int(row[0]), row[1], row[2])
+
+
+def index_news_by_link(client: DbClient | None, link: str) -> bool:
+    href = (link or "").strip()
+    if not href:
+        return False
+    db = client or get_db()
+    try:
+        result = db.execute(
+            "SELECT id, titulo, resumo FROM news WHERE link = ? LIMIT 1",
+            [href],
+        )
+    except Exception:
+        return False
+    if not result.rows:
+        return False
+    row = result.rows[0]
+    return upsert_news_fts(db, int(row[0]), row[1], row[2])
 
 
 def existing_news_links(links: list[str]) -> set[str]:

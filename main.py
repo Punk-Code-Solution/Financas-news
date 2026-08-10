@@ -25,7 +25,9 @@ from db import (
     existing_news_links,
     fts_available,
     get_db,
+    index_news_by_link,
     invalidate_sentiment_cache,
+    sync_news_fts,
 )
 from educational_guides import (
     EDUCATIONAL_GUIDES,
@@ -471,6 +473,16 @@ NEWS_LIST_SELECT = """
     FROM news
 """
 
+# JOIN com news_fts exige prefixo: titulo/resumo existem nas duas tabelas.
+FTS_NEWS_LIST_SELECT = """
+    SELECT news.id, news.titulo, news.resumo, news.impacto, news.link, news.tag, news.sentimento,
+           COALESCE(NULLIF(news.published_at, ''), news.created_at) AS data_publicacao,
+           news.fonte, NULL AS dados_mercado, NULL AS contexto_editorial, news.imagem_url,
+           NULL AS conteudo_extra, news.updated_at, news.versao_analise,
+           COALESCE(news.home_priority, 0) AS home_priority
+    FROM news
+"""
+
 
 def _invalidate_home_cache() -> None:
     with _HOME_CACHE_LOCK:
@@ -479,6 +491,36 @@ def _invalidate_home_cache() -> None:
 
 def _home_cache_key(categoria: str | None, offset: int, limit: int, q: str | None) -> str:
     return f"{categoria or ''}|{offset}|{limit}|{(q or '').strip().lower()}"
+
+
+def _execute_fts_listing(
+    client,
+    fts_q: str,
+    categoria: str | None,
+    fetch_limit: int,
+    offset: int,
+) -> QueryResult:
+    """Busca FTS com ranking bm25 (título pesa mais que resumo). Fallback sem bm25."""
+    params: list[Any] = [fts_q]
+    where = " JOIN news_fts ON news_fts.rowid = news.id WHERE news_fts MATCH ?"
+    if categoria:
+        where += " AND news.tag = ?"
+        params.append(categoria)
+    where += (
+        " AND (news.moderation_status IS NULL OR news.moderation_status = ''"
+        " OR news.moderation_status = 'published')"
+    )
+    params.extend([fetch_limit, offset])
+    ranked_sql = (
+        FTS_NEWS_LIST_SELECT
+        + where
+        + " ORDER BY bm25(news_fts, 10.0, 2.5), news.id DESC LIMIT ? OFFSET ?"
+    )
+    plain_sql = FTS_NEWS_LIST_SELECT + where + " ORDER BY news.id DESC LIMIT ? OFFSET ?"
+    try:
+        return client.execute(ranked_sql, params)
+    except Exception:
+        return client.execute(plain_sql, params)
 
 
 def _load_home_listing(
@@ -508,31 +550,7 @@ def _load_home_listing(
         fts_q = build_fts_match_query(q_clean) if fts_available() else None
         if fts_q:
             try:
-                if categoria:
-                    result = client.execute(
-                        NEWS_LIST_SELECT
-                        + """
-                        WHERE id IN (SELECT rowid FROM news_fts WHERE news_fts MATCH ?)
-                          AND tag = ?
-                        """
-                        + _and_published(True)
-                        + """
-                        ORDER BY id DESC LIMIT ? OFFSET ?
-                        """,
-                        [fts_q, categoria, fetch_limit, offset],
-                    )
-                else:
-                    result = client.execute(
-                        NEWS_LIST_SELECT
-                        + """
-                        WHERE id IN (SELECT rowid FROM news_fts WHERE news_fts MATCH ?)
-                        """
-                        + _and_published(True)
-                        + """
-                        ORDER BY id DESC LIMIT ? OFFSET ?
-                        """,
-                        [fts_q, fetch_limit, offset],
-                    )
+                result = _execute_fts_listing(client, fts_q, categoria, fetch_limit, offset)
             except Exception:
                 result = None
 
@@ -1955,6 +1973,10 @@ def _persist_generated_news(noticias_geradas: list[dict[str, Any]]) -> int:
         )
         existing.add(link)
         salvas += 1
+        try:
+            index_news_by_link(client, link)
+        except Exception:
+            pass
 
         if priority >= core.HOME_HEADLINE_MIN_PRIORITY:
             try:
@@ -1973,6 +1995,15 @@ def _persist_generated_news(noticias_geradas: list[dict[str, Any]]) -> int:
                 print(f"   [newsletter] fila alerta urgencia ignorada: {exc}")
 
     return salvas
+
+
+@app.get("/api/sync-news-fts")
+def api_sync_news_fts(request: Request, token: str | None = None):
+    """Rebuild do índice FTS no Turso (cron). SQLite local já usa triggers."""
+    require_robo_auth(request, token)
+    result = sync_news_fts()
+    _invalidate_home_cache()
+    return {"status": "Sucesso" if result.get("ok") else "Falha", **result}
 
 
 @app.get("/api/newsletter-digest")

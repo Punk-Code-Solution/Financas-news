@@ -298,7 +298,7 @@ Snapshot anterior de indicadores macro (Selic, IPCA) para detectar mudanças e g
 
 | Rota | Função |
 |------|--------|
-| `/` | Home com listagem, filtros e busca (FTS5 em título/resumo; combina `q` + `categoria`). Com `?categoria=` exibe intro editorial e guias relacionados |
+| `/` | Home com listagem, filtros e busca FTS5 (título/resumo; `q` + `categoria`). Ranking por relevância `bm25` (título pesa mais); sinônimos leves (Selic/Copom, IPCA/inflação, dólar/câmbio, bitcoin/BTC). Com `?categoria=` exibe intro editorial e guias relacionados |
 | `/noticia/{id}` | Artigo completo (tempo de leitura, relacionados, afiliado contextual) |
 | `/artigo/{slug}` | Guias evergreen (selic, ipca, cambio, renda-fixa) |
 | `/mercado` | Painel público: Selic, IPCA, dólar, BTC + histórico + links para análises |
@@ -349,6 +349,7 @@ Todas as respostas recebem:
 | `GET /api/newsletter-digest` | Digest semanal: 1–2 matérias Alta; não envia se vazio |
 | `GET /api/newsletter-digest-diario` | Até 2x/dia: 1–2 matérias Alta (`home_priority` ≥ 80); skip se vazio |
 | `GET /api/newsletter-alerta` | Reenvio manual de alerta de urgência (`news_id` obrigatório) |
+| `GET /api/sync-news-fts` | Rebuild do índice FTS no Turso (SQLite local já tem triggers; mesma auth `ROBO_TOKEN`) |
 | `POST /api/newsletter` | Captura de e-mail (local ou redirect externo) |
 | `POST /api/columnists/credit-daily` | Credita participação estimada do dia (ADMIN/ROBO token) |
 | `POST /api/columnists/expire-boosts` | Expira destaques pagos vencidos (ADMIN/ROBO token) |
@@ -540,6 +541,7 @@ Além do robô principal, agendar (mesma auth `ROBO_TOKEN`):
 | `/api/macro-watch` | diário ou após decisões do Copom/IBGE | só publica se Selic/IPCA mudarem |
 | `/api/traduzir-pendentes?limit=10` | diário | preenche EN/JA pendentes |
 | `/api/newsletter-digest` | 1× por semana | exige `RESEND_API_KEY`, SMTP ou webhook |
+| `/api/sync-news-fts` | 1× por dia (madrugada) | rebuild FTS no Turso; no-op no SQLite local |
 
 ### Capas (backfill contínuo)
 
@@ -581,10 +583,11 @@ uvicorn main:app --reload
 - [x] Newsletter digest 2x/dia (`/api/newsletter-digest-diario`) — máx. 1–2 Alta; skip se vazio
 - [x] **Colunistas:** candidatura + moderação, CMS, byline, destaque pago (PIX/Mercado Pago), carteira com participação estimada 30–40% (pageviews × RPM)
 - [x] GSC “página alternativa com tag canônica”: links PT sem `?lang=pt` + robots Disallow (FN-26)
+- [x] Busca FTS: ranking `bm25`, sinônimos de mercado e sync Turso (`/api/sync-news-fts`) (FN-36)
 
 ### Curto prazo (0–30 dias)
 
-- [ ] Agendar no Render: robô, capas, radar, macro-watch, traduzir, digest diário (manhã/tarde), `POST /api/columnists/credit-daily`, `POST /api/columnists/expire-boosts`
+- [ ] Agendar no Render: robô, capas, radar, macro-watch, traduzir, digest diário (manhã/tarde), `GET /api/sync-news-fts`, `POST /api/columnists/credit-daily`, `POST /api/columnists/expire-boosts`
 - [ ] Configurar `SESSION_SECRET`, `IP_HASH_SALT`, `GOOGLE_OAUTH_*`, `COLUMNIST_ADMIN_EMAILS`, `MERCADOPAGO_ACCESS_TOKEN`, `COLUMNIST_SHARE_RATE` / `COLUMNIST_SITE_RPM_BRL` em produção
 - [ ] Migrar crons restantes de `?token=` para `Authorization: Bearer` (e rotacionar se houve vazamento em logs)
 - [ ] Reaplicar ao Google AdSense / reconsideração Search Console (§11b) — UGC de colunistas exige moderação rigorosa

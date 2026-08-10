@@ -485,6 +485,9 @@ def run() -> int:
             check("Bearer /api/macro-watch", r.status_code == 200, f"status={r.status_code}")
             r = client.get("/api/traduzir-pendentes", headers=auth)
             check("Bearer /api/traduzir-pendentes", r.status_code == 200, f"status={r.status_code}")
+            with patch.object(main, "sync_news_fts", return_value={"ok": True, "skipped": "test"}):
+                r = client.get("/api/sync-news-fts", headers=auth)
+            check("Bearer /api/sync-news-fts", r.status_code == 200, f"status={r.status_code}")
             r = client.get("/api/gerar-imagens", params={"token": os.environ["ROBO_TOKEN"]})
             check("Query token /api/gerar-imagens", r.status_code == 200, f"status={r.status_code}")
             r = client.get("/api/gerar-imagens", headers={"X-Robo-Token": os.environ["ROBO_TOKEN"]})

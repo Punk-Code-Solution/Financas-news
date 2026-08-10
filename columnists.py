@@ -15,6 +15,7 @@ from urllib.parse import quote
 import requests
 
 import community_auth as community
+from db import upsert_news_fts
 from profanity_filter import find_blocked_terms
 
 ROLE_USER = "user"
@@ -356,7 +357,9 @@ def create_article(
     result = client.execute("SELECT id FROM news WHERE link = ? LIMIT 1", [link])
     if not result.rows:
         raise RuntimeError("Falha ao criar artigo.")
-    return int(result.rows[0][0])
+    news_id = int(result.rows[0][0])
+    upsert_news_fts(client, news_id, titulo, resumo)
+    return news_id
 
 
 def update_article(
@@ -409,6 +412,7 @@ def update_article(
             int(news_id),
         ],
     )
+    upsert_news_fts(client, int(news_id), titulo, resumo)
 
 
 def get_article_for_author(client, news_id: int, user_id: int | None) -> dict[str, Any] | None:
