@@ -1,0 +1,36 @@
+---
+description: Padrão de publicações LinkedIn e Instagram (Clareza Capital / Punk Code)
+alwaysApply: true
+---
+
+# Publicações sociais (LinkedIn + Instagram)
+
+Ao criar publicações para redes sociais deste projeto, escreva em **português** e entregue o texto **pronto para copiar e colar**. Sempre que fizer sentido, gere **as duas versões** (LinkedIn e Instagram).
+
+## LinkedIn
+
+1. Comece com um título curto em negrito (`**título**`), seguido de uma apresentação objetiva.
+2. Use 2 a 3 parágrafos curtos para explicar a proposta, o contexto e os diferenciais.
+3. Inclua a seção “O que você encontra:” com marcadores simples (•), destacando benefícios e funcionalidades.
+4. Finalize com chamadas para ação em linhas separadas: “Acesse:”, “Saiba mais:” e “Contato:”, mantendo as URLs completas.
+5. Termine com 5 a 7 hashtags relevantes.
+6. Mantenha tom profissional, claro, informativo e direto, evitando exageros, clichês e excesso de emojis.
+
+## Instagram
+
+Adapte o mesmo conteúdo ao formato do Instagram:
+
+1. **Sem markdown** — a primeira linha é o gancho (título curto em texto puro).
+2. 2 a 3 parágrafos curtos (legenda legível no preview; evite bloco denso).
+3. Seção “O que você encontra:” com marcadores (•).
+4. CTAs em linhas separadas: “Acesse:”, “Saiba mais:” e “Contato:” (URL completa no texto; lembrar que o clique costuma ficar no link da bio).
+5. 5 a 7 hashtags no final (marca + tema).
+6. Tom profissional e direto; no máximo 1–2 emojis se realmente ajudarem a hierarquia — preferir zero.
+7. Entregar a legenda pronta para colar; se houver capa do artigo, indicar a imagem a usar.
+
+## Automação no portal
+
+- Rota cron: `GET /api/social-publish` (auth `ROBO_TOKEN`).
+- LinkedIn: grava draft em `social_posts` (copy/paste).
+- Instagram: grava draft e, com `INSTAGRAM_ACCESS_TOKEN` + `INSTAGRAM_BUSINESS_ACCOUNT_ID`, publica via Meta Graph API.
+- Status: `GET /api/social-publish/status`.

@@ -90,6 +90,7 @@ financas_auto/
 ├── db.py                   # Conexão Turso, schema, FTS5, contexto editorial
 ├── monetization.py         # Receita + afiliados contextuais (env-driven)
 ├── newsletter_service.py   # Digest (1–2 Alta) e alertas de urgência
+├── social_publish.py       # Drafts LinkedIn + Instagram (Graph API opcional)
 ├── article_enrichment.py   # Relacionados, entidades, painéis do artigo
 ├── educational_guides.py   # Guias evergreen (Selic, IPCA, câmbio, renda fixa)
 ├── i18n.py                 # PT/EN/JA, intros de categoria, canônicas
@@ -286,6 +287,10 @@ Armazena e-mails capturados localmente quando a newsletter está ativa.
 
 Evita reenvio duplicado de alerta de urgência por `news_id`.
 
+### Tabela `social_posts`
+
+Drafts e publicações sociais por matéria (`UNIQUE(news_id, channel)`), com `channel` ∈ `linkedin` | `instagram`, `status` ∈ `draft` | `published` | `error` | `skipped`, legenda, URL da imagem e `external_id` (media id do Instagram quando publicado).
+
 ### Tabela `macro_watch_state`
 
 Snapshot anterior de indicadores macro (Selic, IPCA) para detectar mudanças e gerar matéria.
@@ -349,6 +354,8 @@ Todas as respostas recebem:
 | `GET /api/newsletter-digest` | Digest semanal: 1–2 matérias Alta; não envia se vazio |
 | `GET /api/newsletter-digest-diario` | Até 2x/dia: 1–2 matérias Alta (`home_priority` ≥ 80); skip se vazio |
 | `GET /api/newsletter-alerta` | Reenvio manual de alerta de urgência (`news_id` obrigatório) |
+| `GET /api/social-publish` | Drafts LinkedIn + Instagram; publica IG se Meta configurada |
+| `GET /api/social-publish/status` | Status da config Instagram (sem expor tokens) |
 | `GET /api/sync-news-fts` | Rebuild do índice FTS no Turso (SQLite local já tem triggers; mesma auth `ROBO_TOKEN`) |
 | `POST /api/newsletter` | Captura de e-mail (local ou redirect externo) |
 | `POST /api/columnists/credit-daily` | Credita participação estimada do dia (ADMIN/ROBO token) |
@@ -393,8 +400,16 @@ Agendar no Render (ou similar), com `Authorization: Bearer $ROBO_TOKEN`:
 
 - Até 2×/dia (ex. 08:00 e 17:00 America/Sao_Paulo): `GET /api/newsletter-digest-diario`
 - Semanal (opcional): `GET /api/newsletter-digest`
+- Após o digest (ou 1×/dia): `GET /api/social-publish` — gera drafts LinkedIn + Instagram das matérias Alta; publica no Instagram se Meta estiver configurada
 
 Cada digest inclui **no máximo 1–2** matérias de urgência Alta (`home_priority` ≥ 80). Se não houver conteúdo importante na janela, a API responde `Ignorado` e **não envia** e-mail. Assunto e layout usam a marca **Clareza Capital**; rodapé com link de privacidade (LGPD).
+
+### Redes sociais (LinkedIn + Instagram)
+
+- **LinkedIn:** texto no padrão editorial (título em negrito, “O que você encontra:”, CTAs e hashtags) gravado como draft — copiar/colar.
+- **Instagram:** mesma estrutura em texto puro; com `INSTAGRAM_ACCESS_TOKEN` + `INSTAGRAM_BUSINESS_ACCOUNT_ID` a rota publica a capa via Meta Graph (`/media` → `/media_publish`). A imagem precisa ser HTTPS público (ex.: URL Pexels remota).
+- Query útil: `?news_id=`, `?channel=instagram`, `?publish=0` (só draft), `?force=1`.
+- Status sem segredos: `GET /api/social-publish/status`.
 
 ### Thin content
 
@@ -473,6 +488,10 @@ SPONSORED_SLOT_URL=
 NEWSLETTER_URL=
 NEWSLETTER_ENABLED=false
 PREMIUM_TEASER_ENABLED=false
+# Instagram (Meta Graph — opcional; sem isso só gera drafts)
+INSTAGRAM_ACCESS_TOKEN=
+INSTAGRAM_BUSINESS_ACCOUNT_ID=
+INSTAGRAM_GRAPH_API_VERSION=v24.0
 ```
 
 ### Newsletter — envio (obrigatório para verificação de conta)
@@ -581,14 +600,15 @@ uvicorn main:app --reload
 - [x] Comunidade: users, login/OAuth Google, comentários, cookies LGPD
 - [x] Verificação de e-mail no cadastro local (link + bloqueio de login)
 - [x] Newsletter digest 2x/dia (`/api/newsletter-digest-diario`) — máx. 1–2 Alta; skip se vazio
+- [x] Publicação social: drafts LinkedIn + Instagram (`/api/social-publish`); publish IG via Meta Graph quando configurado
 - [x] **Colunistas:** candidatura + moderação, CMS, byline, destaque pago (PIX/Mercado Pago), carteira com participação estimada 30–40% (pageviews × RPM)
 - [x] GSC “página alternativa com tag canônica”: links PT sem `?lang=pt` + robots Disallow (FN-26)
 - [x] Busca FTS: ranking `bm25`, sinônimos de mercado e sync Turso (`/api/sync-news-fts`) (FN-36)
 
 ### Curto prazo (0–30 dias)
 
-- [ ] Agendar no Render: robô, capas, radar, macro-watch, traduzir, digest diário (manhã/tarde), `GET /api/sync-news-fts`, `POST /api/columnists/credit-daily`, `POST /api/columnists/expire-boosts`
-- [ ] Configurar `SESSION_SECRET`, `IP_HASH_SALT`, `GOOGLE_OAUTH_*`, `COLUMNIST_ADMIN_EMAILS`, `MERCADOPAGO_ACCESS_TOKEN`, `COLUMNIST_SHARE_RATE` / `COLUMNIST_SITE_RPM_BRL` em produção
+- [ ] Agendar no Render: robô, capas, radar, macro-watch, traduzir, digest diário (manhã/tarde), `GET /api/sync-news-fts`, `GET /api/social-publish`, `POST /api/columnists/credit-daily`, `POST /api/columnists/expire-boosts`
+- [ ] Configurar `SESSION_SECRET`, `IP_HASH_SALT`, `GOOGLE_OAUTH_*`, `COLUMNIST_ADMIN_EMAILS`, `MERCADOPAGO_ACCESS_TOKEN`, `COLUMNIST_SHARE_RATE` / `COLUMNIST_SITE_RPM_BRL`, `INSTAGRAM_ACCESS_TOKEN` / `INSTAGRAM_BUSINESS_ACCOUNT_ID` em produção
 - [ ] Migrar crons restantes de `?token=` para `Authorization: Bearer` (e rotacionar se houve vazamento em logs)
 - [ ] Reaplicar ao Google AdSense / reconsideração Search Console (§11b) — UGC de colunistas exige moderação rigorosa
 - [ ] Cadastrar programas de afiliados (Binance, Amazon) e preencher URLs no env

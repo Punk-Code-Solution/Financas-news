@@ -502,6 +502,22 @@ def ensure_schema(client: DbClient, *, force: bool = False) -> None:
                 )
             """)
 
+            _ = client.execute("""
+                CREATE TABLE IF NOT EXISTS social_posts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    news_id INTEGER NOT NULL,
+                    channel TEXT NOT NULL,
+                    caption TEXT NOT NULL,
+                    image_url TEXT,
+                    status TEXT NOT NULL,
+                    external_id TEXT,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(news_id, channel)
+                )
+            """)
+
             # Índices para listagens / filtros da home, relacionados e dedupe.
             for sql in (
                 "CREATE INDEX IF NOT EXISTS idx_news_id_desc ON news(id DESC)",
@@ -516,6 +532,8 @@ def ensure_schema(client: DbClient, *, force: bool = False) -> None:
                 "CREATE INDEX IF NOT EXISTS idx_page_views_day ON page_views(day, author_id)",
                 "CREATE INDEX IF NOT EXISTS idx_wallet_user ON wallet_ledger(user_id, id DESC)",
                 "CREATE INDEX IF NOT EXISTS idx_boost_ref ON boost_orders(external_ref)",
+                "CREATE INDEX IF NOT EXISTS idx_social_posts_channel ON social_posts(channel, status, id DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_social_posts_news ON social_posts(news_id)",
             ):
                 try:
                     _ = client.execute(sql)

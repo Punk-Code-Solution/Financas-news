@@ -47,6 +47,13 @@ from newsletter_service import (
     send_urgency_alert,
     send_weekly_digest,
 )
+from social_publish import (
+    CHANNEL_INSTAGRAM,
+    CHANNEL_LINKEDIN,
+    instagram_config_status,
+    process_social_publish,
+    social_posts_summary,
+)
 from monetization import get_monetization_config, get_contextual_affiliate
 from article_enrichment import (
     build_article_enrichment,
@@ -2070,6 +2077,54 @@ def newsletter_alerta(
     if not result.get("ok") and not result.get("skipped"):
         raise HTTPException(status_code=400, detail=result.get("error", "Falha no envio"))
     return {"status": "Sucesso", **result}
+
+
+@app.get("/api/social-publish")
+def api_social_publish(
+    request: Request,
+    token: str | None = None,
+    news_id: int | None = None,
+    channel: str | None = None,
+    publish: int = 1,
+    force: int = 0,
+):
+    """Gera posts LinkedIn + Instagram; publica no Instagram se Meta estiver configurada.
+
+    - Sem ``news_id``: até 3 matérias Alta nas últimas 24h.
+    - ``channel=linkedin|instagram``: restringe o canal.
+    - ``publish=0``: só grava drafts (não chama a Graph API).
+    - ``force=1``: regenera mesmo com draft/publicado existente.
+    """
+    require_robo_auth(request, token)
+    channels: list[str] | None = None
+    if channel:
+        normalized = channel.strip().lower()
+        if normalized not in (CHANNEL_LINKEDIN, CHANNEL_INSTAGRAM):
+            raise HTTPException(
+                status_code=400,
+                detail="channel deve ser linkedin ou instagram",
+            )
+        channels = [normalized]
+
+    client = get_db()
+    result = process_social_publish(
+        client,
+        news_id=news_id,
+        channels=channels,
+        publish_instagram=bool(publish),
+        force=bool(force),
+    )
+    print(social_posts_summary(result), flush=True)
+    if result.get("skipped"):
+        return {"status": "Ignorado", **result}
+    return {"status": "Sucesso", **result}
+
+
+@app.get("/api/social-publish/status")
+def api_social_publish_status(request: Request, token: str | None = None):
+    """Status da configuração Instagram (sem expor tokens)."""
+    require_robo_auth(request, token)
+    return {"status": "Sucesso", "instagram": instagram_config_status()}
 
 
 @app.get("/api/radar-semanal")
