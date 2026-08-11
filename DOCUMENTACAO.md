@@ -248,9 +248,23 @@ Imagens salvas em disco (`ARTICLE_IMAGES_DIR`) com URL pública `/media/articles
 | Start | `uvicorn main:app --host 0.0.0.0 --port $PORT` |
 | Health check | `GET /ping` |
 | Config | `railway.toml` |
-| Volume (opcional) | monte em `/data` → `ARTICLE_IMAGES_DIR=/data/article_images` |
+| Volume (opcional) | `RAILWAY_VOLUME_MOUNT_PATH` → capas em `{mount}/article_images` |
 
-**Passos rápidos:** New Project → Deploy from GitHub → selecionar o repo → a Railway lê `railway.toml`. Cole no painel as mesmas secrets do Render (`TURSO_*`, `ROBO_TOKEN`, `GOOGLE_API_KEY*`, `SITE_ORIGIN=https://financas-news.net.br`, AdSense, etc.). Não commitar valores. Crons HTTP (robô, capas, digest) via Railway Cron ou cron-job.org com `Authorization: Bearer $ROBO_TOKEN`.
+**Passos rápidos:** New Project → Deploy from GitHub → selecionar o repo → a Railway lê `railway.toml`.
+
+**Variables obrigatórias no painel** (Service → Variables; sem commit):
+
+| Variável | Notas |
+|----------|--------|
+| `TURSO_DATABASE_URL` | Mesma URL do Render (`libsql://…` ou `https://…`) |
+| `TURSO_AUTH_TOKEN` | Mesmo token Turso |
+| `GOOGLE_API_KEY` | (+ opcional `_2` / `_3`) |
+| `ROBO_TOKEN` | Segredo dos crons / APIs internas |
+| `SITE_ORIGIN` | `https://financas-news.net.br` (ou URL Railway temporária) |
+
+Sem `TURSO_*`, a home responde **503** (não 500). Alternativa: `USE_LOCAL_DB=true` (SQLite no volume — banco **separado** do Render).
+
+**Volume:** ao anexar volume, Railway define `RAILWAY_VOLUME_MOUNT_PATH`. Capas usam `{mount}/article_images` automaticamente. Crons HTTP com `Authorization: Bearer $ROBO_TOKEN`.
 
 O app detecta Railway via `RAILWAY_ENVIRONMENT` / `RAILWAY_PROJECT_ID` (cookies Secure, Pexels CDN remoto, sem provider Cursor).
 

@@ -20,13 +20,16 @@ from dotenv import load_dotenv
 import core
 from db import (
     QueryResult,
+    DatabaseConfigError,
     build_fts_match_query,
+    default_article_images_dir,
     ensure_schema,
     existing_news_links,
     fts_available,
     get_db,
     index_news_by_link,
     invalidate_sentiment_cache,
+    log_runtime_config_checklist,
     sync_news_fts,
 )
 from educational_guides import (
@@ -131,6 +134,8 @@ class CachedStaticFiles(StarletteStaticFiles):
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    log_runtime_config_checklist()
+
     def _boot():
         try:
             client = get_db()
@@ -155,6 +160,20 @@ async def _lifespan(_app: FastAPI):
 
 app = FastAPI(lifespan=_lifespan)
 
+
+@app.exception_handler(DatabaseConfigError)
+async def _database_config_error_handler(_request: Request, exc: DatabaseConfigError):
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": str(exc),
+            "hint": (
+                "Configure TURSO_DATABASE_URL e TURSO_AUTH_TOKEN no painel Variables, "
+                "ou USE_LOCAL_DB=true com volume montado."
+            ),
+        },
+    )
+
 # Sessão de usuário da comunidade (separada do ROBO_TOKEN).
 _https_only_sessions = (os.getenv("SESSION_HTTPS_ONLY", "true").strip().lower() not in ("0", "false", "no"))
 app.add_middleware(
@@ -170,7 +189,8 @@ app.add_middleware(
     ),
 )
 
-ARTICLE_IMAGES_DIR = os.getenv("ARTICLE_IMAGES_DIR", "static/images/articles")
+ARTICLE_IMAGES_DIR = default_article_images_dir()
+os.environ["ARTICLE_IMAGES_DIR"] = ARTICLE_IMAGES_DIR
 os.makedirs(ARTICLE_IMAGES_DIR, exist_ok=True)
 os.makedirs("static/images/articles", exist_ok=True)
 community.ensure_default_avatar()

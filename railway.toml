@@ -1,6 +1,11 @@
 # Deploy Clareza Capital / Finanças News na Railway.
-# Secrets (ROBO_TOKEN, TURSO_*, GOOGLE_API_KEY*, etc.) só no painel — nunca neste arquivo.
-# Volume opcional: monte em /data e defina ARTICLE_IMAGES_DIR=/data/article_images.
+# Secrets só no painel Variables — nunca neste arquivo.
+#
+# Obrigatório (mesmo banco do Render):
+#   TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, GOOGLE_API_KEY, ROBO_TOKEN, SITE_ORIGIN
+# Volume: Railway define RAILWAY_VOLUME_MOUNT_PATH; capas vão para {mount}/article_images.
+# Alternativa SQLite no volume (banco vazio, separado do Render):
+#   USE_LOCAL_DB=true
 
 [build]
 builder = "RAILPACK"

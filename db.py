@@ -75,8 +75,83 @@ _SENTIMENT_CACHE_TTL = 45.0
 _LINK_IN_CHUNK = 80
 
 
+class DatabaseConfigError(ValueError):
+    """Credenciais/banco não configurados — rotas devem responder 503."""
+
+
 def _use_local_db() -> bool:
     return os.getenv("USE_LOCAL_DB", "").lower() in ("1", "true", "yes")
+
+
+def _volume_mount_path() -> str:
+    return (os.getenv("RAILWAY_VOLUME_MOUNT_PATH") or "").rstrip("/")
+
+
+def default_local_database_path() -> str:
+    """SQLite no volume Railway quando LOCAL_DATABASE_PATH não foi definido."""
+    explicit = (os.getenv("LOCAL_DATABASE_PATH") or "").strip()
+    if explicit:
+        return explicit
+    vol = _volume_mount_path()
+    if vol:
+        return f"{vol}/news.db"
+    return "news.db"
+
+
+def default_article_images_dir() -> str:
+    """Capas no volume Railway quando ARTICLE_IMAGES_DIR não foi definido."""
+    explicit = (os.getenv("ARTICLE_IMAGES_DIR") or "").strip()
+    if explicit:
+        return explicit
+    vol = _volume_mount_path()
+    if vol:
+        return f"{vol}/article_images"
+    return "static/images/articles"
+
+
+def missing_runtime_config() -> list[str]:
+    """Lista vars críticas ausentes (sem valores) para log de startup."""
+    missing: list[str] = []
+    if not _use_local_db():
+        if not (os.environ.get("TURSO_DATABASE_URL") or "").strip():
+            missing.append("TURSO_DATABASE_URL")
+        if not (os.environ.get("TURSO_AUTH_TOKEN") or "").strip():
+            missing.append("TURSO_AUTH_TOKEN")
+    if not (
+        os.getenv("GOOGLE_API_KEY")
+        or os.getenv("GEMINI_API_KEY")
+        or os.getenv("GOOGLE_API_KEYS")
+        or os.getenv("GEMINI_API_KEYS")
+    ):
+        missing.append("GOOGLE_API_KEY (ou GEMINI_API_KEY)")
+    if not (os.getenv("ROBO_TOKEN") or "").strip():
+        missing.append("ROBO_TOKEN")
+    return missing
+
+
+def log_runtime_config_checklist() -> None:
+    missing = missing_runtime_config()
+    if not missing:
+        return
+    host = "Railway/Render" if (
+        os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("RAILWAY_PROJECT_ID")
+        or os.getenv("RENDER")
+    ) else "local"
+    print(
+        "AVISO: configuração incompleta ("
+        + host
+        + "). Defina no painel de Variables (não use .env no deploy): "
+        + ", ".join(missing)
+    )
+    if not _use_local_db() and (
+        "TURSO_DATABASE_URL" in missing or "TURSO_AUTH_TOKEN" in missing
+    ):
+        print(
+            "   Alternativa com volume: USE_LOCAL_DB=true "
+            "(SQLite em RAILWAY_VOLUME_MOUNT_PATH/news.db). "
+            "Para o mesmo banco do Render, prefira TURSO_*."
+        )
 
 
 def _configure_ssl_certs() -> None:
@@ -258,7 +333,7 @@ class PooledClient:
 
 def _create_client() -> LocalDbClient | PooledClient:
     if _use_local_db():
-        path = os.getenv("LOCAL_DATABASE_PATH", "news.db")
+        path = default_local_database_path()
         return LocalDbClient(path)
 
     _configure_ssl_certs()
@@ -275,9 +350,10 @@ def _create_client() -> LocalDbClient | PooledClient:
 
     token = os.environ.get("TURSO_AUTH_TOKEN")
     if not url or not token:
-        raise ValueError(
+        raise DatabaseConfigError(
             "Credenciais do Turso não encontradas. "
-            + "Defina TURSO_DATABASE_URL e TURSO_AUTH_TOKEN, ou USE_LOCAL_DB=true para SQLite local."
+            "No Railway/Render, defina TURSO_DATABASE_URL e TURSO_AUTH_TOKEN "
+            "em Variables; ou USE_LOCAL_DB=true para SQLite no volume."
         )
 
     return PooledClient(libsql_client.create_client_sync(url=url, auth_token=token))

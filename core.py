@@ -315,7 +315,10 @@ def _reset_image_quota_state() -> None:
 
 _gemini_keys = get_gemini_api_keys()
 if not _gemini_keys:
-    print("ERRO CRITICO: Chave API nao encontrada no .env")
+    print(
+        "AVISO: GOOGLE_API_KEY/GEMINI_API_KEY ausente nas variáveis de ambiente "
+        "(painel do host ou .env local). Robô e análises por IA ficam desligados."
+    )
     client = None
 else:
     client = get_genai_client(_gemini_keys[0])
