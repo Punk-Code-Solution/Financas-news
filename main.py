@@ -103,13 +103,15 @@ def _content_security_policy() -> str:
         "img-src 'self' data: https: blob:",
         (
             "connect-src 'self' https://economia.awesomeapi.com.br "
+            "https://cdn.jsdelivr.net "
             "https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net "
             "https://www.google.com https://ep1.adtrafficquality.google "
             "https://accounts.google.com https://oauth2.googleapis.com "
             "https://news.google.com"
         ),
         (
-            "frame-src about:blank https://googleads.g.doubleclick.net "
+            # about: (scheme) cobre iframes about:blank do AdSense; about:blank não é source CSP válido
+            "frame-src about: https://googleads.g.doubleclick.net "
             "https://tpc.googlesyndication.com https://www.google.com "
             "https://accounts.google.com https://news.google.com"
         ),

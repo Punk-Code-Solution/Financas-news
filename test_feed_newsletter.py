@@ -183,6 +183,9 @@ def test_csp_header_present():
         assert "default-src 'self'" in csp
         assert "pagead2.googlesyndication.com" in csp
         assert "cdn.jsdelivr.net" in csp
+        assert "connect-src" in csp and "https://cdn.jsdelivr.net" in csp
+        assert "frame-src about:" in csp
+        assert "about:blank" not in csp
 
 
 if __name__ == "__main__":
