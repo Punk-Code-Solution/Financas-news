@@ -24,6 +24,16 @@ from db import existing_news_links, get_db, get_editorial_context
 
 _ = load_dotenv()
 
+
+def is_cloud_host() -> bool:
+    """True no Render ou Railway (vars injetadas pelo host)."""
+    return bool(
+        os.getenv("RENDER")
+        or os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("RAILWAY_PROJECT_ID")
+    )
+
+
 # Cache em memória para não bloquear cada pageview com APIs externas.
 _MARKET_CACHE: dict[str, tuple[float, Any]] = {}
 _MARKET_CACHE_LOCK = threading.Lock()
@@ -1578,17 +1588,17 @@ def get_pexels_api_key() -> str:
 
 
 def _pexels_use_remote_url() -> bool:
-    """Se true, grava a URL do CDN Pexels no banco (capa aparece sem disco local/Render).
+    """Se true, grava a URL do CDN Pexels no banco (capa aparece sem disco local).
 
-    No Render, o default e remoto: disco efemero nao persiste capas entre deploys
-    e ``ARTICLE_IMAGES_DIR`` local costuma falhar. Defina ``PEXELS_USE_REMOTE_URL=false``
-    so se houver disco persistente montado de proposito.
+    Em host cloud (Render/Railway), o default e remoto: disco efemero nao persiste
+    capas entre deploys e ``ARTICLE_IMAGES_DIR`` local costuma falhar. Defina
+    ``PEXELS_USE_REMOTE_URL=false`` so se houver volume persistente montado.
     """
     raw = (os.getenv("PEXELS_USE_REMOTE_URL") or "").strip().lower()
     if raw:
         return raw in ("1", "true", "yes", "on")
-    # RENDER e setado automaticamente pelo host; dashboard sem a var nao deve cair em disco.
-    return bool(os.getenv("RENDER"))
+    # Vars do host (RENDER / RAILWAY_*); dashboard sem a var nao deve cair em disco.
+    return is_cloud_host()
 
 
 # Flag setada em HTTP 429 para o backfill/script pausar (tier free ~200 req/h).
@@ -2186,11 +2196,11 @@ def get_image_providers() -> list[str]:
     - ``openai,gemini`` — OpenAI primeiro
     - ``auto`` / vazio — Cursor (local) → Pexels → Gemini → Hugging Face → OpenAI
 
-    No Render, ``cursor`` é ignorado (SDK não roda lá).
+    Em host cloud (Render/Railway), ``cursor`` é ignorado (SDK não roda lá).
     Aliases: ``hf`` → ``huggingface``, ``stock`` → ``pexels``.
     """
     raw = os.getenv("IMAGE_PROVIDER", "").strip().lower()
-    on_render = bool(os.getenv("RENDER"))
+    on_cloud = is_cloud_host()
     aliases = {"hf": "huggingface", "stock": "pexels"}
     allowed = {"cursor", "gemini", "openai", "huggingface", "hf", "pexels", "stock", "auto"}
 
@@ -2198,7 +2208,7 @@ def get_image_providers() -> list[str]:
     parts = [p for p in parts if p in allowed]
 
     def _expand_auto() -> list[str]:
-        if on_render:
+        if on_cloud:
             return ["pexels", "gemini", "huggingface", "openai"]
         return ["cursor", "pexels", "gemini", "huggingface", "openai"]
 
@@ -2209,7 +2219,7 @@ def get_image_providers() -> list[str]:
         for part in parts:
             if part == "auto":
                 ordered.extend(_expand_auto())
-            elif part == "cursor" and on_render:
+            elif part == "cursor" and on_cloud:
                 continue
             else:
                 ordered.append(aliases.get(part, part))

@@ -95,6 +95,8 @@ def test_pexels_use_remote_url_defaults_on_render(monkeypatch=None):
     import os
 
     os.environ.pop("PEXELS_USE_REMOTE_URL", None)
+    os.environ.pop("RAILWAY_ENVIRONMENT", None)
+    os.environ.pop("RAILWAY_PROJECT_ID", None)
     os.environ["RENDER"] = "true"
     try:
         assert core._pexels_use_remote_url() is True
@@ -108,6 +110,21 @@ def test_pexels_use_remote_url_defaults_on_render(monkeypatch=None):
         assert core._pexels_use_remote_url() is False
     finally:
         os.environ.pop("RENDER", None)
+        os.environ.pop("PEXELS_USE_REMOTE_URL", None)
+
+
+def test_pexels_use_remote_url_defaults_on_railway():
+    import os
+
+    os.environ.pop("PEXELS_USE_REMOTE_URL", None)
+    os.environ.pop("RENDER", None)
+    os.environ.pop("RAILWAY_PROJECT_ID", None)
+    os.environ["RAILWAY_ENVIRONMENT"] = "production"
+    try:
+        assert core.is_cloud_host() is True
+        assert core._pexels_use_remote_url() is True
+    finally:
+        os.environ.pop("RAILWAY_ENVIRONMENT", None)
         os.environ.pop("PEXELS_USE_REMOTE_URL", None)
 
 
@@ -231,6 +248,7 @@ if __name__ == "__main__":
     test_pexels_photo_id_from_url()
     test_media_filename_from_url_accepts_normal_slug()
     test_pexels_use_remote_url_defaults_on_render()
+    test_pexels_use_remote_url_defaults_on_railway()
     test_pexels_skips_already_used_photo_id()
     test_pexels_generate_saves_file()
     test_pexels_skipped_without_key()

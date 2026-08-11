@@ -163,7 +163,11 @@ app.add_middleware(
     session_cookie="fn_session",
     max_age=60 * 60 * 24 * 30,
     same_site="lax",
-    https_only=_https_only_sessions and (os.getenv("RENDER", "") != "" or os.getenv("FORCE_SECURE_COOKIES", "") == "1"),
+    https_only=_https_only_sessions
+    and (
+        core.is_cloud_host()
+        or os.getenv("FORCE_SECURE_COOKIES", "") == "1"
+    ),
 )
 
 ARTICLE_IMAGES_DIR = os.getenv("ARTICLE_IMAGES_DIR", "static/images/articles")

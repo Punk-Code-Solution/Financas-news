@@ -78,7 +78,7 @@ Authorization: Bearer SEU_ROBO_TOKEN
 | Frontend | Jinja2, Tailwind CSS (build estático), JavaScript |
 | Banco de dados | Turso (libSQL — SQLite distribuído) |
 | Inteligência artificial | Google Gemini (texto + imagem) |
-| Hospedagem | Render.com (web service + disco persistente) |
+| Hospedagem | Render.com ou Railway (web service + volume opcional) |
 | Dados externos | AwesomeAPI, Banco Central do Brasil, RSS |
 
 ### Estrutura de arquivos
@@ -100,7 +100,9 @@ financas_auto/
 ├── tools/build-css.js      # Build via CLI standalone
 ├── requirements.txt        # Dependências Python
 ├── render.yaml             # Deploy no Render
-└── runtime.txt             # Versão Python fixada
+├── railway.toml            # Deploy na Railway
+├── .python-version         # Python 3.13.7 (Railpack / asdf)
+└── runtime.txt             # Versão Python (Render)
 ```
 
 Para regenerar o CSS após mudar classes nos templates: baixe o [CLI standalone do Tailwind](https://github.com/tailwindlabs/tailwindcss/releases) para `tools/tailwindcss.exe` e rode `npm run build:css` (o arquivo `static/css/app.css` é versionado e usado em produção).
@@ -235,6 +237,22 @@ Imagens salvas em disco (`ARTICLE_IMAGES_DIR`) com URL pública `/media/articles
 | Runtime | Python 3.13.7 |
 | Disco persistente | 1 GB em `/var/data` (imagens de artigos) |
 | Health check | `GET /ping` |
+| Blueprint | `render.yaml` |
+
+### Railway
+
+| Item | Configuração |
+|------|-------------|
+| Serviço | Web service (Railpack) |
+| Runtime | Python 3.13.7 (`.python-version`) |
+| Start | `uvicorn main:app --host 0.0.0.0 --port $PORT` |
+| Health check | `GET /ping` |
+| Config | `railway.toml` |
+| Volume (opcional) | monte em `/data` → `ARTICLE_IMAGES_DIR=/data/article_images` |
+
+**Passos rápidos:** New Project → Deploy from GitHub → selecionar o repo → a Railway lê `railway.toml`. Cole no painel as mesmas secrets do Render (`TURSO_*`, `ROBO_TOKEN`, `GOOGLE_API_KEY*`, `SITE_ORIGIN=https://financas-news.net.br`, AdSense, etc.). Não commitar valores. Crons HTTP (robô, capas, digest) via Railway Cron ou cron-job.org com `Authorization: Bearer $ROBO_TOKEN`.
+
+O app detecta Railway via `RAILWAY_ENVIRONMENT` / `RAILWAY_PROJECT_ID` (cookies Secure, Pexels CDN remoto, sem provider Cursor).
 
 ### Turso (banco)
 
