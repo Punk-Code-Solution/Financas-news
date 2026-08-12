@@ -48,7 +48,7 @@ O diferencial não é republicar RSS — é produzir conteúdo com **contexto ma
 
 ### Etapas de cada execução do robô
 
-1. **Coleta de dados de mercado** — USD, EUR, BTC (AwesomeAPI) + Selic, IPCA e dólar comercial (API BCB).
+1. **Coleta de dados de mercado** — USD/EUR/BTC (AwesomeAPI, com fallback BCB para dólar e Binance para BTC) + Selic, IPCA e dólar comercial (API BCB).
 2. **Análises próprias (cota reservada)** — gera pelo menos `ROBOT_OWN_ANALYSES` (default 3) matérias autorais a partir do acervo do banco (`internal://analise/...`), antes do RSS, para não perder a cota Gemini.
 3. **Leitura de ~30 feeds RSS** (BR + internacionais) — até 3 notícias/fonte, teto 36/rodada (`ROBOT_MAX_PER_FEED` / `ROBOT_MAX_ARTICLES`), com teto reduzido pelo que ainda falta da meta própria.
 4. **Dedupe por link** antes da IA (economiza cota).
@@ -79,7 +79,7 @@ Authorization: Bearer SEU_ROBO_TOKEN
 | Banco de dados | Turso (libSQL — SQLite distribuído) |
 | Inteligência artificial | Google Gemini (texto + imagem) |
 | Hospedagem | Render.com ou Railway (web service + volume opcional) |
-| Dados externos | AwesomeAPI, Banco Central do Brasil, RSS |
+| Dados externos | AwesomeAPI, Binance (fallback BTC), Banco Central do Brasil, RSS |
 
 ### Estrutura de arquivos
 

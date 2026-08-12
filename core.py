@@ -37,14 +37,19 @@ def is_cloud_host() -> bool:
 # Cache em memória para não bloquear cada pageview com APIs externas.
 _MARKET_CACHE: dict[str, tuple[float, Any]] = {}
 _MARKET_CACHE_LOCK = threading.Lock()
-_HTTP_TIMEOUT = float(os.getenv("MARKET_HTTP_TIMEOUT", "3"))
+_HTTP_TIMEOUT = float(os.getenv("MARKET_HTTP_TIMEOUT", "8"))
 # Histórico BCB/AwesomeAPI costuma precisar de mais tempo que o snapshot.
-_HTTP_TIMEOUT_HIST = float(os.getenv("MARKET_HIST_HTTP_TIMEOUT", str(max(_HTTP_TIMEOUT, 8.0))))
+_HTTP_TIMEOUT_HIST = float(os.getenv("MARKET_HIST_HTTP_TIMEOUT", str(max(_HTTP_TIMEOUT, 12.0))))
 _CACHE_TTL_SNAPSHOT = int(os.getenv("MARKET_CACHE_TTL", "300"))  # 5 min
 _CACHE_TTL_HISTORICAL = int(os.getenv("MARKET_HIST_CACHE_TTL", "900"))  # 15 min
 # Endpoint /ultimos/N do BCB rejeita N > 20 (HTTP 400).
 _BCB_ULTIMOS_MAX = 20
 _AWESOME_DAILY_MAX = 360
+
+_USD_LABEL = "Dólar (USD/BRL)"
+_BTC_LABEL = "Bitcoin (BTC/BRL)"
+_EUR_LABEL = "Euro (EUR/BRL)"
+_USD_BCB_LABEL = "Dólar comercial (R$/US$)"
 
 
 def _cache_get(key: str):
@@ -64,6 +69,34 @@ def _cache_set(key: str, value: Any, ttl: int) -> Any:
     return value
 
 
+def _cache_set_or_stale(key: str, value: Any, ttl: int, *, usable: bool) -> Any:
+    """Só grava cache quando há dados úteis — evita envenenar TTL com vazio."""
+    if usable:
+        return _cache_set(key, value, ttl)
+    stale = _cache_get_stale(key)
+    return stale if stale is not None else value
+
+
+def _snapshot_has_quotes(snapshot: dict[str, Any] | None) -> bool:
+    if not isinstance(snapshot, dict):
+        return False
+    for key, payload in snapshot.items():
+        if key == "coletado_em":
+            continue
+        if isinstance(payload, dict) and payload.get("cotacao"):
+            return True
+    return False
+
+
+def _series_nonempty(series: dict[str, Any] | None) -> bool:
+    if not isinstance(series, dict):
+        return False
+    for payload in series.values():
+        if isinstance(payload, dict) and payload.get("values"):
+            return True
+    return False
+
+
 def _cache_get_stale(key: str):
     """Retorna valor mesmo expirado (fallback rápido)."""
     with _MARKET_CACHE_LOCK:
@@ -74,23 +107,34 @@ def _cache_get_stale(key: str):
 def _http_get_json(url: str, timeout: float | None = None) -> Any | None:
     timeout = timeout or _HTTP_TIMEOUT
     _configure_ssl_certs()
+
+    def _get(verify: bool):
+        return requests.get(url, headers=HEADERS, timeout=timeout, verify=verify)
+
     try:
-        res = requests.get(url, headers=HEADERS, timeout=timeout)
+        res = _get(verify=True)
         if res.status_code == 200:
             return res.json()
         return None
-    except requests.exceptions.SSLError:
+    except Exception as exc:
+        # SSL/cadeia quebrada (Windows, proxies, alguns hosts). Retry sem verify.
+        name = type(exc).__name__
+        msg = str(exc).lower()
+        ssl_related = (
+            isinstance(exc, requests.exceptions.SSLError)
+            or "ssl" in name.lower()
+            or "certificate" in msg
+            or "certificado" in msg
+        )
+        if not ssl_related:
+            return None
         try:
-            # Alguns ambientes Windows não reconhecem a cadeia local mesmo com
-            # certifi. O fallback é restrito a esta chamada.
             urllib3.disable_warnings(InsecureRequestWarning)
-            res = requests.get(url, headers=HEADERS, timeout=timeout, verify=False)
+            res = _get(verify=False)
             if res.status_code == 200:
                 return res.json()
         except Exception:
             return None
-    except Exception:
-        return None
     return None
 
 
@@ -371,15 +415,15 @@ BCB_SERIES = {
 }
 
 AWESOME_HISTORICAL = {
-    "Dólar (USD/BRL)": "USD-BRL",
-    "Bitcoin (BTC/BRL)": "BTC-BRL",
-    "Euro (EUR/BRL)": "EUR-BRL",
+    _USD_LABEL: "USD-BRL",
+    _BTC_LABEL: "BTC-BRL",
+    _EUR_LABEL: "EUR-BRL",
 }
 
 BCB_HISTORICAL_LABELS = {
     "selic_meta": "Selic meta (% a.a.)",
     "ipca_12m": "IPCA 12 meses (%)",
-    "dolar_comercial": "Dólar comercial (R$/US$)",
+    "dolar_comercial": _USD_BCB_LABEL,
 }
 
 
@@ -465,6 +509,85 @@ def _refresh_in_background(cache_key: str, refresh_fn) -> None:
     threading.Thread(target=_run, daemon=True).start()
 
 
+def _fill_snapshot_fallbacks(snapshot: dict[str, Any]) -> None:
+    """BCB (dólar) e Binance (BTC) quando a AwesomeAPI falha no host."""
+    if _USD_LABEL not in snapshot:
+        dados = _http_get_json(
+            "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1/dados/ultimos/1?formato=json",
+            timeout=_HTTP_TIMEOUT,
+        )
+        if isinstance(dados, list) and dados:
+            raw = str(dados[0].get("valor", "")).replace(",", ".")
+            snapshot[_USD_LABEL] = {
+                "cotacao": _format_brl(raw),
+                "variacao_24h": "n/d",
+                "maxima": "n/d",
+                "minima": "n/d",
+                "fonte": "BCB",
+                "data": dados[0].get("data"),
+            }
+
+    if _BTC_LABEL not in snapshot:
+        data = _http_get_json(
+            "https://api.binance.com/api/v3/ticker/24hr?symbol=BTCBRL",
+            timeout=_HTTP_TIMEOUT,
+        )
+        if isinstance(data, dict) and data.get("lastPrice"):
+            snapshot[_BTC_LABEL] = {
+                "cotacao": _format_brl(data.get("lastPrice")),
+                "variacao_24h": _format_pct(data.get("priceChangePercent")),
+                "maxima": _format_brl(data.get("highPrice")),
+                "minima": _format_brl(data.get("lowPrice")),
+                "fonte": "Binance",
+            }
+
+
+def _fetch_binance_btc_historical(days: int) -> dict[str, Any] | None:
+    limit = max(1, min(int(days or 1), 90))
+    dados = _http_get_json(
+        f"https://api.binance.com/api/v3/klines?symbol=BTCBRL&interval=1d&limit={limit}",
+        timeout=_HTTP_TIMEOUT_HIST,
+    )
+    if not isinstance(dados, list) or not dados:
+        return None
+    labels: list[str] = []
+    values: list[float] = []
+    for row in dados:
+        if not isinstance(row, (list, tuple)) or len(row) < 5:
+            continue
+        try:
+            ts = int(row[0]) // 1000
+            labels.append(datetime.fromtimestamp(ts).strftime("%d/%m"))
+            values.append(float(row[4]))
+        except (TypeError, ValueError, OSError, OverflowError):
+            continue
+    if not values:
+        return None
+    return {
+        "labels": labels,
+        "values": values,
+        "periodo_dias": days,
+        "fonte": "Binance",
+    }
+
+
+def _alias_usd_from_bcb(series: dict[str, Any]) -> None:
+    """Expõe o dólar BCB também na chave usada pelos gráficos do painel."""
+    if _USD_LABEL in series:
+        return
+    bcb_usd = series.get(_USD_BCB_LABEL)
+    if isinstance(bcb_usd, dict) and bcb_usd.get("values"):
+        series[_USD_LABEL] = {**bcb_usd, "fonte": bcb_usd.get("fonte") or "BCB"}
+
+
+def _ensure_btc_historical(series: dict[str, Any], days: int) -> None:
+    if _BTC_LABEL in series and isinstance(series[_BTC_LABEL], dict) and series[_BTC_LABEL].get("values"):
+        return
+    payload = _fetch_binance_btc_historical(days)
+    if payload:
+        series[_BTC_LABEL] = payload
+
+
 def _load_market_snapshot() -> dict[str, Any]:
     snapshot: dict[str, Any] = {"coletado_em": datetime.now().strftime("%d/%m/%Y %H:%M")}
     data = _http_get_json(
@@ -473,9 +596,9 @@ def _load_market_snapshot() -> dict[str, Any]:
     )
     if isinstance(data, dict):
         for key, label in [
-            ("USDBRL", "Dólar (USD/BRL)"),
-            ("EURBRL", "Euro (EUR/BRL)"),
-            ("BTCBRL", "Bitcoin (BTC/BRL)"),
+            ("USDBRL", _USD_LABEL),
+            ("EURBRL", _EUR_LABEL),
+            ("BTCBRL", _BTC_LABEL),
         ]:
             if key in data:
                 item = data[key]
@@ -484,13 +607,22 @@ def _load_market_snapshot() -> dict[str, Any]:
                     "variacao_24h": _format_pct(item.get("pctChange")),
                     "maxima": _format_brl(item.get("high")),
                     "minima": _format_brl(item.get("low")),
+                    "fonte": "AwesomeAPI",
                 }
-    elif not any(k for k in snapshot if k != "coletado_em"):
+
+    _fill_snapshot_fallbacks(snapshot)
+
+    if not _snapshot_has_quotes(snapshot):
         stale = _cache_get_stale("market_snapshot")
         if stale:
             return stale
 
-    return _cache_set("market_snapshot", snapshot, _CACHE_TTL_SNAPSHOT)
+    return _cache_set_or_stale(
+        "market_snapshot",
+        snapshot,
+        _CACHE_TTL_SNAPSHOT,
+        usable=_snapshot_has_quotes(snapshot),
+    )
 
 
 def fetch_market_snapshot(blocking: bool = True) -> dict[str, Any]:
@@ -625,7 +757,7 @@ def fetch_bcb_historical(days: int = 90) -> dict[str, Any]:
         if stale:
             return stale
 
-    return _cache_set(cache_key, series, _CACHE_TTL_HISTORICAL)
+    return _cache_set_or_stale(cache_key, series, _CACHE_TTL_HISTORICAL, usable=_series_nonempty(series))
 
 
 def fetch_awesome_historical(days: int = 30) -> dict[str, Any]:
@@ -668,42 +800,50 @@ def fetch_awesome_historical(days: int = 30) -> dict[str, Any]:
         if stale:
             return stale
 
-    return _cache_set(cache_key, series, _CACHE_TTL_HISTORICAL)
+    return _cache_set_or_stale(cache_key, series, _CACHE_TTL_HISTORICAL, usable=_series_nonempty(series))
 
 
 def fetch_market_historical(days_short: int = 30, days_long: int = 90) -> dict[str, Any]:
     """Agrega histórico BCB + AwesomeAPI (cache 15 min)."""
-    cache_key = f"market_hist_v3_{days_short}_{days_long}"
+    cache_key = f"market_hist_v4_{days_short}_{days_long}"
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
 
     short: dict[str, Any] = {}
     long_: dict[str, Any] = {}
+
+    def _safe_call(fn, *args):
+        try:
+            result = fn(*args)
+            return result if isinstance(result, dict) else {}
+        except Exception:
+            return {}
+
     with ThreadPoolExecutor(max_workers=4) as pool:
-        f_a30 = pool.submit(fetch_awesome_historical, days_short)
-        f_b30 = pool.submit(fetch_bcb_historical, min(days_short, 30))
-        f_a90 = pool.submit(fetch_awesome_historical, days_long)
-        f_b90 = pool.submit(fetch_bcb_historical, days_long)
-        try:
-            short = {**f_a30.result(), **f_b30.result()}
-        except Exception:
-            short = {}
-        try:
-            long_ = {**f_a90.result(), **f_b90.result()}
-        except Exception:
-            long_ = {}
+        f_a30 = pool.submit(_safe_call, fetch_awesome_historical, days_short)
+        f_b30 = pool.submit(_safe_call, fetch_bcb_historical, min(days_short, 30))
+        f_a90 = pool.submit(_safe_call, fetch_awesome_historical, days_long)
+        f_b90 = pool.submit(_safe_call, fetch_bcb_historical, days_long)
+        short = {**f_a30.result(), **f_b30.result()}
+        long_ = {**f_a90.result(), **f_b90.result()}
+
+    _alias_usd_from_bcb(short)
+    _alias_usd_from_bcb(long_)
+    _ensure_btc_historical(short, days_short)
+    _ensure_btc_historical(long_, days_long)
 
     payload = {
         "30d": short,
         "90d": long_,
         "coletado_em": datetime.now().strftime("%d/%m/%Y %H:%M"),
     }
-    if not short and not long_:
+    usable = _series_nonempty(short) or _series_nonempty(long_)
+    if not usable:
         stale = _cache_get_stale(cache_key)
         if stale:
             return stale
-    return _cache_set(cache_key, payload, _CACHE_TTL_HISTORICAL)
+    return _cache_set_or_stale(cache_key, payload, _CACHE_TTL_HISTORICAL, usable=usable)
 
 
 def fetch_sparkline_data(blocking: bool = False) -> dict[str, list[float]]:
@@ -729,6 +869,24 @@ def fetch_sparkline_data(blocking: bool = False) -> dict[str, list[float]]:
                 points = _parse_awesome_daily_points(dados)
                 if points:
                     sparklines[label] = [p[1] for p in points]
+        if _USD_LABEL not in sparklines:
+            dados = _http_get_json(
+                "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1/dados/ultimos/7?formato=json",
+                timeout=_HTTP_TIMEOUT_HIST,
+            )
+            if isinstance(dados, list) and dados:
+                vals: list[float] = []
+                for row in dados:
+                    try:
+                        vals.append(float(str(row.get("valor", "0")).replace(",", ".")))
+                    except (TypeError, ValueError):
+                        continue
+                if vals:
+                    sparklines[_USD_LABEL] = vals
+        if _BTC_LABEL not in sparklines:
+            btc = _fetch_binance_btc_historical(7)
+            if btc and btc.get("values"):
+                sparklines[_BTC_LABEL] = list(btc["values"])
         if sparklines:
             _cache_set(cache_key, sparklines, _CACHE_TTL_SNAPSHOT)
 

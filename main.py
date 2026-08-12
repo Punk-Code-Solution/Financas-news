@@ -1128,8 +1128,9 @@ async def termos(request: Request):
 @app.get("/mercado", response_class=HTMLResponse)
 def mercado_dashboard(request: Request):
     """Painel público: Selic, IPCA, dólar, BTC + histórico/sparklines + links editoriais."""
-    market = core.fetch_market_snapshot(blocking=False)
-    bcb = core.fetch_bcb_snapshot(blocking=False)
+    # blocking=True: painel já espera o histórico; evita 1º paint com "—" nos cards.
+    market = core.fetch_market_snapshot(blocking=True)
+    bcb = core.fetch_bcb_snapshot(blocking=True)
     historico = core.fetch_market_historical()
     sparklines = core.fetch_sparkline_data(blocking=False)
 
@@ -1145,7 +1146,7 @@ def mercado_dashboard(request: Request):
     charts = {
         "selic": hist_30.get("Selic meta (% a.a.)"),
         "ipca": hist_30.get("IPCA 12 meses (%)") or hist_30.get("IPCA acumulado 12 meses (%)"),
-        "usd": hist_30.get("Dólar (USD/BRL)"),
+        "usd": hist_30.get("Dólar (USD/BRL)") or hist_30.get("Dólar comercial (R$/US$)"),
         "btc": hist_30.get("Bitcoin (BTC/BRL)"),
     }
 
