@@ -133,7 +133,7 @@ def log_runtime_config_checklist() -> None:
     missing = missing_runtime_config()
     if not missing:
         return
-    host = "Railway/Render" if (
+    host = "Railway" if (
         os.getenv("RAILWAY_ENVIRONMENT")
         or os.getenv("RAILWAY_PROJECT_ID")
         or os.getenv("RENDER")
@@ -150,7 +150,7 @@ def log_runtime_config_checklist() -> None:
         print(
             "   Alternativa com volume: USE_LOCAL_DB=true "
             "(SQLite em RAILWAY_VOLUME_MOUNT_PATH/news.db). "
-            "Para o mesmo banco do Render, prefira TURSO_*."
+            "Para o mesmo banco de produção, prefira TURSO_*."
         )
 
 
@@ -352,7 +352,7 @@ def _create_client() -> LocalDbClient | PooledClient:
     if not url or not token:
         raise DatabaseConfigError(
             "Credenciais do Turso não encontradas. "
-            "No Railway/Render, defina TURSO_DATABASE_URL e TURSO_AUTH_TOKEN "
+            "Na Railway, defina TURSO_DATABASE_URL e TURSO_AUTH_TOKEN "
             "em Variables; ou USE_LOCAL_DB=true para SQLite no volume."
         )
 

@@ -250,9 +250,9 @@ def test_send_verification_not_configured_returns_false():
 def test_send_verification_uses_site_origin_env():
     from newsletter_service import build_verification_email
 
-    with patch.dict(os.environ, {"SITE_ORIGIN": "https://financas-news.net.br"}, clear=False):
+    with patch.dict(os.environ, {"SITE_ORIGIN": "https://www.financas-news.net.br"}, clear=False):
         payload = build_verification_email(name="Ana", token="tokXYZ", ttl_hours=48)
-    assert payload["verify_url"].startswith("https://financas-news.net.br/verificar-email?token=tokXYZ")
+    assert payload["verify_url"].startswith("https://www.financas-news.net.br/verificar-email?token=tokXYZ")
 
 
 def test_send_verification_mock_success():

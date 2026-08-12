@@ -1,6 +1,6 @@
 # Clareza Capital — Documentação do Projeto
 
-**Portal:** [financas-news.net.br](https://financas-news.net.br)  
+**Portal:** [www.financas-news.net.br](https://www.financas-news.net.br)  
 **Desenvolvedor:** Punk Code Solution  
 **Repositório:** [github.com/Punk-Code-Solution/Financas-news](https://github.com/Punk-Code-Solution/Financas-news)  
 **Versão do documento:** agosto/2026
@@ -59,7 +59,7 @@ O diferencial não é republicar RSS — é produzir conteúdo com **contexto ma
 
 ### Acionamento
 
-O robô é disparado via HTTP (cron externo, Render Cron Job ou chamada manual):
+O robô é disparado via HTTP (cron-job.org / serviço cron Railway ou chamada manual):
 
 ```
 GET /api/rodar-robo
@@ -78,7 +78,7 @@ Authorization: Bearer SEU_ROBO_TOKEN
 | Frontend | Jinja2, Tailwind CSS (build estático), JavaScript |
 | Banco de dados | Turso (libSQL — SQLite distribuído) |
 | Inteligência artificial | Google Gemini (texto + imagem) |
-| Hospedagem | Render.com ou Railway (web service + volume opcional) |
+| Hospedagem | Railway (web service + volume opcional) |
 | Dados externos | AwesomeAPI, Binance (fallback BTC), Banco Central do Brasil, RSS |
 
 ### Estrutura de arquivos
@@ -99,10 +99,10 @@ financas_auto/
 ├── tailwind.config.js      # Conteúdo/templates para purge
 ├── tools/build-css.js      # Build via CLI standalone
 ├── requirements.txt        # Dependências Python
-├── render.yaml             # Deploy no Render
-├── railway.toml            # Deploy na Railway
-├── .python-version         # Python 3.13.7 (Railpack / asdf)
-└── runtime.txt             # Versão Python (Render)
+├── railway.toml            # Deploy na Railway (produção)
+├── ops/crons.md            # Agenda de crons (UTC, Bearer, www)
+├── .python-version         # Python 3.13.7 (Railpack)
+└── runtime.txt             # Versão Python
 ```
 
 Para regenerar o CSS após mudar classes nos templates: baixe o [CLI standalone do Tailwind](https://github.com/tailwindlabs/tailwindcss/releases) para `tools/tailwindcss.exe` e rode `npm run build:css` (o arquivo `static/css/app.css` é versionado e usado em produção).
@@ -203,7 +203,7 @@ Ordem recomendada (híbrido stock + IA):
 3. **Hugging Face** (fallback) — `black-forest-labs/FLUX.1-schnell` via Inference Providers (`HF_TOKEN`)
 4. **OpenAI** (fallback no backfill) — `gpt-image-2` → `gpt-image-1.5` → `gpt-image-1` → `gpt-image-1-mini`
 
-> **Nota:** Imagen 4 (`imagen-4.0-*`) retorna 404 para contas novas e foi removido da fila padrão. Com `PEXELS_API_KEY` / `HF_TOKEN` / `OPENAI_API_KEY` no Render, o backfill tenta stock e depois IA.
+> **Nota:** Imagen 4 (`imagen-4.0-*`) retorna 404 para contas novas e foi removido da fila padrão. Com `PEXELS_API_KEY` / `HF_TOKEN` / `OPENAI_API_KEY` na Railway, o backfill tenta stock e depois IA.
 
 ### Prioridade de capas
 
@@ -229,42 +229,30 @@ Imagens salvas em disco (`ARTICLE_IMAGES_DIR`) com URL pública `/media/articles
 
 ## 7. Infraestrutura e custos
 
-### Render.com
+### Railway (produção)
 
 | Item | Configuração |
 |------|-------------|
-| Serviço | Web service Python |
-| Runtime | Python 3.13.7 |
-| Disco persistente | 1 GB em `/var/data` (imagens de artigos) |
-| Health check | `GET /ping` |
-| Blueprint | `render.yaml` |
-
-### Railway
-
-| Item | Configuração |
-|------|-------------|
+| URL | https://www.financas-news.net.br |
 | Serviço | Web service (Railpack) |
 | Runtime | Python 3.13.7 (`.python-version`) |
 | Start | `uvicorn main:app --host 0.0.0.0 --port $PORT` |
 | Health check | `GET /ping` |
 | Config | `railway.toml` |
-| Volume (opcional) | `RAILWAY_VOLUME_MOUNT_PATH` → capas em `{mount}/article_images` |
+| Volume | `RAILWAY_VOLUME_MOUNT_PATH` → capas em `{mount}/article_images` |
+| Crons | `ops/crons.md` (cron-job.org + Bearer; não no serviço web) |
 
-**Passos rápidos:** New Project → Deploy from GitHub → selecionar o repo → a Railway lê `railway.toml`.
-
-**Variables obrigatórias no painel** (Service → Variables; sem commit):
+**Variables obrigatórias** (Service → Variables; sem commit):
 
 | Variável | Notas |
 |----------|--------|
-| `TURSO_DATABASE_URL` | Mesma URL do Render (`libsql://…` ou `https://…`) |
-| `TURSO_AUTH_TOKEN` | Mesmo token Turso |
+| `TURSO_DATABASE_URL` | URL Turso (`libsql://…` ou `https://…`) |
+| `TURSO_AUTH_TOKEN` | Token Turso |
 | `GOOGLE_API_KEY` | (+ opcional `_2` / `_3`) |
 | `ROBO_TOKEN` | Segredo dos crons / APIs internas |
-| `SITE_ORIGIN` | `https://financas-news.net.br` (ou URL Railway temporária) |
+| `SITE_ORIGIN` | `https://www.financas-news.net.br` |
 
-Sem `TURSO_*`, a home responde **503** (não 500). Alternativa: `USE_LOCAL_DB=true` (SQLite no volume — banco **separado** do Render).
-
-**Volume:** ao anexar volume, Railway define `RAILWAY_VOLUME_MOUNT_PATH`. Capas usam `{mount}/article_images` automaticamente. Crons HTTP com `Authorization: Bearer $ROBO_TOKEN`.
+Sem `TURSO_*`, a home responde **503**. Alternativa: `USE_LOCAL_DB=true` (SQLite no volume — banco separado do Turso).
 
 O app detecta Railway via `RAILWAY_ENVIRONMENT` / `RAILWAY_PROJECT_ID` (cookies Secure, Pexels CDN remoto, sem provider Cursor).
 
@@ -278,11 +266,11 @@ O app detecta Railway via `RAILWAY_ENVIRONMENT` / `RAILWAY_PROJECT_ID` (cookies 
 
 | Serviço | Custo |
 |---------|-------|
-| Render (starter) | ~US$ 7/mês |
+| Railway | conforme plano |
 | Turso | Gratuito (tier inicial) |
 | Google Gemini API | Gratuito (free tier) |
 | Domínio | ~R$ 40/ano |
-| **Total operacional** | **~US$ 7–15/mês** |
+| **Total operacional** | variável (host + domínio) |
 
 ---
 
@@ -406,8 +394,8 @@ IP_HASH_SALT=             # salt para hash de IP em comentários (LGPD)
 GOOGLE_OAUTH_CLIENT_ID=   # opcional: login Google
 GOOGLE_OAUTH_CLIENT_SECRET=
 GOOGLE_OAUTH_REDIRECT_URI=  # ex.: https://financas-news.net.br/auth/google/callback
-# SESSION_HTTPS_ONLY=false  # local HTTP; em produção/Render cookies Secure
-SITE_ORIGIN=https://financas-news.net.br  # obrigatório em produção: links de verificação (nunca 127.0.0.1)
+# SESSION_HTTPS_ONLY=false  # local HTTP; em produção/Railway cookies Secure
+SITE_ORIGIN=https://www.financas-news.net.br  # obrigatório em produção (canônicas / links)
 # Verificação de conta também exige mailer: RESEND_API_KEY + NEWSLETTER_FROM (ou SMTP_*) — ver seção Newsletter
 # EMAIL_VERIFY_TTL_HOURS=48
 # EMAIL_VERIFY_RESEND_COOLDOWN_SEC=120
@@ -421,7 +409,7 @@ TURSO_AUTH_TOKEN=         # Token de autenticação Turso
 
 ### Newsletter (cron sugerido)
 
-Agendar no Render (ou similar), com `Authorization: Bearer $ROBO_TOKEN`:
+Agendar no cron-job.org (Railway), com `Authorization: Bearer $ROBO_TOKEN` — ver `ops/crons.md`:
 
 - Até 2×/dia (ex. 08:00 e 17:00 America/Sao_Paulo): `GET /api/newsletter-digest-diario`
 - Semanal (opcional): `GET /api/newsletter-digest`
@@ -470,7 +458,7 @@ Sem env → HTTP 503. Ausente/errado → HTTP 401 (comparação com `hmac.compar
 ```env
 GEMINI_MODELOS=gemini-3.1-flash-lite-preview,gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-2.5-flash-lite,gemini-2.5-flash,gemini-3-flash,gemini-3.5-flash
 GEMINI_IMAGE_MODELOS=gemini-3.1-flash-lite-image,gemini-3.1-flash-image,gemini-2.5-flash-image,gemini-3.1-flash-image-preview,gemini-3-pro-image
-# Produção (Render): pexels (+ Gemini/HF/OpenAI). Local: pexels | gemini | huggingface | openai | cursor | auto.
+# Produção (Railway): pexels (+ Gemini/HF/OpenAI). Local: pexels | gemini | huggingface | openai | cursor | auto.
 # Um ou vários provedores (ordem = prioridade). Ex.: pexels,gemini,huggingface,openai | openai,gemini | auto
 IMAGE_PROVIDER=pexels,gemini,huggingface,openai
 PEXELS_API_KEY=
@@ -482,7 +470,7 @@ OPENAI_IMAGE_MIN_INTERVAL=65
 ARTICLE_IMAGES_DIR=/var/data/article_images
 ```
 
-> No Render, use `IMAGE_PROVIDER=pexels,gemini,huggingface,openai`. Cole `PEXELS_API_KEY`, `HF_TOKEN` e `ROBO_TOKEN` no painel (`sync: false`). Chave Pexels gratuita: https://www.pexels.com/api/. `auto`/`cursor` no Render ignoram Cursor.
+> Na Railway, use `IMAGE_PROVIDER=pexels,gemini,huggingface,openai`. Cole `PEXELS_API_KEY`, `HF_TOKEN` e `ROBO_TOKEN` no painel. Chave Pexels gratuita: https://www.pexels.com/api/. `auto`/`cursor` em cloud host ignoram Cursor.
 
 ### Monetização (opcionais — só exibe se preenchidas)
 
@@ -517,7 +505,7 @@ Sem provedor, o app **não finge** que enviou: log `[newsletter] mailer nao conf
 
 Ordem de preferência no código: Resend → SMTP → webhook.
 
-**Render (checklist verificação de e-mail):**
+**Railway (checklist verificação de e-mail):**
 
 | Variável | Obrigatório? | Notas |
 |----------|--------------|--------|
@@ -528,7 +516,7 @@ Ordem de preferência no código: Resend → SMTP → webhook.
 | `NEWSLETTER_WEBHOOK_URL` | Alternativa | POST JSON `{subject,html,text,to,from}` |
 
 ```env
-SITE_ORIGIN=https://financas-news.net.br
+SITE_ORIGIN=https://www.financas-news.net.br
 NEWSLETTER_FROM=newsletter@financas-news.net.br
 RESEND_API_KEY=                 # preferencial (API Resend) — verificação de conta + newsletter
 NEWSLETTER_WEBHOOK_URL=         # alternativa: POST JSON {subject,html,text,to,from}
@@ -550,22 +538,19 @@ Não documente nem versione o valor real das chaves — só os nomes das variáv
 
 ### Publicar notícias
 
-Agendar chamada ao robô a cada 2–3 horas (cron no Render ou cron-job.org):
+Agenda completa (UTC, Bearer, URLs): ver **`ops/crons.md`**.
 
-```
-https://financas-news.net.br/api/rodar-robo?token=SEU_ROBO_TOKEN
-```
+Resumo: robô a cada 3 h (`GET /api/rodar-robo`), capas a cada 20 min, digest 08:00/17:00 BRT, etc. Preferir header `Authorization: Bearer $ROBO_TOKEN` (sem `?token=`).
 
-Preferencial (menos vazamento em logs): header `Authorization: Bearer SEU_ROBO_TOKEN`.  
 Variáveis úteis: `ROBO_TOKEN`, `ROBOT_MAX_PER_FEED=3`, `ROBOT_MAX_ARTICLES=36`, `ROBOT_OWN_ANALYSES=3`, `GOOGLE_API_KEY` / `_2` / `_3`.
 
 O robô prioriza a meta diária de **análises próprias** (síntese do acervo, sem RSS). Se ainda faltar, tenta de novo após os feeds. Endpoint dedicado: `/api/gerar-analises-proprias`.
 
-Se não houver notícias novas, o robô gera **1 capa** para o artigo pendente mais recente (senão, antigos sem capa).
+Se não houver notícias novas, o robô gera capas para artigos pendentes (backfill).
 
 ### Radar, macro e tradução (cron recomendado)
 
-Além do robô principal, agendar (mesma auth `ROBO_TOKEN`):
+Além do robô principal — detalhe e crons UTC em `ops/crons.md`:
 
 | Endpoint | Frequência sugerida | Notas |
 |----------|---------------------|-------|
@@ -577,10 +562,11 @@ Além do robô principal, agendar (mesma auth `ROBO_TOKEN`):
 
 ### Capas (backfill contínuo)
 
-Com Hugging Face / OpenAI e limite de 1 imagem por execução, agendar a cada **30 minutos**:
+Com Hugging Face / OpenAI e limite por execução, agendar a cada **20 minutos** (ver `ops/crons.md`):
 
 ```
-https://financas-news.net.br/api/gerar-imagens?token=SEU_ROBO_TOKEN&limit=1
+GET /api/gerar-imagens?limit=5
+Authorization: Bearer $ROBO_TOKEN
 ```
 
 A fila prioriza `id DESC` (notícias novas sem capa primeiro).
@@ -619,7 +605,7 @@ uvicorn main:app --reload
 
 ### Curto prazo (0–30 dias)
 
-- [ ] Agendar no Render: robô, capas, radar, macro-watch, traduzir, digest diário (manhã/tarde), `GET /api/sync-news-fts`, `POST /api/columnists/credit-daily`, `POST /api/columnists/expire-boosts`
+- [ ] Agendar crons (Railway / cron-job.org): ver `ops/crons.md` — robô, capas, radar, macro, traduzir, digest, FTS, colunistas
 - [ ] Configurar `SESSION_SECRET`, `IP_HASH_SALT`, `GOOGLE_OAUTH_*`, `COLUMNIST_ADMIN_EMAILS`, `MERCADOPAGO_ACCESS_TOKEN`, `COLUMNIST_SHARE_RATE` / `COLUMNIST_SITE_RPM_BRL` em produção
 - [ ] Migrar crons restantes de `?token=` para `Authorization: Bearer` (e rotacionar se houve vazamento em logs)
 - [ ] Reaplicar ao Google AdSense / reconsideração Search Console (§11b) — UGC de colunistas exige moderação rigorosa

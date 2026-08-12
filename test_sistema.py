@@ -91,7 +91,7 @@ def run() -> int:
         check("robots: Allow ?lang=en", "Allow: /*?lang=en" in r.text)
         check("robots: Allow ?lang=ja", "Allow: /*?lang=ja" in r.text)
         check("robots: Disallow /colunista", "Disallow: /colunista" in r.text)
-        check("robots: Sitemap", "Sitemap: https://financas-news.net.br/sitemap.xml" in r.text)
+        check("robots: Sitemap", "Sitemap: https://www.financas-news.net.br/sitemap.xml" in r.text)
         check("robots: feed.xml", "/feed.xml" in r.text)
 
         r = client.get("/feed.xml")
@@ -131,20 +131,20 @@ def run() -> int:
         check("Home: CSS estático", "/static/css/app.css" in r.text)
         check("Home: sem Tailwind CDN", "cdn.tailwindcss.com" not in r.text)
         check("Home: google-site-verification meta", "google-site-verification" in r.text)
-        check("Home: hreflang absoluto", 'hreflang="pt-BR"' in r.text and "https://financas-news.net.br" in r.text)
+        check("Home: hreflang absoluto", 'hreflang="pt-BR"' in r.text and "https://www.financas-news.net.br" in r.text)
         check("Home: seletor idioma", 'hreflang="en"' in r.text and 'hreflang="ja"' in r.text)
         # pt-BR / x-default devem coincidir com a canônica (sem ?lang=pt divergente).
         check(
             "Home: hreflang pt = canônica",
-            'rel="canonical" href="https://financas-news.net.br/"' in r.text
-            and 'hreflang="pt-BR" href="https://financas-news.net.br/"' in r.text
-            and 'hreflang="x-default" href="https://financas-news.net.br/"' in r.text,
+            'rel="canonical" href="https://www.financas-news.net.br/"' in r.text
+            and 'hreflang="pt-BR" href="https://www.financas-news.net.br/"' in r.text
+            and 'hreflang="x-default" href="https://www.financas-news.net.br/"' in r.text,
         )
 
         r = client.get("/", params={"categoria": "Cripto"})
         check(
             "Categoria: canônica com ?categoria=",
-            'rel="canonical" href="https://financas-news.net.br/?categoria=Cripto"' in r.text,
+            'rel="canonical" href="https://www.financas-news.net.br/?categoria=Cripto"' in r.text,
             r.text[r.text.find("canonical") : r.text.find("canonical") + 120] if "canonical" in r.text else "sem canonical",
         )
         check(
@@ -160,14 +160,14 @@ def run() -> int:
         check("Busca: noindex", 'name="robots" content="noindex, follow"' in r.text)
         check(
             "Busca: canônica limpa (sem q/lang)",
-            'rel="canonical" href="https://financas-news.net.br/"' in r.text,
+            'rel="canonical" href="https://www.financas-news.net.br/"' in r.text,
         )
 
         r = client.get("/", params={"page": "6", "categoria": "Economia"})
         check("Paginação legada: noindex", 'name="robots" content="noindex, follow"' in r.text)
         check(
             "Paginação legada: canônica sem page",
-            'rel="canonical" href="https://financas-news.net.br/?categoria=Economia"' in r.text,
+            'rel="canonical" href="https://www.financas-news.net.br/?categoria=Economia"' in r.text,
         )
 
         r = client.get("/static/js/market-ticker.js")
