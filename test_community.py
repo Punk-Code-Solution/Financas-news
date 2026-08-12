@@ -373,6 +373,24 @@ def test_delete_own_comment_not_found():
         assert "não encontrado" in str(exc).lower()
 
 
+def test_avatar_upload_uses_railway_volume_path():
+    import tempfile
+    from pathlib import Path
+
+    import community_auth as community
+
+    td = tempfile.mkdtemp()
+    png = bytes.fromhex(
+        "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de"
+        "0000000c4944415408d763f8ffff3f0005fe02fea533a32b0000000049454e44ae426082"
+    )
+    with patch.dict(os.environ, {"RAILWAY_VOLUME_MOUNT_PATH": td}, clear=False):
+        os.environ.pop("AVATAR_DIR", None)
+        url = community.save_avatar_upload(7, "a.png", png)
+        assert url.startswith("/media/avatars/u7_")
+        assert (Path(td) / "avatars" / url.rsplit("/", 1)[-1]).is_file()
+
+
 def test_create_comment_json_payload_includes_user_id():
     client = MagicMock()
     client.execute.side_effect = [
@@ -414,5 +432,6 @@ if __name__ == "__main__":
     test_delete_own_comment_ok()
     test_delete_own_comment_forbidden_for_other_user()
     test_delete_own_comment_not_found()
+    test_avatar_upload_uses_railway_volume_path()
     test_create_comment_json_payload_includes_user_id()
     print("OK test_community")

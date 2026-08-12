@@ -239,7 +239,7 @@ Imagens salvas em disco (`ARTICLE_IMAGES_DIR`) com URL pública `/media/articles
 | Start | `uvicorn main:app --host 0.0.0.0 --port $PORT` |
 | Health check | `GET /ping` |
 | Config | `railway.toml` |
-| Volume | `RAILWAY_VOLUME_MOUNT_PATH` → capas em `{mount}/article_images` |
+| Volume | `RAILWAY_VOLUME_MOUNT_PATH` → capas `{mount}/article_images`, avatares `{mount}/avatars` (`/media/avatars/`) |
 | Crons | `ops/crons.md` (cron-job.org + Bearer; não no serviço web) |
 
 **Variables obrigatórias** (Service → Variables; sem commit):

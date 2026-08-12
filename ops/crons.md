@@ -57,16 +57,43 @@ https://www.financas-news.net.br/api/columnists/credit-daily
 https://www.financas-news.net.br/api/columnists/expire-boosts
 ```
 
-### curl de teste
+### cron-job.org — o que preencher em cada job
+
+Timezone: **UTC**.  
+Request headers → Add header:  
+- Name: `Authorization`  
+- Value: `Bearer ` + seu `ROBO_TOKEN` (sem aspas)
+
+| Title (sugerido) | URL | Method | Schedule (UTC) | Timeout |
+|------------------|-----|--------|----------------|---------|
+| FN rodar-robo | `https://www.financas-news.net.br/api/rodar-robo` | GET | `0 */3 * * *` | 1200s |
+| FN gerar-imagens | `https://www.financas-news.net.br/api/gerar-imagens?limit=5` | GET | `*/20 * * * *` | 600s |
+| FN atualizar-artigos | `https://www.financas-news.net.br/api/atualizar-artigos?limit=20` | GET | `15 */6 * * *` | 300s |
+| FN macro-watch | `https://www.financas-news.net.br/api/macro-watch` | GET | `0 12 * * *` | 300s |
+| FN traduzir-pendentes | `https://www.financas-news.net.br/api/traduzir-pendentes?limit=10` | GET | `30 12 * * *` | 600s |
+| FN digest-diario | `https://www.financas-news.net.br/api/newsletter-digest-diario` | GET | `0 11,20 * * *` | 180s |
+| FN digest-semanal | `https://www.financas-news.net.br/api/newsletter-digest` | GET | `0 13 * * 0` | 180s |
+| FN radar-semanal | `https://www.financas-news.net.br/api/radar-semanal` | GET | `0 14 * * 1` | 600s |
+| FN sync-news-fts | `https://www.financas-news.net.br/api/sync-news-fts` | GET | `0 6 * * *` | 300s |
+| FN columnists-credit | `https://www.financas-news.net.br/api/columnists/credit-daily` | POST | `30 2 * * *` | 120s |
+| FN columnists-boosts | `https://www.financas-news.net.br/api/columnists/expire-boosts` | POST | `10 * * * *` | 60s |
+
+### curl one-liner (teste manual = mesma request do cron-job.org)
 
 ```bash
-BASE=https://www.financas-news.net.br
-# export ROBO_TOKEN=...   # só no shell / painel — nunca no git
+# export ROBO_TOKEN=...
 
-curl -fsS -H "Authorization: Bearer $ROBO_TOKEN" "$BASE/api/rodar-robo"
-curl -fsS -H "Authorization: Bearer $ROBO_TOKEN" "$BASE/api/gerar-imagens?limit=5"
-curl -fsS -H "Authorization: Bearer $ROBO_TOKEN" "$BASE/api/macro-watch"
-curl -fsS -X POST -H "Authorization: Bearer $ROBO_TOKEN" "$BASE/api/columnists/expire-boosts"
+curl -fsS -X GET -H "Authorization: Bearer $ROBO_TOKEN" --max-time 1200 "https://www.financas-news.net.br/api/rodar-robo"
+curl -fsS -X GET -H "Authorization: Bearer $ROBO_TOKEN" --max-time 600 "https://www.financas-news.net.br/api/gerar-imagens?limit=5"
+curl -fsS -X GET -H "Authorization: Bearer $ROBO_TOKEN" --max-time 300 "https://www.financas-news.net.br/api/atualizar-artigos?limit=20"
+curl -fsS -X GET -H "Authorization: Bearer $ROBO_TOKEN" --max-time 300 "https://www.financas-news.net.br/api/macro-watch"
+curl -fsS -X GET -H "Authorization: Bearer $ROBO_TOKEN" --max-time 600 "https://www.financas-news.net.br/api/traduzir-pendentes?limit=10"
+curl -fsS -X GET -H "Authorization: Bearer $ROBO_TOKEN" --max-time 180 "https://www.financas-news.net.br/api/newsletter-digest-diario"
+curl -fsS -X GET -H "Authorization: Bearer $ROBO_TOKEN" --max-time 180 "https://www.financas-news.net.br/api/newsletter-digest"
+curl -fsS -X GET -H "Authorization: Bearer $ROBO_TOKEN" --max-time 600 "https://www.financas-news.net.br/api/radar-semanal"
+curl -fsS -X GET -H "Authorization: Bearer $ROBO_TOKEN" --max-time 300 "https://www.financas-news.net.br/api/sync-news-fts"
+curl -fsS -X POST -H "Authorization: Bearer $ROBO_TOKEN" --max-time 120 "https://www.financas-news.net.br/api/columnists/credit-daily"
+curl -fsS -X POST -H "Authorization: Bearer $ROBO_TOKEN" --max-time 60 "https://www.financas-news.net.br/api/columnists/expire-boosts"
 ```
 
 Esperado: **200**. Sem token → **401**.

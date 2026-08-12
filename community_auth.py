@@ -16,7 +16,6 @@ import requests
 from profanity_filter import moderate_comment
 
 DEFAULT_AVATAR = "/static/avatars/default.svg?v=2"
-AVATAR_DIR = Path(os.getenv("AVATAR_DIR", "static/avatars"))
 AVATAR_MAX_BYTES = 512 * 1024
 AVATAR_ALLOWED = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 SESSION_USER_KEY = "user_id"
@@ -168,6 +167,27 @@ _DEFAULT_AVATAR_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="128" hei
 """
 
 
+def avatar_upload_dir() -> Path:
+    """Pasta de uploads de avatar (volume Railway quando disponível)."""
+    explicit = (os.getenv("AVATAR_DIR") or "").strip()
+    if explicit:
+        path = Path(explicit)
+    else:
+        vol = (os.getenv("RAILWAY_VOLUME_MOUNT_PATH") or "").rstrip("/")
+        path = Path(f"{vol}/avatars") if vol else Path("static/avatars")
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def avatar_public_prefix() -> str:
+    """URL pública dos uploads: /media/avatars no volume; /static/avatars no disco local legado."""
+    path = avatar_upload_dir()
+    normalized = str(path).replace("\\", "/").rstrip("/")
+    if normalized == "static/avatars" or normalized.endswith("/static/avatars"):
+        return "/static/avatars"
+    return "/media/avatars"
+
+
 def normalize_avatar_url(value: Any) -> str:
     avatar = (str(value or "").strip() or DEFAULT_AVATAR)
     if avatar.split("?", 1)[0] == "/static/avatars/default.svg":
@@ -176,9 +196,10 @@ def normalize_avatar_url(value: Any) -> str:
 
 
 def ensure_default_avatar() -> None:
-    """Garante default.svg válido em UTF-8 (SVG sem encoding declara UTF-8)."""
-    AVATAR_DIR.mkdir(parents=True, exist_ok=True)
-    path = AVATAR_DIR / "default.svg"
+    """Garante default.svg válido em UTF-8 em static/avatars (não depende do volume)."""
+    static_dir = Path("static/avatars")
+    static_dir.mkdir(parents=True, exist_ok=True)
+    path = static_dir / "default.svg"
     if path.is_file():
         raw = path.read_bytes()
         try:
@@ -188,6 +209,8 @@ def ensure_default_avatar() -> None:
         if text.strip().startswith("<svg") and "xmlns=" in text:
             return
     path.write_text(_DEFAULT_AVATAR_SVG, encoding="utf-8", newline="\n")
+    # Garante pasta de upload (volume) criada no boot.
+    avatar_upload_dir()
 
 
 def create_user(
@@ -629,17 +652,17 @@ def save_avatar_upload(user_id: int, filename: str, data: bytes) -> str:
     if not data:
         raise ValueError("Arquivo vazio.")
     # Magic bytes básicos
-    if not (
-        data[:3] == b"\xff\xd8\xff"
-        or data[:8] == b"\x89PNG\r\n\x1a\n"
-        or data[:6] in (b"GIF87a", b"GIF89a")
-        or data[:4] == b"RIFF"
-    ):
+    is_jpeg = data[:3] == b"\xff\xd8\xff"
+    is_png = data[:8] == b"\x89PNG\r\n\x1a\n"
+    is_gif = data[:6] in (b"GIF87a", b"GIF89a")
+    is_webp = len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+    if not (is_jpeg or is_png or is_gif or is_webp):
         raise ValueError("Arquivo não parece uma imagem válida.")
     safe_name = f"u{int(user_id)}_{secrets.token_hex(8)}{ext}"
-    path = AVATAR_DIR / safe_name
+    upload_dir = avatar_upload_dir()
+    path = upload_dir / safe_name
     path.write_bytes(data)
-    return f"/static/avatars/{safe_name}"
+    return f"{avatar_public_prefix()}/{safe_name}"
 
 
 def list_comments(client, news_id: int, *, include_pending_for_user: int | None = None) -> list[dict[str, Any]]:

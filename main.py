@@ -193,12 +193,17 @@ ARTICLE_IMAGES_DIR = default_article_images_dir()
 os.environ["ARTICLE_IMAGES_DIR"] = ARTICLE_IMAGES_DIR
 os.makedirs(ARTICLE_IMAGES_DIR, exist_ok=True)
 os.makedirs("static/images/articles", exist_ok=True)
+AVATAR_UPLOAD_DIR = str(community.avatar_upload_dir())
+os.environ["AVATAR_DIR"] = AVATAR_UPLOAD_DIR
 community.ensure_default_avatar()
 
 if os.path.exists("static"):
     app.mount("/static", CachedStaticFiles(directory="static"), name="static")
 if os.path.isdir(ARTICLE_IMAGES_DIR):
     app.mount("/media/articles", CachedStaticFiles(directory=ARTICLE_IMAGES_DIR), name="article_images")
+if os.path.isdir(AVATAR_UPLOAD_DIR):
+    # Uploads de perfil no volume Railway (ou static/avatars local).
+    app.mount("/media/avatars", CachedStaticFiles(directory=AVATAR_UPLOAD_DIR), name="user_avatars")
 templates = Jinja2Templates(directory="templates")
 
 

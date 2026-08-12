@@ -4,7 +4,8 @@
 # Obrigatório:
 #   TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, GOOGLE_API_KEY, ROBO_TOKEN
 #   SITE_ORIGIN=https://www.financas-news.net.br
-# Volume: RAILWAY_VOLUME_MOUNT_PATH → capas em {mount}/article_images
+# Volume: RAILWAY_VOLUME_MOUNT_PATH → capas em {mount}/article_images,
+#         avatares em {mount}/avatars (URL /media/avatars/...)
 # Crons: ops/crons.md (cron-job.org + Bearer; não use Cron Schedule neste serviço web)
 
 [build]
