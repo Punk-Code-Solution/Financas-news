@@ -8,6 +8,8 @@ tools/tailwindcss
 tools/*.log
 tools/*_fill_*.txt
 *.db
+dumps/
+*.sql.gz
 *.env
 static/avatars/*
 !static/avatars/default.svg

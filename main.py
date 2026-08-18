@@ -22,17 +22,26 @@ from db import (
     QueryResult,
     DatabaseConfigError,
     DatabaseUnavailableError,
+    TursoQuotaError,
     _is_transient_db_error,
+    activate_local_sqlite,
     build_fts_match_query,
+    db_backend_label,
     default_article_images_dir,
+    default_local_database_path,
     ensure_schema,
     existing_news_links,
     fts_available,
     get_db,
+    import_turso_into_sqlite,
     index_news_by_link,
     invalidate_sentiment_cache,
     log_runtime_config_checklist,
+    reset_db_client,
+    restore_sqlite_payload,
+    sqlite_table_counts,
     sync_news_fts,
+    RESTORE_MAX_BYTES,
 )
 from educational_guides import (
     EDUCATIONAL_GUIDES,
@@ -140,6 +149,7 @@ async def _lifespan(_app: FastAPI):
 
     def _boot():
         try:
+            print(f"   [db] backend={db_backend_label()}", flush=True)
             client = get_db()
             ensure_schema(client)
             n = ensure_educational_guides(client)
@@ -170,8 +180,8 @@ async def _database_config_error_handler(_request: Request, exc: DatabaseConfigE
         content={
             "detail": str(exc),
             "hint": (
-                "Configure TURSO_DATABASE_URL e TURSO_AUTH_TOKEN no painel Variables, "
-                "ou USE_LOCAL_DB=true com volume montado."
+                "Na Railway: USE_LOCAL_DB=true com volume (news.db). "
+                "TURSO_* so e necessario para /api/import-from-turso."
             ),
         },
     )
@@ -2024,7 +2034,7 @@ def require_robo_auth(request: Request, token: str | None = None) -> None:
 
 
 def _persist_generated_news(noticias_geradas: list[dict[str, Any]]) -> int:
-    """Insere no Turso o lote gerado pela IA. Retorna quantas linhas novas."""
+    """Insere no banco o lote gerado pela IA. Retorna quantas linhas novas."""
     if not noticias_geradas:
         return 0
 
@@ -2104,11 +2114,97 @@ def _persist_generated_news(noticias_geradas: list[dict[str, Any]]) -> int:
 
 @app.get("/api/sync-news-fts")
 def api_sync_news_fts(request: Request, token: str | None = None):
-    """Rebuild do índice FTS no Turso (cron). SQLite local já usa triggers."""
+    """Rebuild do índice FTS (cron). No SQLite local os triggers já cobrem INSERT/UPDATE."""
     require_robo_auth(request, token)
     result = sync_news_fts()
     _invalidate_home_cache()
     return {"status": "Sucesso" if result.get("ok") else "Falha", **result}
+
+
+@app.api_route("/api/import-from-turso", methods=["GET", "POST"])
+def api_import_from_turso(
+    request: Request,
+    token: str | None = None,
+    force: int = 0,
+):
+    """Copia o Turso para o SQLite do volume. Auth: ROBO_TOKEN."""
+    require_robo_auth(request, token)
+    try:
+        result = import_turso_into_sqlite(force=bool(force))
+    except TursoQuotaError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Turso recusou o dump (cota/plano). "
+                "Libere a cota e tente de novo; nao e falha do portal."
+            ),
+        ) from exc
+    except DatabaseConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        print(f"   [migrate] import falhou: {type(exc).__name__}", flush=True)
+        raise HTTPException(
+            status_code=502,
+            detail="Falha ao importar o Turso para o SQLite do volume.",
+        ) from exc
+    try:
+        ensure_schema(get_db(), force=True)
+    except Exception as exc:
+        print(f"   [migrate] schema apos import: {exc}", flush=True)
+    _invalidate_home_cache()
+    return {"status": "Sucesso", **result}
+
+
+@app.post("/api/restore-sqlite")
+async def api_restore_sqlite(
+    request: Request,
+    token: str | None = None,
+    file: UploadFile | None = File(None),
+):
+    """Sobe um .db/.sql (opcional gzip) para o volume. Auth: ROBO_TOKEN."""
+    require_robo_auth(request, token)
+    if file is None:
+        raise HTTPException(status_code=400, detail="arquivo obrigatorio")
+    name = (file.filename or "news.db").replace("\\", "/").split("/")[-1].lower()
+    if not name.endswith((".db", ".sqlite", ".sql", ".gz", ".db.gz", ".sql.gz")):
+        raise HTTPException(
+            status_code=400,
+            detail="arquivo deve ser .db, .sqlite, .sql ou .gz",
+        )
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="arquivo vazio")
+    if len(data) > RESTORE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="arquivo excede 150 MB")
+    dest = default_local_database_path()
+    reset_db_client()
+    try:
+        result = restore_sqlite_payload(data, dest)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        print(f"   [migrate] restore falhou: {type(exc).__name__}", flush=True)
+        raise HTTPException(
+            status_code=400,
+            detail="Nao foi possivel restaurar o arquivo enviado.",
+        ) from exc
+    if not sqlite_table_counts(dest).get("news"):
+        raise HTTPException(
+            status_code=400,
+            detail="arquivo restaurado sem tabela news (ou vazia)",
+        )
+    activate_local_sqlite()
+    try:
+        ensure_schema(get_db(), force=True)
+    except Exception as exc:
+        print(f"   [migrate] schema apos restore: {exc}", flush=True)
+    _invalidate_home_cache()
+    return {
+        "status": "Sucesso",
+        "path": dest,
+        "counts": sqlite_table_counts(dest),
+        **result,
+    }
 
 
 @app.get("/api/newsletter-digest")

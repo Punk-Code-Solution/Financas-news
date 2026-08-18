@@ -185,6 +185,45 @@ def test_pipeline_parses_execute_result():
     assert result.rows == [(7,)]
 
 
+def test_quota_block_is_not_transient():
+    db.reset_turso_circuit()
+    blocked = db.TursoProtocolError(
+        "BLOCKED: SQL read operations are forbidden (reads are blocked, do you need to upgrade your plan?)"
+    )
+    assert db._is_quota_block(blocked)
+    assert not db._is_transient_db_error(blocked)
+
+
+def test_quota_block_trips_circuit_without_retry():
+    db.reset_turso_circuit()
+
+    class Boom(FakeInner):
+        def execute(self, sql: str, args: list[Any] | None = None):
+            raise db.TursoQuotaError("Turso bloqueou leituras (cota/plano).")
+
+    pooled = db.PooledClient(Boom())
+    calls = {"n": 0}
+
+    def fake_create():
+        calls["n"] += 1
+        return db.PooledClient(Boom())
+
+    with patch.object(db, "_create_client", fake_create):
+        try:
+            pooled.execute("SELECT 1")
+        except db.DatabaseUnavailableError:
+            pass
+        else:
+            raise AssertionError("cota BLOCKED deveria virar DatabaseUnavailableError")
+        try:
+            pooled.execute("SELECT 1")
+        except db.DatabaseUnavailableError as exc:
+            assert "circuito" in str(exc).lower() or "cota" in str(exc).lower() or "indispon" in str(exc).lower()
+            assert calls["n"] == 0
+            return
+    raise AssertionError("segunda chamada deveria falhar no circuito, sem novo client")
+
+
 def test_pipeline_error_body_is_protocol_error():
     client = db.TursoPipelineClient("https://example.turso.io", "token-teste")
     mock_resp = MagicMock()
@@ -202,6 +241,30 @@ def test_pipeline_error_body_is_protocol_error():
     raise AssertionError("erro de pipeline deveria virar TursoProtocolError")
 
 
+def test_pipeline_blocked_quota_error():
+    client = db.TursoPipelineClient("https://example.turso.io", "token-teste")
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.ok = True
+    mock_resp.json.return_value = {
+        "results": [
+            {
+                "type": "error",
+                "error": {
+                    "message": "SQL read operations are forbidden (reads are blocked, do you need to upgrade your plan?)",
+                    "code": "BLOCKED",
+                },
+            }
+        ]
+    }
+    with patch.object(client._session, "post", return_value=mock_resp):
+        try:
+            client.execute("SELECT 1")
+        except db.TursoQuotaError:
+            return
+    raise AssertionError("BLOCKED deveria virar TursoQuotaError")
+
+
 if __name__ == "__main__":
     test_client_closed_is_transient()
     test_reconnect_swaps_inner_only_once()
@@ -209,6 +272,9 @@ if __name__ == "__main__":
     test_execute_reraises_non_transient()
     test_exhausted_keyerror_becomes_unavailable()
     test_circuit_fail_fast_after_threshold()
+    test_quota_block_is_not_transient()
+    test_quota_block_trips_circuit_without_retry()
     test_pipeline_parses_execute_result()
     test_pipeline_error_body_is_protocol_error()
+    test_pipeline_blocked_quota_error()
     print("PASS: test_db_pool")

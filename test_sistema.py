@@ -430,11 +430,21 @@ def run() -> int:
             "/api/radar-semanal",
             "/api/macro-watch",
             "/api/traduzir-pendentes",
+            "/api/import-from-turso",
         ]:
             r = client.get(path)
             check(f"{path} sem token=401", r.status_code == 401, f"status={r.status_code}")
             r = client.get(path, params={"token": "token-invalido"})
             check(f"{path} token errado=401", r.status_code == 401, f"status={r.status_code}")
+
+        r = client.post("/api/restore-sqlite")
+        check("/api/restore-sqlite sem token=401", r.status_code == 401, f"status={r.status_code}")
+        r = client.post("/api/restore-sqlite", params={"token": "token-invalido"})
+        check(
+            "/api/restore-sqlite token errado=401",
+            r.status_code == 401,
+            f"status={r.status_code}",
+        )
 
         with (
             patch.object(core, "fetch_and_process", return_value=[]),

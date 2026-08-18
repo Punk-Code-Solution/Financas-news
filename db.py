@@ -1,3 +1,4 @@
+import gzip
 import os
 import random
 import re
@@ -82,12 +83,59 @@ class DatabaseUnavailableError(RuntimeError):
     """Turso indisponível após retries — rotas públicas devem responder 503."""
 
 
+class TursoQuotaError(DatabaseUnavailableError):
+    """Cota/plano Turso recusou a query — retry não adianta."""
+
+
 class TursoProtocolError(RuntimeError):
     """Resposta Hrana 200 sem result, ou pipeline com erro transitório."""
 
 
+RESTORE_MAX_BYTES = 150 * 1024 * 1024
+_COPY_BATCH_SIZE = 200
+_SKIP_IMPORT_TABLES = frozenset(
+    {
+        "sqlite_sequence",
+        "sqlite_stat1",
+        "sqlite_stat4",
+    }
+)
+
+_FTS_DUMP_RE = re.compile(
+    r"(?:CREATE\s+VIRTUAL\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?news_fts[\s\S]*?;)"
+    r"|(?:INSERT\s+INTO\s+['\"]?news_fts[\w]*['\"]?[\s\S]*?;)"
+    r"|(?:DROP\s+TRIGGER\s+IF\s+EXISTS\s+news_fts_\w+\s*;)"
+    r"|(?:CREATE\s+TRIGGER\s+(?:IF\s+NOT\s+EXISTS\s+)?news_fts_\w+[\s\S]*?END\s*;)",
+    re.IGNORECASE,
+)
+
+
+def _http_verify() -> bool:
+    return os.getenv("SSL_VERIFY", "true").strip().lower() not in ("0", "false", "no")
+
+
 def _use_local_db() -> bool:
-    return os.getenv("USE_LOCAL_DB", "").lower() in ("1", "true", "yes")
+    flag = os.getenv("USE_LOCAL_DB", "").strip().lower()
+    if flag in ("1", "true", "yes"):
+        return True
+    if flag in ("0", "false", "no"):
+        return False
+    if os.getenv("USE_TURSO", "").strip().lower() in ("1", "true", "yes"):
+        return False
+    # Auto-detecta só no volume Railway — evita pegar um news.db solto no cwd local.
+    if not _volume_mount_path():
+        return False
+    return _sqlite_file_has_news()
+
+
+def using_local_sqlite() -> bool:
+    return _use_local_db()
+
+
+def db_backend_label() -> str:
+    if _use_local_db():
+        return f"sqlite:{default_local_database_path()}"
+    return "turso"
 
 
 def _volume_mount_path() -> str:
@@ -114,6 +162,54 @@ def default_article_images_dir() -> str:
     if vol:
         return f"{vol}/article_images"
     return "static/images/articles"
+
+
+def _sqlite_file_has_news(path: str | None = None) -> bool:
+    dest = path or default_local_database_path()
+    if not os.path.isfile(dest):
+        return False
+    try:
+        if os.path.getsize(dest) < 4096:
+            return False
+    except OSError:
+        return False
+    try:
+        conn = sqlite3.connect(dest)
+        try:
+            row = conn.execute("SELECT COUNT(*) FROM news").fetchone()
+            return bool(row and int(row[0]) > 0)
+        finally:
+            conn.close()
+    except Exception:
+        return False
+
+
+def sqlite_table_counts(path: str | None = None) -> dict[str, int]:
+    dest = path or default_local_database_path()
+    if not os.path.isfile(dest):
+        return {}
+    counts: dict[str, int] = {}
+    try:
+        conn = sqlite3.connect(dest)
+        try:
+            names = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+            ).fetchall()
+            for (name,) in names:
+                if not name or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", str(name)):
+                    continue
+                if str(name).startswith("sqlite_") or str(name).startswith("news_fts"):
+                    continue
+                try:
+                    row = conn.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()
+                    counts[str(name)] = int(row[0]) if row else 0
+                except sqlite3.Error:
+                    continue
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return {}
+    return counts
 
 
 def missing_runtime_config() -> list[str]:
@@ -155,9 +251,9 @@ def log_runtime_config_checklist() -> None:
         "TURSO_DATABASE_URL" in missing or "TURSO_AUTH_TOKEN" in missing
     ):
         print(
-            "   Alternativa com volume: USE_LOCAL_DB=true "
-            "(SQLite em RAILWAY_VOLUME_MOUNT_PATH/news.db). "
-            "Para o mesmo banco de produção, prefira TURSO_*."
+            "   Produção usa SQLite no volume (USE_LOCAL_DB=true e "
+            "RAILWAY_VOLUME_MOUNT_PATH/news.db). TURSO_* só entra "
+            "no import pontual /api/import-from-turso."
         )
 
 
@@ -206,6 +302,23 @@ def _configure_ssl_certs() -> None:
         pass
 
 
+def _is_quota_block(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return any(
+        n in msg
+        for n in (
+            "reads are blocked",
+            "upgrade your plan",
+            "sql read operations are forbidden",
+            "code: blocked",
+            "blocked: sql",
+        )
+    ) or (
+        isinstance(exc, TursoQuotaError)
+        or (isinstance(exc, TursoProtocolError) and "blocked" in msg)
+    )
+
+
 def _is_sql_error(exc: BaseException) -> bool:
     msg = str(exc).lower()
     return any(
@@ -223,7 +336,9 @@ def _is_sql_error(exc: BaseException) -> bool:
 
 def _is_transient_db_error(exc: BaseException) -> bool:
     """Timeouts / queda de rede / protocolo Hrana instável."""
-    if isinstance(exc, DatabaseUnavailableError):
+    if isinstance(exc, (DatabaseUnavailableError, TursoQuotaError)):
+        return False
+    if _is_quota_block(exc):
         return False
     if _is_sql_error(exc):
         return False
@@ -306,6 +421,25 @@ class _TursoCircuit:
             self._opened_until = 0.0
             self._open_logged = False
 
+    def trip_open(self, exc: BaseException, *, cooldown_sec: float | None = None) -> None:
+        """Abre o circuito imediatamente (cota BLOCKED — não adianta martelar)."""
+        cooldown = float(
+            cooldown_sec
+            if cooldown_sec is not None
+            else os.getenv("TURSO_QUOTA_COOLDOWN_SEC", "60")
+        )
+        with self._lock:
+            self._failures = max(self._failures, 99)
+            self._opened_until = time.time() + cooldown
+            if self._open_logged:
+                return
+            self._open_logged = True
+            print(
+                f"   [db] circuito Turso aberto por {cooldown:.0f}s "
+                f"({type(exc).__name__}: {str(exc)[:120]})",
+                flush=True,
+            )
+
     def failure(self, exc: BaseException) -> None:
         threshold = max(1, int(os.getenv("TURSO_CIRCUIT_FAILURES", "4")))
         cooldown = float(os.getenv("TURSO_CIRCUIT_COOLDOWN_SEC", "20"))
@@ -360,6 +494,10 @@ def _raise_pipeline_error(payload: Any) -> None:
         message = str(err)[:300]
         code = "UNKNOWN"
     wrapped = TursoProtocolError(f"{code}: {message}")
+    if _is_quota_block(wrapped):
+        raise TursoQuotaError(
+            "Turso bloqueou leituras (cota/plano). Confira o painel Turso."
+        ) from wrapped
     if _is_sql_error(wrapped):
         raise RuntimeError(message) from wrapped
     raise wrapped
@@ -384,6 +522,8 @@ class TursoPipelineClient:
         self._session = requests.Session()
         self._session.headers["Authorization"] = f"Bearer {auth_token}"
         self._session.headers["Content-Type"] = "application/json"
+        verify = os.getenv("SSL_VERIFY", "true").strip().lower() not in ("0", "false", "no")
+        self._session.verify = verify
 
     def execute(self, sql: str, args: list[Any] | None = None, **_kwargs: Any) -> QueryResult:
         from libsql_client.hrana.convert import _stmt_to_proto
@@ -445,9 +585,300 @@ class TursoPipelineClient:
             pass
 
 
+def turso_http_base_url() -> str:
+    url = (os.environ.get("TURSO_DATABASE_URL") or "").strip().rstrip("/")
+    if url.startswith("libsql://"):
+        url = "https://" + url[len("libsql://") :]
+    elif url.startswith("wss://"):
+        url = "https://" + url[len("wss://") :]
+    elif url.startswith("ws://"):
+        url = "http://" + url[len("ws://") :]
+    for suffix in ("/v2/pipeline", "/v1/execute"):
+        if url.endswith(suffix):
+            url = url[: -len(suffix)]
+    return url.rstrip("/")
+
+
+def _turso_client_for_import() -> "TursoPipelineClient":
+    url = turso_http_base_url()
+    token = (os.environ.get("TURSO_AUTH_TOKEN") or "").strip()
+    if not url or not token:
+        raise DatabaseConfigError(
+            "TURSO_DATABASE_URL e TURSO_AUTH_TOKEN sao necessarios para o import."
+        )
+    return TursoPipelineClient(url, token)
+
+
+def _strip_fts_from_dump(sql: str) -> str:
+    return _FTS_DUMP_RE.sub("\n", sql)
+
+
+def _remove_sqlite_sidecars(dest: str) -> None:
+    for suffix in ("-wal", "-shm", "-journal"):
+        extra = dest + suffix
+        try:
+            if os.path.isfile(extra):
+                os.remove(extra)
+        except OSError:
+            pass
+
+
+def _atomic_replace_sqlite(tmp_path: str, dest: str) -> None:
+    dest_dir = os.path.dirname(dest) or "."
+    os.makedirs(dest_dir, exist_ok=True)
+    _remove_sqlite_sidecars(dest)
+    os.replace(tmp_path, dest)
+
+
+def apply_sql_dump_to_sqlite(sql_text: str, dest_path: str) -> dict[str, Any]:
+    """Aplica dump SQL (Turso/SQLite) num arquivo novo, sem FTS legado."""
+    cleaned = _strip_fts_from_dump(sql_text)
+    dest_dir = os.path.dirname(dest_path) or "."
+    os.makedirs(dest_dir, exist_ok=True)
+    tmp = dest_path + ".importing"
+    if os.path.exists(tmp):
+        os.remove(tmp)
+    conn = sqlite3.connect(tmp)
+    try:
+        _ = conn.execute("PRAGMA foreign_keys=OFF")
+        conn.executescript(cleaned)
+        try:
+            _ = conn.execute("DROP TABLE IF EXISTS news_fts")
+        except sqlite3.Error:
+            pass
+        conn.commit()
+    except sqlite3.Error as exc:
+        conn.close()
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise RuntimeError(f"dump SQL invalido: {exc}") from exc
+    conn.close()
+    _atomic_replace_sqlite(tmp, dest_path)
+    return {"bytes": os.path.getsize(dest_path)}
+
+
+def install_sqlite_bytes(data: bytes, dest_path: str) -> dict[str, Any]:
+    if not data.startswith(b"SQLite format 3"):
+        raise ValueError("arquivo nao e um banco SQLite")
+    dest_dir = os.path.dirname(dest_path) or "."
+    os.makedirs(dest_dir, exist_ok=True)
+    tmp = dest_path + ".importing"
+    with open(tmp, "wb") as handle:
+        handle.write(data)
+    _atomic_replace_sqlite(tmp, dest_path)
+    return {"bytes": len(data)}
+
+
+def _maybe_gunzip(data: bytes) -> bytes:
+    if data[:2] == b"\x1f\x8b":
+        data = gzip.decompress(data)
+    if len(data) > RESTORE_MAX_BYTES:
+        raise ValueError("arquivo restaurado excede o limite")
+    return data
+
+
+def restore_sqlite_payload(data: bytes, dest_path: str) -> dict[str, Any]:
+    payload = _maybe_gunzip(data)
+    if payload.startswith(b"SQLite format 3"):
+        result = install_sqlite_bytes(payload, dest_path)
+        result["format"] = "sqlite"
+        return result
+    text = payload.decode("utf-8-sig")
+    result = apply_sql_dump_to_sqlite(text, dest_path)
+    result["format"] = "sql"
+    return result
+
+
+def fetch_turso_sql_dump(*, timeout_sec: float = 180.0) -> str:
+    base = turso_http_base_url()
+    token = (os.environ.get("TURSO_AUTH_TOKEN") or "").strip()
+    if not base or not token:
+        raise DatabaseConfigError(
+            "TURSO_DATABASE_URL e TURSO_AUTH_TOKEN sao necessarios para o dump."
+        )
+    dump_url = base + "/dump"
+    try:
+        resp = requests.get(
+            dump_url,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=timeout_sec,
+            verify=_http_verify(),
+        )
+    except requests.RequestException as exc:
+        raise TursoProtocolError(f"falha de rede no dump: {exc}") from exc
+
+    body = resp.text or ""
+    if (
+        resp.status_code in {401, 403}
+        or _is_quota_block(RuntimeError(body))
+        or "BLOCKED" in body.upper()
+    ):
+        raise TursoQuotaError("Turso recusou o dump (cota/plano).")
+    if not resp.ok:
+        preview = body[:180]
+        raise TursoProtocolError(f"dump HTTP {resp.status_code}: {preview}")
+    raw = resp.content or b""
+    if raw[:2] == b"\x1f\x8b":
+        raw = gzip.decompress(raw)
+    return raw.decode("utf-8-sig")
+
+
+def _should_skip_import_table(name: str) -> bool:
+    lowered = name.lower()
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+        return True
+    if lowered in _SKIP_IMPORT_TABLES:
+        return True
+    if lowered.startswith("sqlite_"):
+        return True
+    if lowered.startswith("news_fts"):
+        return True
+    return False
+
+
+def copy_turso_tables_into_sqlite(dest_path: str) -> dict[str, Any]:
+    """Copia tabelas do Turso para um SQLite novo (quando /dump falha)."""
+    remote = _turso_client_for_import()
+    dest_dir = os.path.dirname(dest_path) or "."
+    os.makedirs(dest_dir, exist_ok=True)
+    tmp = dest_path + ".importing"
+    if os.path.exists(tmp):
+        os.remove(tmp)
+    local = sqlite3.connect(tmp)
+    copied: dict[str, int] = {}
+    try:
+        _ = local.execute("PRAGMA foreign_keys=OFF")
+        master = remote.execute(
+            "SELECT name, sql FROM sqlite_master "
+            "WHERE type='table' AND sql IS NOT NULL ORDER BY name"
+        )
+        for name, ddl in master.rows:
+            table = str(name)
+            if _should_skip_import_table(table):
+                continue
+            create_sql = str(ddl or "").strip()
+            if not create_sql:
+                continue
+            _ = local.execute(create_sql)
+            info = remote.execute(f'PRAGMA table_info("{table}")')
+            cols = [str(row[1]) for row in info.rows if row and row[1]]
+            if not cols:
+                copied[table] = 0
+                continue
+            col_list = ", ".join(f'"{c}"' for c in cols)
+            placeholders = ", ".join("?" for _ in cols)
+            insert_sql = (
+                f'INSERT OR REPLACE INTO "{table}" ({col_list}) VALUES ({placeholders})'
+            )
+            offset = 0
+            total = 0
+            while True:
+                batch = remote.execute(
+                    f'SELECT {col_list} FROM "{table}" LIMIT {_COPY_BATCH_SIZE} OFFSET {offset}'
+                )
+                rows = list(batch.rows or [])
+                if not rows:
+                    break
+                local.executemany(insert_sql, rows)
+                total += len(rows)
+                offset += _COPY_BATCH_SIZE
+                if len(rows) < _COPY_BATCH_SIZE:
+                    break
+            copied[table] = total
+        try:
+            seq = remote.execute("SELECT name, seq FROM sqlite_sequence")
+            for seq_name, seq_val in seq.rows:
+                _ = local.execute(
+                    "INSERT OR REPLACE INTO sqlite_sequence(name, seq) VALUES (?, ?)",
+                    (seq_name, seq_val),
+                )
+        except Exception:
+            pass
+        local.commit()
+    except Exception:
+        local.close()
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+    finally:
+        try:
+            remote.close()
+        except Exception:
+            pass
+    local.close()
+    _atomic_replace_sqlite(tmp, dest_path)
+    return {"copied": copied, "bytes": os.path.getsize(dest_path)}
+
+
+def activate_local_sqlite() -> None:
+    """Passa o processo a usar o SQLite do volume (sem persistir no painel)."""
+    os.environ["USE_LOCAL_DB"] = "true"
+    reset_db_client()
+
+
+def import_turso_into_sqlite(
+    dest_path: str | None = None,
+    *,
+    force: bool = False,
+) -> dict[str, Any]:
+    dest = dest_path or default_local_database_path()
+    if (not force) and _sqlite_file_has_news(dest):
+        activate_local_sqlite()
+        return {
+            "ok": True,
+            "skipped": True,
+            "reason": "sqlite ja tem noticias",
+            "path": dest,
+            "counts": sqlite_table_counts(dest),
+        }
+
+    method = "dump"
+    extra: dict[str, Any] = {}
+    try:
+        sql = fetch_turso_sql_dump()
+        extra = apply_sql_dump_to_sqlite(sql, dest)
+    except TursoQuotaError:
+        raise
+    except Exception as dump_exc:
+        try:
+            extra = copy_turso_tables_into_sqlite(dest)
+            method = "copy"
+            extra["dump_error"] = type(dump_exc).__name__
+        except TursoQuotaError:
+            raise
+        except Exception as copy_exc:
+            raise dump_exc from copy_exc
+
+    if not _sqlite_file_has_news(dest):
+        raise RuntimeError("import concluiu sem linhas em news")
+
+    marker = dest + ".migrated"
+    try:
+        with open(marker, "w", encoding="utf-8") as handle:
+            handle.write("ok\n")
+    except OSError:
+        pass
+
+    activate_local_sqlite()
+    return {
+        "ok": True,
+        "skipped": False,
+        "method": method,
+        "path": dest,
+        "counts": sqlite_table_counts(dest),
+        **extra,
+    }
+
+
 def reset_db_client() -> None:
     """Fecha e descarta o client global (força reconexão no próximo get_db)."""
-    global _client
+    global _client, _schema_ready, _fts_ready
+    _schema_ready = False
+    _fts_ready = False
     reset_turso_circuit()
     with _client_lock:
         old = _client
@@ -516,10 +947,30 @@ class PooledClient:
                     result = _as_query_result(inner.execute(sql, args))
                 _turso_circuit.success()
                 return result
+            except TursoQuotaError as exc:
+                _turso_circuit.trip_open(exc)
+                print(
+                    "   [db] Turso BLOCKED: leituras recusadas (cota/plano). "
+                    "Verifique o dashboard Turso — retry não resolve.",
+                    flush=True,
+                )
+                raise DatabaseUnavailableError(
+                    "Turso recusou leituras (cota/plano)."
+                ) from exc
             except DatabaseUnavailableError:
                 raise
             except Exception as exc:
                 last_exc = exc
+                if _is_quota_block(exc):
+                    _turso_circuit.trip_open(exc)
+                    print(
+                        "   [db] Turso BLOCKED: leituras recusadas (cota/plano). "
+                        "Verifique o dashboard Turso — retry não resolve.",
+                        flush=True,
+                    )
+                    raise DatabaseUnavailableError(
+                        "Turso recusou leituras (cota/plano)."
+                    ) from exc
                 transient = _is_transient_db_error(exc)
                 if not transient or attempt >= attempts:
                     if transient:
@@ -575,9 +1026,8 @@ def _create_client() -> LocalDbClient | PooledClient:
     token = os.environ.get("TURSO_AUTH_TOKEN")
     if not url or not token:
         raise DatabaseConfigError(
-            "Credenciais do Turso não encontradas. "
-            "Na Railway, defina TURSO_DATABASE_URL e TURSO_AUTH_TOKEN "
-            "em Variables; ou USE_LOCAL_DB=true para SQLite no volume."
+            "Banco nao configurado. Na Railway, use USE_LOCAL_DB=true "
+            "com volume (news.db) ou defina TURSO_* so para o import."
         )
 
     return PooledClient(TursoPipelineClient(url, token))

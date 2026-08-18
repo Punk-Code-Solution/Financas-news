@@ -2,10 +2,11 @@
 # Secrets só no painel Variables — nunca neste arquivo.
 #
 # Obrigatório:
-#   TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, GOOGLE_API_KEY, ROBO_TOKEN
+#   USE_LOCAL_DB=true, GOOGLE_API_KEY, ROBO_TOKEN
 #   SITE_ORIGIN=https://www.financas-news.net.br
-# Volume: RAILWAY_VOLUME_MOUNT_PATH → capas em {mount}/article_images,
-#         avatares em {mount}/avatars (URL /media/avatars/...)
+# Volume: RAILWAY_VOLUME_MOUNT_PATH → SQLite {mount}/news.db,
+#         capas em {mount}/article_images, avatares em {mount}/avatars
+# TURSO_* opcional — só para a migração única GET/POST /api/import-from-turso
 # Crons: ops/crons.md (cron-job.org + Bearer; não use Cron Schedule neste serviço web)
 
 [build]

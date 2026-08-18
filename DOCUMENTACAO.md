@@ -28,8 +28,8 @@ O diferencial não é republicar RSS — é produzir conteúdo com **contexto ma
 
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Feeds RSS (~30)│────▶│  Motor core.py   │────▶│  Banco Turso    │
-│  G1, InfoMoney… │     │  + Google Gemini │     │  (nuvem)        │
+│  Feeds RSS (~30)│────▶│  Motor core.py   │────▶│  SQLite (volume │
+│  G1, InfoMoney… │     │  + Google Gemini │     │  Railway)       │
 └─────────────────┘     └────────┬─────────┘     └────────┬────────┘
                                  │                         │
                     ┌────────────┼────────────┐            │
@@ -55,7 +55,7 @@ O diferencial não é republicar RSS — é produzir conteúdo com **contexto ma
 5. **Contexto editorial** — cruza com o acervo do portal.
 6. **Geração de texto** — Gemini nas chaves 1→2→3 (análise 500+ palavras / JSON).
 6. **Geração de imagem** — Gemini na varredura; fallback OpenAI/DALL-E no backfill (1/min); lote ordena com capa primeiro.
-7. **Publicação** — grava no Turso e exibe no frontend.
+7. **Publicação** — grava no SQLite do volume Railway e exibe no frontend.
 
 ### Acionamento
 
@@ -76,7 +76,7 @@ Authorization: Bearer SEU_ROBO_TOKEN
 |--------|------------|
 | Backend | Python 3.13, FastAPI, Uvicorn |
 | Frontend | Jinja2, Tailwind CSS (build estático), JavaScript |
-| Banco de dados | Turso (libSQL — SQLite distribuído) |
+| Banco de dados | SQLite no volume Railway (`news.db`) |
 | Inteligência artificial | Google Gemini (texto + imagem) |
 | Hospedagem | Railway (web service + volume opcional) |
 | Dados externos | AwesomeAPI, Binance (fallback BTC), Banco Central do Brasil, RSS |
@@ -87,7 +87,7 @@ Authorization: Bearer SEU_ROBO_TOKEN
 financas_auto/
 ├── main.py                 # App web, rotas, API do robô, SEO, CSP
 ├── core.py                 # Pipeline RSS → IA → imagem, radar, macro-watch, i18n IA
-├── db.py                   # Conexão Turso, schema, FTS5, contexto editorial
+├── db.py                   # Conexão SQLite (volume) / Turso (import), schema, FTS5
 ├── monetization.py         # Receita + afiliados contextuais (env-driven)
 ├── newsletter_service.py   # Digest (1–2 Alta) e alertas de urgência
 ├── article_enrichment.py   # Relacionados, entidades, painéis do artigo
@@ -239,35 +239,37 @@ Imagens salvas em disco (`ARTICLE_IMAGES_DIR`) com URL pública `/media/articles
 | Start | `uvicorn main:app --host 0.0.0.0 --port $PORT` |
 | Health check | `GET /ping` |
 | Config | `railway.toml` |
-| Volume | `RAILWAY_VOLUME_MOUNT_PATH` → capas `{mount}/article_images`, avatares `{mount}/avatars` (`/media/avatars/`) |
+| Volume | `RAILWAY_VOLUME_MOUNT_PATH` → banco `{mount}/news.db`, capas `{mount}/article_images`, avatares `{mount}/avatars` (`/media/avatars/`) |
 | Crons | `ops/crons.md` (cron-job.org + Bearer; não no serviço web) |
 
 **Variables obrigatórias** (Service → Variables; sem commit):
 
 | Variável | Notas |
 |----------|--------|
-| `TURSO_DATABASE_URL` | URL Turso (`libsql://…` ou `https://…`) |
-| `TURSO_AUTH_TOKEN` | Token Turso |
+| `USE_LOCAL_DB` | `true` em produção (SQLite no volume) |
 | `GOOGLE_API_KEY` | (+ opcional `_2` / `_3`) |
 | `ROBO_TOKEN` | Segredo dos crons / APIs internas |
 | `SITE_ORIGIN` | `https://www.financas-news.net.br` |
+| `TURSO_DATABASE_URL` | Só para a migração única (`/api/import-from-turso`) |
+| `TURSO_AUTH_TOKEN` | Só para a migração única |
 
-Sem `TURSO_*`, a home responde **503**. Alternativa: `USE_LOCAL_DB=true` (SQLite no volume — banco separado do Turso).
+Sem `USE_LOCAL_DB=true` e sem `news.db` com notícias no volume, a home responde **503** se o Turso estiver bloqueado. Depois do import, o processo passa a usar o SQLite automaticamente.
 
 O app detecta Railway via `RAILWAY_ENVIRONMENT` / `RAILWAY_PROJECT_ID` (cookies Secure, Pexels CDN remoto, sem provider Cursor).
 
-### Turso (banco)
+### SQLite no volume (banco de produção)
 
-- SQLite distribuído na nuvem
-- Sem servidor para gerenciar
-- Plano gratuito generoso para o volume atual
+- Arquivo `{RAILWAY_VOLUME_MOUNT_PATH}/news.db` (WAL)
+- O volume já serve capas e avatares; o banco fica no mesmo disco persistente
+- Import: `GET/POST /api/import-from-turso` (dump Turso) ou `POST /api/restore-sqlite` (upload `.db`/`.sql`)
+- CLI local: `PYTHONPATH=. python tools/migrate_turso_to_sqlite.py --out dumps/news.db`
+- Não commitar `*.db` nem dumps
 
 ### Custos mensais estimados
 
 | Serviço | Custo |
 |---------|-------|
-| Railway | conforme plano |
-| Turso | Gratuito (tier inicial) |
+| Railway | conforme plano (web + volume) |
 | Google Gemini API | Gratuito (free tier) |
 | Domínio | ~R$ 40/ano |
 | **Total operacional** | variável (host + domínio) |
@@ -369,7 +371,9 @@ Todas as respostas recebem:
 | `GET /api/newsletter-digest` | Digest semanal: 1–2 matérias Alta; não envia se vazio |
 | `GET /api/newsletter-digest-diario` | Até 2x/dia: 1–2 matérias Alta (`home_priority` ≥ 80); skip se vazio |
 | `GET /api/newsletter-alerta` | Reenvio manual de alerta de urgência (`news_id` obrigatório) |
-| `GET /api/sync-news-fts` | Rebuild do índice FTS no Turso (SQLite local já tem triggers; mesma auth `ROBO_TOKEN`) |
+| `GET /api/sync-news-fts` | Rebuild do índice FTS (no-op útil no SQLite com triggers; mesma auth `ROBO_TOKEN`) |
+| `GET`/`POST /api/import-from-turso` | Migração única Turso → SQLite do volume (`force=1` sobrescreve) |
+| `POST /api/restore-sqlite` | Upload `.db` / `.sql` / gzip para o volume (mesmo `ROBO_TOKEN`) |
 | `POST /api/newsletter` | Captura de e-mail (local ou redirect externo) |
 | `POST /api/columnists/credit-daily` | Credita participação estimada do dia (ADMIN/ROBO token) |
 | `POST /api/columnists/expire-boosts` | Expira destaques pagos vencidos (ADMIN/ROBO token) |
@@ -403,8 +407,10 @@ ROBOT_MAX_PER_FEED=3
 ROBOT_MAX_ARTICLES=36
 ROBOT_OWN_ANALYSES=3      # mínimo diário de análises próprias a partir do acervo (0=desliga)
 # GOOGLE_API_KEYS=key1,key2,key3   # alternativa: lista de chaves
-TURSO_DATABASE_URL=       # URL libsql:// do Turso
-TURSO_AUTH_TOKEN=         # Token de autenticação Turso
+USE_LOCAL_DB=true         # produção: SQLite no volume Railway
+# LOCAL_DATABASE_PATH=    # default: {RAILWAY_VOLUME_MOUNT_PATH}/news.db
+# TURSO_DATABASE_URL=     # só para /api/import-from-turso (migração)
+# TURSO_AUTH_TOKEN=
 ```
 
 ### Newsletter (cron sugerido)
@@ -558,7 +564,7 @@ Além do robô principal — detalhe e crons UTC em `ops/crons.md`:
 | `/api/macro-watch` | diário ou após decisões do Copom/IBGE | só publica se Selic/IPCA mudarem |
 | `/api/traduzir-pendentes?limit=10` | diário | preenche EN/JA pendentes |
 | `/api/newsletter-digest` | 1× por semana | exige `RESEND_API_KEY`, SMTP ou webhook |
-| `/api/sync-news-fts` | 1× por dia (madrugada) | rebuild FTS no Turso; no-op no SQLite local |
+| `/api/sync-news-fts` | 1× por dia (madrugada) | rebuild FTS; no SQLite do volume os triggers já cobrem INSERT/UPDATE |
 
 ### Capas (backfill contínuo)
 
@@ -602,6 +608,7 @@ uvicorn main:app --reload
 - [x] **Colunistas:** candidatura + moderação, CMS, byline, destaque pago (PIX/Mercado Pago), carteira com participação estimada 30–40% (pageviews × RPM)
 - [x] GSC “página alternativa com tag canônica”: links PT sem `?lang=pt` + robots Disallow (FN-26)
 - [x] Busca FTS: ranking `bm25`, sinônimos de mercado e sync Turso (`/api/sync-news-fts`) (FN-36)
+- [x] Banco de produção no volume Railway (SQLite `news.db`; import Turso) (FN-40)
 
 ### Curto prazo (0–30 dias)
 
