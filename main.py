@@ -21,6 +21,8 @@ import core
 from db import (
     QueryResult,
     DatabaseConfigError,
+    DatabaseUnavailableError,
+    _is_transient_db_error,
     build_fts_match_query,
     default_article_images_dir,
     ensure_schema,
@@ -173,6 +175,25 @@ async def _database_config_error_handler(_request: Request, exc: DatabaseConfigE
             ),
         },
     )
+
+
+@app.exception_handler(DatabaseUnavailableError)
+async def _database_unavailable_handler(request: Request, _exc: DatabaseUnavailableError):
+    """Turso instável: 503 em vez de stack 500 (home, artigo, sitemap, APIs)."""
+    path = request.url.path or ""
+    wants_json = path.startswith("/api/") or "application/json" in (
+        request.headers.get("accept") or ""
+    )
+    headers = {"Retry-After": "20"}
+    if wants_json:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Banco temporariamente indisponível. Tente de novo em instantes."},
+            headers=headers,
+        )
+    response = _render(request, "db_unavailable.html", {}, status_code=503)
+    response.headers["Retry-After"] = "20"
+    return response
 
 # Sessão de usuário da comunidade (separada do ROBO_TOKEN).
 _https_only_sessions = (os.getenv("SESSION_HTTPS_ONLY", "true").strip().lower() not in ("0", "false", "no"))
@@ -490,7 +511,13 @@ def _fetch_news_by_id(client, noticia_id: int) -> QueryResult:
     # e pode estourar timeout em /noticia enquanto o Turso migra.
     try:
         return client.execute(NEWS_SELECT + " WHERE id = ?", [noticia_id])
-    except Exception:
+    except DatabaseUnavailableError:
+        raise
+    except Exception as exc:
+        # KeyError/timeout é instabilidade Turso — não é schema atrasado.
+        # O fallback LEGACY dobrava o retry e ainda caía em 500.
+        if _is_transient_db_error(exc):
+            raise
         return client.execute(NEWS_SELECT_LEGACY + " WHERE id = ?", [noticia_id])
 
 
@@ -522,6 +549,22 @@ def _invalidate_home_cache() -> None:
 
 def _home_cache_key(categoria: str | None, offset: int, limit: int, q: str | None) -> str:
     return f"{categoria or ''}|{offset}|{limit}|{(q or '').strip().lower()}"
+
+
+def _home_cache_stale(cache_key: str) -> dict[str, object] | None:
+    """Última listagem conhecida (mesmo expirada) para não 500ar a home."""
+    with _HOME_CACHE_LOCK:
+        cached = _HOME_CACHE.get(cache_key)
+        if cached:
+            payload = dict(cached[1])
+            payload["stale"] = True
+            return payload
+        for key, (_expires, payload) in _HOME_CACHE.items():
+            if key.endswith("||") or "|0|" in key:
+                stale = dict(payload)
+                stale["stale"] = True
+                return stale
+    return None
 
 
 def _execute_fts_listing(
@@ -577,44 +620,54 @@ def _load_home_listing(
     q_clean = (q or "").strip() or None
     result: QueryResult | None = None
 
-    if q_clean:
-        fts_q = build_fts_match_query(q_clean) if fts_available() else None
-        if fts_q:
-            try:
-                result = _execute_fts_listing(client, fts_q, categoria, fetch_limit, offset)
-            except Exception:
-                result = None
+    try:
+        if q_clean:
+            fts_q = build_fts_match_query(q_clean) if fts_available() else None
+            if fts_q:
+                try:
+                    result = _execute_fts_listing(client, fts_q, categoria, fetch_limit, offset)
+                except Exception:
+                    result = None
 
-        if result is None:
-            # Fallback: tokens AND em título/resumo (mais seletivo que um único LIKE).
-            tokens = [t for t in re.findall(r"[0-9A-Za-zÀ-ÿ]{2,}", q_clean, flags=re.UNICODE)][:5]
-            if not tokens:
-                tokens = [q_clean]
-            where_parts: list[str] = []
-            params: list[Any] = []
-            for token in tokens:
-                where_parts.append("(titulo LIKE ? OR resumo LIKE ?)")
-                like = f"%{token}%"
-                params.extend([like, like])
-            where_sql = " AND ".join(where_parts)
-            if categoria:
-                where_sql = f"({where_sql}) AND tag = ?"
-                params.append(categoria)
-            params.extend([fetch_limit, offset])
+            if result is None:
+                # Fallback: tokens AND em título/resumo (mais seletivo que um único LIKE).
+                tokens = [t for t in re.findall(r"[0-9A-Za-zÀ-ÿ]{2,}", q_clean, flags=re.UNICODE)][:5]
+                if not tokens:
+                    tokens = [q_clean]
+                where_parts: list[str] = []
+                params: list[Any] = []
+                for token in tokens:
+                    where_parts.append("(titulo LIKE ? OR resumo LIKE ?)")
+                    like = f"%{token}%"
+                    params.extend([like, like])
+                where_sql = " AND ".join(where_parts)
+                if categoria:
+                    where_sql = f"({where_sql}) AND tag = ?"
+                    params.append(categoria)
+                params.extend([fetch_limit, offset])
+                result = client.execute(
+                    NEWS_LIST_SELECT + f" WHERE {where_sql}" + _and_published(True) + " ORDER BY id DESC LIMIT ? OFFSET ?",
+                    params,
+                )
+        elif categoria:
             result = client.execute(
-                NEWS_LIST_SELECT + f" WHERE {where_sql}" + _and_published(True) + " ORDER BY id DESC LIMIT ? OFFSET ?",
-                params,
+                NEWS_LIST_SELECT + " WHERE tag = ?" + _and_published(True) + " ORDER BY id DESC LIMIT ? OFFSET ?",
+                [categoria, fetch_limit, offset],
             )
-    elif categoria:
-        result = client.execute(
-            NEWS_LIST_SELECT + " WHERE tag = ?" + _and_published(True) + " ORDER BY id DESC LIMIT ? OFFSET ?",
-            [categoria, fetch_limit, offset],
-        )
-    else:
-        result = client.execute(
-            NEWS_LIST_SELECT + " WHERE " + columnists.PUBLISHED_SQL + " ORDER BY id DESC LIMIT ? OFFSET ?",
-            [fetch_limit, offset],
-        )
+        else:
+            result = client.execute(
+                NEWS_LIST_SELECT + " WHERE " + columnists.PUBLISHED_SQL + " ORDER BY id DESC LIMIT ? OFFSET ?",
+                [fetch_limit, offset],
+            )
+    except Exception as exc:
+        stale = _home_cache_stale(cache_key)
+        if stale:
+            print(
+                f"   [home] Turso falhou ({type(exc).__name__}); servindo cache antigo.",
+                flush=True,
+            )
+            return stale
+        raise
 
     rows = list(result.rows) if result else []
     has_more = len(rows) > limit
@@ -622,17 +675,20 @@ def _load_home_listing(
 
     suggested_news: list[Any] = []
     if include_suggestions and not news and (categoria or q_clean):
-        if categoria:
-            suggested_result = client.execute(
-                NEWS_LIST_SELECT + " WHERE tag != ? ORDER BY id DESC LIMIT ?",
-                [categoria, FEED_BATCH],
-            )
-        else:
-            suggested_result = client.execute(
-                NEWS_LIST_SELECT + " ORDER BY id DESC LIMIT ?",
-                [FEED_BATCH],
-            )
-        suggested_news = suggested_result.rows
+        try:
+            if categoria:
+                suggested_result = client.execute(
+                    NEWS_LIST_SELECT + " WHERE tag != ? ORDER BY id DESC LIMIT ?",
+                    [categoria, FEED_BATCH],
+                )
+            else:
+                suggested_result = client.execute(
+                    NEWS_LIST_SELECT + " ORDER BY id DESC LIMIT ?",
+                    [FEED_BATCH],
+                )
+            suggested_news = suggested_result.rows
+        except Exception:
+            suggested_news = []
 
     next_offset = offset + len(news)
     total_news = next_offset + (1 if has_more else 0)
@@ -664,11 +720,15 @@ def _load_headline_news(categoria: str | None) -> list[Any]:
         where += " AND tag = ?"
         params.append(categoria)
     params.append(HOME_HEADLINE_MAX)
-    result = client.execute(
-        NEWS_LIST_SELECT + where + " ORDER BY home_priority DESC, id DESC LIMIT ?",
-        params,
-    )
-    return list(result.rows) if result else []
+    try:
+        result = client.execute(
+            NEWS_LIST_SELECT + where + " ORDER BY home_priority DESC, id DESC LIMIT ?",
+            params,
+        )
+        return list(result.rows) if result else []
+    except Exception as exc:
+        print(f"   [home] manchetes indisponíveis ({type(exc).__name__})", flush=True)
+        return []
 
 
 def _split_home_editorial(
@@ -734,6 +794,7 @@ def index(request: Request, categoria: str | None = None, q: str | None = None):
         "monetization": get_monetization_config(),
         "suggested_news": listing["suggested_news"],
         "sparklines": sparklines,
+        "stale_listing": bool(listing.get("stale")),
     }
     if empty_category:
         render_ctx["robots_noindex"] = True
@@ -1275,9 +1336,13 @@ async def cadastro_submit(
         user = community.create_user(client, name=name, email=email, password=password)
     except ValueError as exc:
         return RedirectResponse(url=f"/cadastro?erro={quote(str(exc))}", status_code=303)
+    except DatabaseUnavailableError:
+        return RedirectResponse(
+            url="/cadastro?erro="
+            + quote("Banco temporariamente indisponível. Tente de novo em instantes."),
+            status_code=303,
+        )
     except Exception as exc:
-        from db import _is_transient_db_error
-
         if _is_transient_db_error(exc):
             return RedirectResponse(
                 url="/cadastro?erro="
@@ -1737,11 +1802,15 @@ def _xml_escape(text: object) -> str:
 
 def _feed_rows(limit: int = RSS_FEED_LIMIT) -> list[Any]:
     client = get_db()
-    result = client.execute(
-        NEWS_LIST_SELECT + " ORDER BY id DESC LIMIT ?",
-        [max(1, min(limit, 100))],
-    )
-    return list(result.rows or [])
+    try:
+        result = client.execute(
+            NEWS_LIST_SELECT + " ORDER BY id DESC LIMIT ?",
+            [max(1, min(limit, 100))],
+        )
+        return list(result.rows or [])
+    except Exception as exc:
+        print(f"   [feed] Turso falhou ({type(exc).__name__})", flush=True)
+        return []
 
 
 def _row_pub_iso(row: tuple | list) -> str:
@@ -1846,19 +1915,23 @@ def get_sitemap():
 
     # Só artigos com corpo mínimo (evita thin/legado no sitemap).
     # Prioriza capas presentes — sinal forte para Discover/indexação.
-    result = client.execute(
-        """
-        SELECT id,
-               COALESCE(NULLIF(updated_at, ''), NULLIF(published_at, ''), created_at) AS lastmod
-        FROM news
-        WHERE LENGTH(COALESCE(resumo, '')) >= 800
-        ORDER BY
-          CASE WHEN imagem_url IS NOT NULL AND TRIM(imagem_url) != '' THEN 0 ELSE 1 END,
-          id DESC
-        LIMIT 500
-        """
-    )
-    noticias = result.rows
+    noticias: list[Any] = []
+    try:
+        result = client.execute(
+            """
+            SELECT id,
+                   COALESCE(NULLIF(updated_at, ''), NULLIF(published_at, ''), created_at) AS lastmod
+            FROM news
+            WHERE LENGTH(COALESCE(resumo, '')) >= 800
+            ORDER BY
+              CASE WHEN imagem_url IS NOT NULL AND TRIM(imagem_url) != '' THEN 0 ELSE 1 END,
+              id DESC
+            LIMIT 500
+            """
+        )
+        noticias = result.rows
+    except Exception as exc:
+        print(f"   [sitemap] Turso falhou ({type(exc).__name__}); só URLs estáticas.", flush=True)
 
     today = datetime.now().date().isoformat()
     static_urls = [

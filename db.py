@@ -9,8 +9,7 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-import libsql_client
-from libsql_client.sync import ClientSync
+import requests
 
 
 @dataclass
@@ -77,6 +76,14 @@ _LINK_IN_CHUNK = 80
 
 class DatabaseConfigError(ValueError):
     """Credenciais/banco não configurados — rotas devem responder 503."""
+
+
+class DatabaseUnavailableError(RuntimeError):
+    """Turso indisponível após retries — rotas públicas devem responder 503."""
+
+
+class TursoProtocolError(RuntimeError):
+    """Resposta Hrana 200 sem result, ou pipeline com erro transitório."""
 
 
 def _use_local_db() -> bool:
@@ -199,10 +206,39 @@ def _configure_ssl_certs() -> None:
         pass
 
 
+def _is_sql_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return any(
+        n in msg
+        for n in (
+            "no such column",
+            "no such table",
+            "syntax error",
+            "sqlite_",
+            "constraint failed",
+            "unique constraint",
+        )
+    )
+
+
 def _is_transient_db_error(exc: BaseException) -> bool:
-    """Timeouts / queda de rede com Turso (comum no Windows: WinError 121)."""
-    # libsql HTTP às vezes responde 200 sem chave "result" (sessão/API instável).
+    """Timeouts / queda de rede / protocolo Hrana instável."""
+    if isinstance(exc, DatabaseUnavailableError):
+        return False
+    if _is_sql_error(exc):
+        return False
+    if isinstance(exc, TursoProtocolError):
+        return True
     if isinstance(exc, KeyError) and exc.args and exc.args[0] == "result":
+        return True
+    if isinstance(
+        exc,
+        (
+            requests.ConnectionError,
+            requests.Timeout,
+            requests.exceptions.ChunkedEncodingError,
+        ),
+    ):
         return True
     name = type(exc).__name__
     if name in {
@@ -213,6 +249,8 @@ def _is_transient_db_error(exc: BaseException) -> bool:
         "ClientConnectionError",
         "TimeoutError",
         "CancelledError",
+        "ConnectTimeout",
+        "ReadTimeout",
     }:
         return True
     msg = str(exc).lower()
@@ -226,16 +264,191 @@ def _is_transient_db_error(exc: BaseException) -> bool:
         "timed out",
         "timeout",
         "network is unreachable",
-        # Outra thread reconectou o pool no meio desta query.
         "client_closed",
         "client is closed",
+        "server disconnected",
+        "remote disconnected",
+        "429",
+        "502",
+        "503",
+        "504",
+        "stream_",
+        "baton",
     )
     return any(n in msg for n in needles)
+
+
+class _TursoCircuit:
+    """Fail-fast quando o Turso falha em sequência — evita tempestade de retry."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._failures = 0
+        self._opened_until = 0.0
+        self._open_logged = False
+
+    def reset(self) -> None:
+        with self._lock:
+            self._failures = 0
+            self._opened_until = 0.0
+            self._open_logged = False
+
+    def before_execute(self) -> None:
+        with self._lock:
+            if time.time() < self._opened_until:
+                raise DatabaseUnavailableError(
+                    "Turso em circuito aberto. Tente de novo em instantes."
+                )
+
+    def success(self) -> None:
+        with self._lock:
+            self._failures = 0
+            self._opened_until = 0.0
+            self._open_logged = False
+
+    def failure(self, exc: BaseException) -> None:
+        threshold = max(1, int(os.getenv("TURSO_CIRCUIT_FAILURES", "4")))
+        cooldown = float(os.getenv("TURSO_CIRCUIT_COOLDOWN_SEC", "20"))
+        with self._lock:
+            self._failures += 1
+            if self._failures < threshold:
+                return
+            self._opened_until = time.time() + cooldown
+            if self._open_logged:
+                return
+            self._open_logged = True
+            print(
+                f"   [db] circuito Turso aberto por {cooldown:.0f}s "
+                f"({type(exc).__name__}: {str(exc)[:120]})",
+                flush=True,
+            )
+
+
+_turso_circuit = _TursoCircuit()
+
+
+def reset_turso_circuit() -> None:
+    _turso_circuit.reset()
+
+
+def _pipeline_cell(value: Any) -> Any:
+    if isinstance(value, dict) and value.get("type"):
+        from libsql_client.hrana.convert import _value_from_proto
+
+        return _value_from_proto(value)
+    return value
+
+
+def _pipeline_result_to_query(result: dict[str, Any]) -> QueryResult:
+    rows: list[Any] = []
+    for proto_row in result.get("rows") or []:
+        if isinstance(proto_row, (list, tuple)):
+            rows.append(tuple(_pipeline_cell(cell) for cell in proto_row))
+        else:
+            rows.append((proto_row,))
+    return QueryResult(rows)
+
+
+def _raise_pipeline_error(payload: Any) -> None:
+    err = payload
+    if isinstance(payload, dict):
+        err = payload.get("error") or payload.get("message") or payload
+    if isinstance(err, dict):
+        message = str(err.get("message") or err.get("error") or err)[:300]
+        code = str(err.get("code") or "UNKNOWN")
+    else:
+        message = str(err)[:300]
+        code = "UNKNOWN"
+    wrapped = TursoProtocolError(f"{code}: {message}")
+    if _is_sql_error(wrapped):
+        raise RuntimeError(message) from wrapped
+    raise wrapped
+
+
+class TursoPipelineClient:
+    """Cliente HTTP síncrono via Hrana ``/v2/pipeline``.
+
+    O ``libsql-client`` usa ``/v1/execute`` e assume ``response['result']``.
+    O Turso frequentemente responde 200 com ``error`` (quota, baton, SQL) e
+    o client antigo vira ``KeyError: 'result'`` — 500 no portal.
+    """
+
+    def __init__(self, url: str, auth_token: str):
+        base = url.rstrip("/")
+        if base.endswith("/v2/pipeline"):
+            self._url = base
+        else:
+            self._url = base + "/v2/pipeline"
+        timeout_sec = float(os.getenv("TURSO_HTTP_TIMEOUT_SEC", "20"))
+        self._timeout = (5.0, timeout_sec)
+        self._session = requests.Session()
+        self._session.headers["Authorization"] = f"Bearer {auth_token}"
+        self._session.headers["Content-Type"] = "application/json"
+
+    def execute(self, sql: str, args: list[Any] | None = None, **_kwargs: Any) -> QueryResult:
+        from libsql_client.hrana.convert import _stmt_to_proto
+
+        stmt = _stmt_to_proto(sql, args)
+        if not stmt.get("named_args"):
+            stmt.pop("named_args", None)
+        body = {
+            "requests": [
+                {"type": "execute", "stmt": stmt},
+                {"type": "close"},
+            ]
+        }
+        try:
+            resp = self._session.post(self._url, json=body, timeout=self._timeout)
+        except requests.RequestException as exc:
+            raise TursoProtocolError(f"falha de rede no pipeline: {exc}") from exc
+
+        if resp.status_code in {429, 500, 502, 503, 504}:
+            preview = (resp.text or "")[:180]
+            raise TursoProtocolError(f"HTTP {resp.status_code}: {preview}")
+        if resp.status_code == 401:
+            raise RuntimeError("Turso recusou o token (HTTP 401). Confira TURSO_AUTH_TOKEN.")
+        if not resp.ok:
+            preview = (resp.text or "")[:180]
+            raise RuntimeError(f"Turso HTTP {resp.status_code}: {preview}")
+
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            raise TursoProtocolError("resposta Turso não-JSON") from exc
+
+        results = data.get("results") if isinstance(data, dict) else None
+        if not isinstance(results, list) or not results:
+            _raise_pipeline_error(data)
+            raise TursoProtocolError("pipeline sem results")
+
+        first = results[0]
+        if not isinstance(first, dict):
+            raise TursoProtocolError("item de pipeline inválido")
+        if first.get("type") == "error":
+            _raise_pipeline_error(first)
+
+        response = first.get("response") or first.get("result")
+        if not isinstance(response, dict):
+            _raise_pipeline_error(first)
+
+        result = response.get("result") if response.get("type") in {None, "execute"} else None
+        if result is None and "cols" in response:
+            result = response
+        if not isinstance(result, dict):
+            _raise_pipeline_error(response)
+        return _pipeline_result_to_query(result)
+
+    def close(self) -> None:
+        try:
+            self._session.close()
+        except Exception:
+            pass
 
 
 def reset_db_client() -> None:
     """Fecha e descarta o client global (força reconexão no próximo get_db)."""
     global _client
+    reset_turso_circuit()
     with _client_lock:
         old = _client
         _client = None
@@ -254,13 +467,11 @@ def reset_db_client() -> None:
 class PooledClient:
     """Proxy que reutiliza o client remoto sem fechar a cada request."""
 
-    def __init__(self, inner: ClientSync):
-        self._inner: ClientSync = inner
+    def __init__(self, inner: Any):
+        self._inner: Any = inner
         self._swap_lock = threading.Lock()
-        # libsql ClientSync: um event loop — execute concorrente trava threads.
-        self._exec_lock = threading.Lock()
 
-    def _reconnect(self, stale: ClientSync) -> None:
+    def _reconnect(self, stale: Any) -> None:
         """Substitui o client interno uma única vez por falha compartilhada.
 
         Todas as threads do FastAPI usam o mesmo ``_inner``. Sem o guard de
@@ -289,6 +500,7 @@ class PooledClient:
         # Defaults curtos: páginas de artigo fazem várias queries; backoff longo
         # (ex.: 1.5+3+6s × N queries) vira timeout de request mesmo com fail-soft.
         # Enrichment opcional deve passar max_attempts=1.
+        _turso_circuit.before_execute()
         if max_attempts is not None:
             attempts = max(1, int(max_attempts))
         else:
@@ -298,13 +510,23 @@ class PooledClient:
         for attempt in range(1, attempts + 1):
             inner = self._inner
             try:
-                with self._exec_lock:
-                    if args is None:
-                        return _as_query_result(inner.execute(sql))
-                    return _as_query_result(inner.execute(sql, args))
+                if args is None:
+                    result = _as_query_result(inner.execute(sql))
+                else:
+                    result = _as_query_result(inner.execute(sql, args))
+                _turso_circuit.success()
+                return result
+            except DatabaseUnavailableError:
+                raise
             except Exception as exc:
                 last_exc = exc
-                if not _is_transient_db_error(exc) or attempt >= attempts:
+                transient = _is_transient_db_error(exc)
+                if not transient or attempt >= attempts:
+                    if transient:
+                        _turso_circuit.failure(exc)
+                        raise DatabaseUnavailableError(
+                            "Turso indisponível. Tente de novo em instantes."
+                        ) from exc
                     raise
                 if self._inner is not inner:
                     # Outra thread já trocou o client — repete direto no novo.
@@ -316,10 +538,12 @@ class PooledClient:
                     flush=True,
                 )
                 time.sleep(wait)
-                # Recria o client HTTP — a sessão aiohttp pode ter morrido.
                 self._reconnect(inner)
         assert last_exc is not None
-        raise last_exc
+        _turso_circuit.failure(last_exc)
+        raise DatabaseUnavailableError(
+            "Turso indisponível. Tente de novo em instantes."
+        ) from last_exc
 
     def close(self) -> None:
         pass
@@ -356,7 +580,7 @@ def _create_client() -> LocalDbClient | PooledClient:
             "em Variables; ou USE_LOCAL_DB=true para SQLite no volume."
         )
 
-    return PooledClient(libsql_client.create_client_sync(url=url, auth_token=token))
+    return PooledClient(TursoPipelineClient(url, token))
 
 
 def get_db() -> LocalDbClient | PooledClient:
