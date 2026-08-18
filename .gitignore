@@ -7,9 +7,11 @@ tools/tailwindcss.exe
 tools/tailwindcss
 tools/*.log
 tools/*_fill_*.txt
-*.db
+qa_frontend.db
+qa_suite.db
 dumps/
 *.sql.gz
 *.env
 static/avatars/*
 !static/avatars/default.svg
+.tmp-migrate-test/auth/auth.db
