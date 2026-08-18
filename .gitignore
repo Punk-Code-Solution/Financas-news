@@ -15,3 +15,4 @@ dumps/
 static/avatars/*
 !static/avatars/default.svg
 .tmp-migrate-test/auth/auth.db
+.tmp-i18n-test.db

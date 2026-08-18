@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 from typing import Any, Callable
-from urllib.parse import quote, urlencode
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from fastapi import Request
 
@@ -1086,14 +1086,32 @@ def translate_urgency(lang: str, value: object) -> str:
     return str(value or "")
 
 
+def apply_lang_to_relative_url(url: str, lang: str) -> str:
+    """Mantém path+query; PT remove lang; EN/JA definem ?lang=."""
+    raw = (url or "/").strip() or "/"
+    parts = urlsplit(raw)
+    path = parts.path or "/"
+    query = [
+        (k, v)
+        for k, v in parse_qsl(parts.query, keep_blank_values=True)
+        if k != "lang"
+    ]
+    code = normalize_lang(lang)
+    if code != DEFAULT_LANG:
+        query.append(("lang", code))
+    encoded = urlencode(query)
+    return urlunsplit(("", "", path, encoded, ""))
+
+
 def lang_switch_url(request: Request, target_lang: str) -> str:
-    """PT = URL limpa (canônica). EN/JA = ?lang= só no seletor."""
+    """Seletor: /idioma/{code} grava cookie e redireciona (vence Accept-Language)."""
     path = request.url.path or "/"
+    if path.startswith("/idioma"):
+        path = "/"
     params = {k: v for k, v in request.query_params.items() if k != "lang"}
-    if target_lang and target_lang != DEFAULT_LANG:
-        params["lang"] = target_lang
-    query = urlencode(params)
-    return f"{path}?{query}" if query else path
+    current = f"{path}?{urlencode(params)}" if params else path
+    code = normalize_lang(target_lang)
+    return f"/idioma/{code}?{urlencode({'next': current})}"
 
 
 def localized_path(path: str, lang: str) -> str:

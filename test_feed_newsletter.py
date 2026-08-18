@@ -68,6 +68,7 @@ def test_robots_references_feed():
         assert "Allow: /*?lang=en" in r.text
         assert "Allow: /*?lang=ja" in r.text
         assert "Disallow: /colunista" in r.text
+        assert "Disallow: /idioma" in r.text
 
 
 def test_category_intro_block():

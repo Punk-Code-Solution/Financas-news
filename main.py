@@ -75,9 +75,11 @@ from i18n import (
     SITE_TOPIC_KEYWORDS,
     SUPPORTED_LANGS,
     absolute_url,
+    apply_lang_to_relative_url,
     build_hreflang_map,
     build_i18n_context,
     localized_path,
+    normalize_lang,
     resolve_lang,
     translate as i18n_translate,
 )
@@ -312,7 +314,27 @@ def _safe_next_url(raw: str | None, default: str = "/") -> str:
     value = (raw or default).strip() or default
     if not value.startswith("/") or value.startswith("//"):
         return default
+    if value.startswith("/idioma"):
+        return default
     return value
+
+
+def _lang_cookie_secure() -> bool:
+    return _https_only_sessions and (
+        core.is_cloud_host() or os.getenv("FORCE_SECURE_COOKIES", "") == "1"
+    )
+
+
+def _set_lang_cookie(response: Response, lang: str) -> None:
+    response.set_cookie(
+        COOKIE_NAME,
+        lang,
+        max_age=COOKIE_MAX_AGE,
+        samesite="lax",
+        httponly=False,
+        path="/",
+        secure=_lang_cookie_secure(),
+    )
 
 
 def _client_ip(request: Request) -> str | None:
@@ -366,14 +388,19 @@ def _render(request: Request, name: str, context: dict[str, Any] | None = None, 
         status_code=status_code,
     )
     if request.query_params.get("lang"):
-        response.set_cookie(
-            COOKIE_NAME,
-            resolve_lang(request),
-            max_age=COOKIE_MAX_AGE,
-            samesite="lax",
-            httponly=False,
-        )
+        _set_lang_cookie(response, resolve_lang(request))
     return response
+
+
+@app.get("/idioma/{code}")
+def set_idioma(request: Request, code: str, next: str | None = None):
+    """Grava o cookie de idioma e redireciona (PT limpo; EN/JA com ?lang=)."""
+    lang = normalize_lang(code)
+    dest = apply_lang_to_relative_url(_safe_next_url(next, "/"), lang)
+    response = RedirectResponse(url=dest, status_code=303)
+    _set_lang_cookie(response, lang)
+    return response
+
 
 # Cache curto da listagem da home (evita round-trips repetidos no Turso).
 _HOME_CACHE: dict[str, tuple[float, dict[str, object]]] = {}
@@ -851,13 +878,7 @@ def api_feed(
         },
     )
     if request.query_params.get("lang"):
-        response.set_cookie(
-            COOKIE_NAME,
-            resolve_lang(request),
-            max_age=COOKIE_MAX_AGE,
-            samesite="lax",
-            httponly=False,
-        )
+        _set_lang_cookie(response, resolve_lang(request))
     return response
 
 
@@ -1781,6 +1802,7 @@ def get_robots_txt():
         + "Disallow: /auth/\n"
         + "Disallow: /colunista\n"
         + "Disallow: /admin/\n"
+        + "Disallow: /idioma\n"
         + "Disallow: /*?q=\n"
         + "Disallow: /*?*q=\n"
         + "Disallow: /*?page=\n"
