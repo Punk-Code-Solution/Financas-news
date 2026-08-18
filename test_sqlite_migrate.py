@@ -103,6 +103,38 @@ def test_import_skips_when_sqlite_has_news(tmp_path: Path, monkeypatch) -> None:
     assert os.environ.get("USE_LOCAL_DB") == "true"
 
 
+def test_persist_generated_news_writes_sqlite(tmp_path: Path, monkeypatch) -> None:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("USE_LOCAL_DB", "1")
+    monkeypatch.setenv("LOCAL_DATABASE_PATH", str(tmp_path / "persist.db"))
+    db.reset_db_client()
+    from db import ensure_schema, get_db
+
+    import main as appmod
+
+    ensure_schema(get_db(), force=True)
+    saved = appmod._persist_generated_news(
+        [
+            {
+                "original_link": "https://example.com/persist-qa",
+                "titulo_viral": "Titulo de teste persistencia SQLite",
+                "resumo_simples": "resumo de teste " * 12,
+                "impacto_bolso": "impacto",
+                "tag": "Economia",
+                "published_at": "18/08/2026 12:00",
+                "fonte": "Teste",
+            }
+        ]
+    )
+    assert saved == 1
+    row = get_db().execute(
+        "SELECT titulo FROM news WHERE link = ?",
+        ["https://example.com/persist-qa"],
+    )
+    assert row.rows
+    assert "persistencia" in str(row.rows[0][0])
+
+
 def test_migrate_routes_require_robo_token(tmp_path: Path, monkeypatch) -> None:
     tmp_path.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("USE_LOCAL_DB", "1")
@@ -144,6 +176,7 @@ if __name__ == "__main__":
 
         test_use_local_db_autodetect_only_on_volume(root / "auto", _Mp())
         test_import_skips_when_sqlite_has_news(root / "skip", _Mp())
+        test_persist_generated_news_writes_sqlite(root / "persist", _Mp())
         test_migrate_routes_require_robo_token(root / "auth", _Mp())
     finally:
         shutil.rmtree(root, ignore_errors=True)

@@ -3741,8 +3741,16 @@ def generate_own_analyses(count: int | None = None) -> list[dict[str, Any]]:
     return generated
 
 
-def fetch_and_process(max_per_feed: int | None = None, max_articles: int | None = None):
-    """Varre feeds, gera análise + capa e prioriza artigos com imagem no lote."""
+def fetch_and_process(
+    max_per_feed: int | None = None,
+    max_articles: int | None = None,
+    on_item: Any | None = None,
+):
+    """Varre feeds, gera análise + capa e prioriza artigos com imagem no lote.
+
+    ``on_item``, se passado, é chamado a cada matéria pronta (grava no banco
+    na hora — o cron não pode esperar o fim da varredura).
+    """
     noticias_processadas = []
     max_per_feed = max_per_feed if max_per_feed is not None else get_robot_max_per_feed()
     max_articles = max_articles if max_articles is not None else get_robot_max_articles()
@@ -3861,6 +3869,15 @@ def fetch_and_process(max_per_feed: int | None = None, max_articles: int | None 
                 noticias_processadas.append(news_item)
                 already_published.add(entry_link)
                 print("   ✅ Processado com sucesso!")
+                if callable(on_item):
+                    try:
+                        on_item(news_item)
+                    except Exception as persist_exc:
+                        print(
+                            f"   [db] persistencia imediata falhou: "
+                            f"{type(persist_exc).__name__}",
+                            flush=True,
+                        )
 
         except Exception as e:
             print(f"   ❌ Erro Crítico: {e}")

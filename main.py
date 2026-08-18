@@ -2060,34 +2060,42 @@ def _persist_generated_news(noticias_geradas: list[dict[str, Any]]) -> int:
                 pass
 
         priority = core.compute_home_priority(n)
-        client.execute(
-            """
-            INSERT INTO news (
-                titulo, resumo, impacto, link, tag, sentimento, published_at,
-                fonte, dados_mercado, contexto_editorial, created_at, imagem_url, versao_analise,
-                home_priority
+        try:
+            client.execute(
+                """
+                INSERT INTO news (
+                    titulo, resumo, impacto, link, tag, sentimento, published_at,
+                    fonte, dados_mercado, contexto_editorial, created_at, imagem_url, versao_analise,
+                    home_priority
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    n["titulo_viral"],
+                    n["resumo_simples"],
+                    n["impacto_bolso"],
+                    link,
+                    n["tag"],
+                    n.get("sentimento", "Neutro"),
+                    agora,
+                    n.get("fonte"),
+                    dados_raw if dados_raw else n.get("dados_mercado"),
+                    n.get("contexto_editorial", ""),
+                    agora,
+                    n.get("imagem_url"),
+                    n.get("versao_analise", 1),
+                    priority,
+                ],
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                n["titulo_viral"],
-                n["resumo_simples"],
-                n["impacto_bolso"],
-                link,
-                n["tag"],
-                n.get("sentimento", "Neutro"),
-                agora,
-                n.get("fonte"),
-                dados_raw if dados_raw else n.get("dados_mercado"),
-                n.get("contexto_editorial", ""),
-                agora,
-                n.get("imagem_url"),
-                n.get("versao_analise", 1),
-                priority,
-            ],
-        )
+        except Exception as exc:
+            print(
+                f"   [db] INSERT news falhou ({type(exc).__name__})",
+                flush=True,
+            )
+            continue
         existing.add(link)
         salvas += 1
+        print("   [db] gravou noticia no banco", flush=True)
         try:
             index_news_by_link(client, link)
         except Exception:
@@ -2400,8 +2408,19 @@ def rodar_robo(request: Request, token: str | None = None):
     # para não esgotar a cota antes de completar o mínimo diário.
     reserved = max(0, own_target - core.count_own_analyses_today())
     max_articles = max(1, core.get_robot_max_articles() - reserved)
-    noticias_geradas = core.fetch_and_process(max_articles=max_articles)
-    salvas = _persist_generated_news(noticias_geradas)
+    incremental = {"n": 0}
+
+    def _persist_item(item: dict[str, Any]) -> None:
+        added = _persist_generated_news([item])
+        incremental["n"] += added
+        if added:
+            _invalidate_home_cache()
+
+    noticias_geradas = core.fetch_and_process(
+        max_articles=max_articles,
+        on_item=_persist_item,
+    )
+    salvas = incremental["n"] + _persist_generated_news(noticias_geradas)
 
     # 2b) Macro-watch: Selic/IPCA — gera matéria se o indicador mudou desde a última rodada.
     print("Macro-watch: conferindo Selic/IPCA...")
