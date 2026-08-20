@@ -78,7 +78,7 @@ def run() -> int:
         for path, needle in [
             ("/ping", "status"),
             ("/robots.txt", "User-agent"),
-            ("/ads.txt", "google.com"),
+            ("/ads.txt", "google.com, pub-3623062544438213"),
             ("/sitemap.xml", "urlset"),
         ]:
             r = client.get(path)
@@ -226,6 +226,18 @@ def run() -> int:
             "Home: adsense-loader.js",
             "/static/js/adsense-loader.js" in r.text,
             "loader de AdSense ausente",
+        )
+        check(
+            "Home: snippet AdSense ca-pub",
+            "ca-pub-3623062544438213" in r.text
+            and "pagead2.googlesyndication.com/pagead/js/adsbygoogle.js" in r.text,
+            "snippet AdSense ausente na home",
+        )
+        r_about = client.get("/quem-somos")
+        check(
+            "Quem-somos: snippet AdSense",
+            "ca-pub-3623062544438213" in r_about.text,
+            "snippet AdSense ausente em /quem-somos",
         )
         check(
             "Home: fluid com layout-key",

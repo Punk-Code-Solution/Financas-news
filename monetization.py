@@ -70,6 +70,9 @@ _UNSET_VALUES = frozenset(
     {"null", "none", "undefined", "nil", "n/a", "na", "-", "#", "todo", "tbd"}
 )
 
+# Publisher atual do Google AdSense (snippet no <head> + ads.txt).
+ADSENSE_PUBLISHER_ID = "ca-pub-3623062544438213"
+
 
 def _env(key: str) -> str:
     value = os.getenv(key, "").strip()
@@ -178,7 +181,7 @@ def get_contextual_affiliate(tag: str) -> dict[str, object] | None:
 
 
 def get_monetization_config() -> dict[str, object]:
-    adsense_client = _env("GOOGLE_ADSENSE_CLIENT") or "ca-pub-3623062544438213"
+    adsense_client = _env("GOOGLE_ADSENSE_CLIENT") or ADSENSE_PUBLISHER_ID
     adsense_slot = _env("ADSENSE_AD_SLOT")
     adsense_fluid_slot = _env("ADSENSE_FLUID_SLOT") or "5920613886"
     adsense_fluid_layout = _env("ADSENSE_FLUID_LAYOUT_KEY") or "-gp+18-5a-gr+1eg"

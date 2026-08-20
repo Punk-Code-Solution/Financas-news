@@ -122,9 +122,7 @@
     {% include "partials/_styles.html" %}
     {% include "partials/_adsense_styles.html" %}
     <script src="/static/js/image-fallback.js"></script>
-    
     {% if monetization.adsense.enabled %}
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ monetization.adsense.client }}" crossorigin="anonymous"></script>
     <script src="/static/js/adsense-loader.js" defer></script>
     {% endif %}
 
