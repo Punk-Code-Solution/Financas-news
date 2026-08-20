@@ -1,0 +1,76 @@
+---
+description: Política global Jira — vínculo obrigatório, fluxo e hierarquia
+alwaysApply: true
+---
+
+# Política global Jira (Punk Code Solution)
+
+Site: https://punk-code-solution.atlassian.net  
+Cloud ID: `47d83d01-d30e-44d9-8cab-7b022de9051d`
+
+Este repositório mapeia para a key **FN** (Finanças News).
+
+Fonte canônica: `company-ops` → `config/jira-projects.yml`.
+
+## Mapeamento projeto ↔ key
+
+| Projeto | Key | Repo |
+|---|---|---|
+| Pronto | PRON | `mobileapp` |
+| Igreja 4.0 | I40 | `igreja4.0` |
+| Studio & Style | STUD | `studio-style` |
+| Gamers League | GL | `cs-league` |
+| Finanças News | FN | `financas-news` |
+| Company Ops | OPS | `company-ops` |
+| Punk Code Landing | PUNK | `punk-code-landing-page` |
+
+## Obrigatório — vínculo com Jira
+
+1. **Toda modificação de código** (feature, fix, refactor, docs normativos, CI, config de produto) **deve estar vinculada** a uma issue Jira do tipo **Tarefa** ou **Bug** (ou História quando for o entregável).
+2. **Antes de alterar código:** pesquisar issues existentes no projeto **FN**. Reutilizar a issue adequada.
+3. **Se não houver issue:** criar imediatamente no projeto **FN**, com summary claro, e só então implementar.
+4. Commits e PRs devem citar a key (ex.: `FN-123`).
+5. Não concluir trabalho “só no Git” — atualizar o status no Jira.
+
+## Hierarquia de issues
+
+```text
+Epic
+ └── História (Story)
+      ├── Tarefa (Task)
+      └── Bug
+```
+
+- **Epic:** tema/marco grande.
+- **História (Story):** entrega de valor.
+- **Tarefa (Task):** trabalho técnico concreto sob uma História/Epic.
+- **Bug:** defeito; liga-se a Epic/História (parent/link).
+
+Ao criar Tarefa/Bug, preferir **parent** = História (ou Epic se ainda não houver História).
+
+## Fluxo de status (obrigatório)
+
+```text
+Backlog → Aberta → Desenvolvimento ⇄ Teste → Concluída
+```
+
+| Transição | Quando |
+|---|---|
+| → **Backlog** | Planejado, sem compromisso de execução |
+| → **Aberta** | Pronta para começar |
+| → **Desenvolvimento** | Ao iniciar implementação |
+| → **Teste** | Dev feito; aguarda QA (pode voltar a Desenvolvimento) |
+| → **Concluída** | Validação OK |
+
+- `Desenvolvimento ⇄ Teste` é bidirecional.
+- Não saltar para **Concluída** sem **Teste** (exceto chore/bug trivial com comentário na issue).
+- Usar Atlassian MCP (`transitionJiraIssue`) ou API.
+
+## Checklist do agente (cada lote)
+
+1. Usar projeto **FN**.
+2. Encontrar ou **criar** Tarefa/Bug (parent História/Epic se faltar).
+3. Mover para **Desenvolvimento** antes de codar.
+4. Implementar + testes.
+5. Mover para **Teste**; após validação → **Concluída**.
+6. Citar a key no commit/PR.
