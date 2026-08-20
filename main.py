@@ -4,6 +4,7 @@ import hmac
 import re
 import threading
 import time
+import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -2413,8 +2414,51 @@ def gerar_analises_proprias(request: Request, token: str | None = None, count: i
 @app.get("/api/rodar-robo")
 def rodar_robo(request: Request, token: str | None = None):
     require_robo_auth(request, token)
+    if _robo_runs_async():
+        if not _robo_job_lock.acquire(blocking=False):
+            return JSONResponse(
+                {"status": "Ignorado", "detail": "Robo ja em execucao"},
+                status_code=202,
+            )
 
-    print("🤖 Iniciando robô via API...")
+        def _job() -> None:
+            try:
+                _execute_robot_pipeline()
+            except Exception as exc:
+                print(f"   [robo] falha em background: {type(exc).__name__}: {exc}", flush=True)
+                traceback.print_exc()
+            finally:
+                _robo_job_lock.release()
+
+        try:
+            threading.Thread(target=_job, name="rodar-robo", daemon=True).start()
+        except Exception:
+            _robo_job_lock.release()
+            raise
+        return JSONResponse(
+            {
+                "status": "Aceito",
+                "detail": "Robo iniciado em segundo plano. Acompanhe os logs do servico.",
+            },
+            status_code=202,
+        )
+    return _execute_robot_pipeline()
+
+
+def _robo_runs_async() -> bool:
+    flag = os.getenv("ROBO_ASYNC", "").strip().lower()
+    if flag in ("1", "true", "yes"):
+        return True
+    if flag in ("0", "false", "no"):
+        return False
+    return core.is_cloud_host()
+
+
+_robo_job_lock = threading.Lock()
+
+
+def _execute_robot_pipeline() -> dict[str, Any]:
+    print("Iniciando robo via API...", flush=True)
 
     # 1) Reserva da cota do dia: análises próprias a partir do acervo (meta ≥ 3).
     # Roda ANTES do RSS para não perder a cota Gemini com feeds.

@@ -66,7 +66,7 @@ GET /api/rodar-robo
 Authorization: Bearer SEU_ROBO_TOKEN
 ```
 
-(Query `?token=` ainda funciona para cron; preferir header quando possível.)
+Na Railway o endpoint responde **202** na hora e o pipeline segue em segundo plano (o cron-job.org não aguenta 15–20 min). Query `?token=` ainda funciona; preferir header.
 
 ---
 
@@ -361,7 +361,7 @@ Todas as respostas recebem:
 
 | Rota | Função |
 |------|--------|
-| `GET /api/rodar-robo` | Dispara pipeline (auth: Bearer / X-Robo-Token / ?token=) |
+| `GET /api/rodar-robo` | Dispara pipeline (auth: Bearer / X-Robo-Token / ?token=). Em cloud: **202** e roda em segundo plano |
 | `GET /api/gerar-analises-proprias` | Gera análises próprias a partir do acervo (mesma auth; meta diária `ROBOT_OWN_ANALYSES`) |
 | `GET /api/gerar-imagens` | Backfill de capas (mesma auth) |
 | `GET /api/atualizar-artigos` | Atualiza dados de mercado (mesma auth) |
@@ -393,6 +393,7 @@ GOOGLE_API_KEY=           # ou GEMINI_API_KEY (chave 1)
 GOOGLE_API_KEY_2=         # opcional: segunda chave (fallback de cota)
 GOOGLE_API_KEY_3=         # opcional: terceira chave (fallback de cota)
 ROBO_TOKEN=               # obrigatório: rotas /api do robô, radar, macro-watch, traduzir, newsletter digest/alerta, capas
+# ROBO_ASYNC=             # default: ligado na Railway (202 imediato). 0 = espera o pipeline (testes/local)
 SESSION_SECRET=           # cookie de sessão da comunidade (httpOnly)
 IP_HASH_SALT=             # salt para hash de IP em comentários (LGPD)
 GOOGLE_OAUTH_CLIENT_ID=   # opcional: login Google

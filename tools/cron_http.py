@@ -47,7 +47,10 @@ def main() -> int:
     print(f"cron_http: {method} {path}")
     resp = requests.request(method, url, headers=headers, timeout=timeout)
     print(f"status={resp.status_code} body={resp.text[:800]}")
-    resp.raise_for_status()
+    if resp.status_code not in (200, 202):
+        resp.raise_for_status()
+        print(f"status inesperado={resp.status_code}", file=sys.stderr)
+        return 1
     return 0
 
 

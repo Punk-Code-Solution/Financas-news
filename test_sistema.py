@@ -12,6 +12,7 @@ load_dotenv()
 
 # Força token de teste (sobrescreve .env) — nunca dispara produção nestes asserts.
 os.environ["ROBO_TOKEN"] = "test-robo-token-local"
+os.environ["ROBO_ASYNC"] = "0"
 
 from fastapi.testclient import TestClient
 
