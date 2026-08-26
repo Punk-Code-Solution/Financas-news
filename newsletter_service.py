@@ -34,7 +34,7 @@ def _env(key: str, default: str = "") -> str:
 
 def site_origin() -> str:
     """Origem pública do site (lida em runtime — após load_dotenv / env do host)."""
-    return _env("SITE_ORIGIN", "https://www.financas-news.net.br").rstrip("/")
+    return _env("SITE_ORIGIN", "https://financas-news.net.br").rstrip("/")
 
 
 def newsletter_from() -> str:

@@ -1181,7 +1181,7 @@ def build_hreflang_map(
 def build_i18n_context(request: Request) -> dict[str, Any]:
     lang = resolve_lang(request)
     t: Callable[..., str] = lambda key, **kwargs: translate(lang, key, **kwargs)
-    site_origin = os.getenv("SITE_ORIGIN", "https://www.financas-news.net.br").rstrip("/")
+    site_origin = os.getenv("SITE_ORIGIN", "https://financas-news.net.br").rstrip("/")
     path = request.url.path or "/"
     base_query, robots_noindex = canonical_query_params(request, path)
     canonical_url = absolute_url(site_origin, path, base_query or None)

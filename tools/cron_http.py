@@ -1,7 +1,7 @@
 """Dispara um job autenticado do portal (uso em cron one-shot / Railway).
 
 Uso:
-  SITE_ORIGIN=https://www.financas-news.net.br ROBO_TOKEN=... python tools/cron_http.py rodar-robo
+  SITE_ORIGIN=https://financas-news.net.br ROBO_TOKEN=... python tools/cron_http.py rodar-robo
 
 Jobs: ver JOBS abaixo. Nunca passe o token na URL.
 """
@@ -34,7 +34,7 @@ def main() -> int:
         return 2
 
     token = (os.getenv("ROBO_TOKEN") or os.getenv("ROBOT_TOKEN") or "").strip()
-    origin = (os.getenv("SITE_ORIGIN") or "https://www.financas-news.net.br").rstrip("/")
+    origin = (os.getenv("SITE_ORIGIN") or "https://financas-news.net.br").rstrip("/")
     if not token:
         print("ROBO_TOKEN nao configurado", file=sys.stderr)
         return 1

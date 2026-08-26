@@ -1,6 +1,6 @@
 # Crons — Railway (Clareza Capital)
 
-Produção: **https://www.financas-news.net.br**  
+Produção: **https://financas-news.net.br**  
 Host: **Railway** (serviço web uvicorn sempre ligado).
 
 Schedules em **UTC** (cron-job.org e Railway Cron usam UTC). BRT = UTC−3.
@@ -9,7 +9,7 @@ Schedules em **UTC** (cron-job.org e Railway Cron usam UTC). BRT = UTC−3.
 (nunca `?token=` na URL — vaza em logs)
 
 **Variable no serviço web:**  
-`SITE_ORIGIN=https://www.financas-news.net.br`
+`SITE_ORIGIN=https://financas-news.net.br`
 
 ---
 
@@ -128,5 +128,5 @@ Verde no cron-job.org = “aceito”. Se a matéria não aparecer no site, o err
 Runner local/one-shot:
 
 ```bash
-SITE_ORIGIN=https://www.financas-news.net.br ROBO_TOKEN=... python tools/cron_http.py rodar-robo
+SITE_ORIGIN=https://financas-news.net.br ROBO_TOKEN=... python tools/cron_http.py rodar-robo
 ```

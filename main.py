@@ -444,7 +444,7 @@ def article_cover_url(imagem_url: object, tag: object) -> str:
 templates.env.globals["category_image"] = category_image_url
 templates.env.globals["article_cover"] = article_cover_url
 
-SITE_ORIGIN = os.getenv("SITE_ORIGIN", "https://www.financas-news.net.br").rstrip("/")
+SITE_ORIGIN = os.getenv("SITE_ORIGIN", "https://financas-news.net.br").rstrip("/")
 
 
 def _to_iso8601(value: object) -> str | None:

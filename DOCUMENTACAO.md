@@ -1,6 +1,6 @@
 # Clareza Capital — Documentação do Projeto
 
-**Portal:** [www.financas-news.net.br](https://www.financas-news.net.br)  
+**Portal:** [financas-news.net.br](https://financas-news.net.br)  
 **Desenvolvedor:** Punk Code Solution  
 **Repositório:** [github.com/Punk-Code-Solution/Financas-news](https://github.com/Punk-Code-Solution/Financas-news)  
 **Versão do documento:** agosto/2026
@@ -233,7 +233,7 @@ Imagens salvas em disco (`ARTICLE_IMAGES_DIR`) com URL pública `/media/articles
 
 | Item | Configuração |
 |------|-------------|
-| URL | https://www.financas-news.net.br |
+| URL | https://financas-news.net.br |
 | Serviço | Web service (Railpack) |
 | Runtime | Python 3.13.7 (`.python-version`) |
 | Start | `uvicorn main:app --host 0.0.0.0 --port $PORT` |
@@ -249,7 +249,7 @@ Imagens salvas em disco (`ARTICLE_IMAGES_DIR`) com URL pública `/media/articles
 | `USE_LOCAL_DB` | `true` em produção (SQLite no volume) |
 | `GOOGLE_API_KEY` | (+ opcional `_2` / `_3`) |
 | `ROBO_TOKEN` | Segredo dos crons / APIs internas |
-| `SITE_ORIGIN` | `https://www.financas-news.net.br` |
+| `SITE_ORIGIN` | `https://financas-news.net.br` |
 | `TURSO_DATABASE_URL` | Só para a migração única (`/api/import-from-turso`) |
 | `TURSO_AUTH_TOKEN` | Só para a migração única |
 
@@ -400,7 +400,7 @@ GOOGLE_OAUTH_CLIENT_ID=   # opcional: login Google
 GOOGLE_OAUTH_CLIENT_SECRET=
 GOOGLE_OAUTH_REDIRECT_URI=  # ex.: https://financas-news.net.br/auth/google/callback
 # SESSION_HTTPS_ONLY=false  # local HTTP; em produção/Railway cookies Secure
-SITE_ORIGIN=https://www.financas-news.net.br  # obrigatório em produção (canônicas / links)
+SITE_ORIGIN=https://financas-news.net.br  # obrigatório em produção (canônicas / links)
 # Verificação de conta também exige mailer: RESEND_API_KEY + NEWSLETTER_FROM (ou SMTP_*) — ver seção Newsletter
 # EMAIL_VERIFY_TTL_HOURS=48
 # EMAIL_VERIFY_RESEND_COOLDOWN_SEC=120
@@ -523,7 +523,7 @@ Ordem de preferência no código: Resend → SMTP → webhook.
 | `NEWSLETTER_WEBHOOK_URL` | Alternativa | POST JSON `{subject,html,text,to,from}` |
 
 ```env
-SITE_ORIGIN=https://www.financas-news.net.br
+SITE_ORIGIN=https://financas-news.net.br
 NEWSLETTER_FROM=newsletter@financas-news.net.br
 RESEND_API_KEY=                 # preferencial (API Resend) — verificação de conta + newsletter
 NEWSLETTER_WEBHOOK_URL=         # alternativa: POST JSON {subject,html,text,to,from}
