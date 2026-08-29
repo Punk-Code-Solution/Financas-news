@@ -125,7 +125,8 @@ Cripto · Economia · Dólar · Ações · Juros · Inflação · Imóveis · Fi
 
 - **Título** editorial gerado pela IA
 - **Análise completa** (6 parágrafos: cada um amarrado a pelo menos 1 número citado)
-- **Painel núcleo** — sempre Selic, IPCA 12 meses, dólar + 1–2 cotações da categoria, com data de coleta e tendência 7d/30d
+- **Duas mesas de prompt:** financeira (mercado/cripto/Copom) e **político-financeira** (Brasília, fiscal, eleições) — feeds G1 Política, Poder360 e Agência Brasil entram primeiro na cota; política sem ângulo econômico é pulada
+- **Painel núcleo** — Selic, IPCA 12 meses, dólar + 1–2 cotações da categoria, com data de coleta e tendência 7d/30d
 - **Panorama de mercado** (box com números citados)
 - **Impacto no bolso** (3 frases diretas)
 - **Sentimento** (Positivo / Negativo / Neutro)
@@ -407,6 +408,8 @@ SITE_ORIGIN=https://financas-news.net.br  # obrigatório em produção (canônic
 ROBOT_MAX_PER_FEED=3
 ROBOT_MAX_ARTICLES=36
 ROBOT_OWN_ANALYSES=3      # mínimo diário de análises próprias a partir do acervo (0=desliga)
+# ROBOT_POLITICO_FIRST=1           # 1=feeds de Política Econômica primeiro na rodada
+# ROBOT_POLITICO_MAX_PER_FEED=4    # teto por feed da mesa político-financeira
 # GOOGLE_API_KEYS=key1,key2,key3   # alternativa: lista de chaves
 USE_LOCAL_DB=true         # produção: SQLite no volume Railway
 # LOCAL_DATABASE_PATH=    # default: {RAILWAY_VOLUME_MOUNT_PATH}/news.db
@@ -549,7 +552,7 @@ Agenda completa (UTC, Bearer, URLs): ver **`ops/crons.md`**.
 
 Resumo: robô a cada 3 h (`GET /api/rodar-robo`), capas a cada 20 min, digest 08:00/17:00 BRT, etc. Preferir header `Authorization: Bearer $ROBO_TOKEN` (sem `?token=`).
 
-Variáveis úteis: `ROBO_TOKEN`, `ROBOT_MAX_PER_FEED=3`, `ROBOT_MAX_ARTICLES=36`, `ROBOT_OWN_ANALYSES=3`, `GOOGLE_API_KEY` / `_2` / `_3`.
+Variáveis úteis: `ROBO_TOKEN`, `ROBOT_MAX_PER_FEED=3`, `ROBOT_MAX_ARTICLES=36`, `ROBOT_OWN_ANALYSES=3`, `ROBOT_POLITICO_FIRST=1`, `ROBOT_POLITICO_MAX_PER_FEED=4`, `GOOGLE_API_KEY` / `_2` / `_3`.
 
 O robô prioriza a meta diária de **análises próprias** (síntese do acervo, sem RSS). Se ainda faltar, tenta de novo após os feeds. Endpoint dedicado: `/api/gerar-analises-proprias`.
 

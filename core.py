@@ -308,6 +308,19 @@ def get_robot_own_analyses_count() -> int:
         return 3
 
 
+def get_robot_politico_max_per_feed() -> int:
+    """Teto por feed da mesa político-financeira (período eleitoral/fiscal)."""
+    try:
+        return max(1, min(int(os.getenv("ROBOT_POLITICO_MAX_PER_FEED", "4")), 8))
+    except ValueError:
+        return 4
+
+
+def robot_politico_feeds_first() -> bool:
+    flag = os.getenv("ROBOT_POLITICO_FIRST", "1").strip().lower()
+    return flag not in ("0", "false", "no")
+
+
 OWN_ANALYSIS_LINK_PREFIX = "internal://analise/"
 OWN_ANALYSIS_FONTE = "Clareza Capital"
 
@@ -1364,6 +1377,20 @@ ANALYTICAL_LENSES: list[dict[str, Any]] = [
         ),
     },
     {
+        "id": "economia_politica",
+        "label": "Incentivos e regras do jogo",
+        "school": "Economia política",
+        "tags": ("Política Econômica", "Economia", "Juros"),
+        "keywords": (
+            "congresso", "fiscal", "orcamento", "eleicao", "tribut", "emenda",
+            "planalto", "pec", "camara", "senado",
+        ),
+        "hint": (
+            "Mostre incentivos de governo, Congresso e eleitor. "
+            "Ligue a decisão política a gasto, imposto, dívida e risco — sem torcida."
+        ),
+    },
+    {
         "id": "custo_disciplina",
         "label": "Disciplina de longo prazo e custos",
         "school": "Indexação e eficiência (John Bogle)",
@@ -1385,7 +1412,7 @@ def _macro_topic_relevance(title: str, content: str, tag_hint: str) -> dict[str,
             k in text
             for k in ("selic", "copom", "juros", "taxa basica", "banco central", "credito", "di ")
         )
-        or tag_hint in ("Juros", "Política Econômica"),
+        or tag_hint == "Juros",
         "ipca": any(k in text for k in ("ipca", "inflacao", "precos", "custos", "cesta"))
         or tag_hint in ("Inflação", "Economia"),
         "dolar": any(k in text for k in ("dolar", "cambio", "usd", "eur", "forex", "real "))
@@ -3099,61 +3126,54 @@ def _all_text_models_exhausted() -> bool:
     )
 
 
-def process_news_with_ai(title, content, fonte, tag_hint, market_context):
-    if not get_gemini_api_keys():
-        return None
+_POLITICO_KEYWORDS = (
+    "eleicao", "eleicoes", "congresso", "camara", "senado", "planalto",
+    "pec ", "medida provisoria", "orcamento", "ldo", "loa ", "reforma tributaria",
+    "tributar", "pacote fiscal", "arcabouco", "iof", "imposto", "fazenda",
+    "previdencia", "desoneracao", "emenda parlamentar", "salario minimo",
+    "candidato", "campanha eleitoral", "governador", "ministro da fazenda",
+    "camara dos deputados", "supremo", "tcu", "fundeb",
+)
 
-    print(f"   🤖 Enviando para IA: {title[:40]}...")
+_ECONOMIC_ANGLE_KEYWORDS = (
+    "fiscal", "orcamento", "tribut", "imposto", "iof", "selic", "mercado",
+    "bolsa", "ibovespa", "dolar", "cambio", "divida", "gasto publico", "receita",
+    "bndes", "banco central", "copom", "previdencia", "salario minimo",
+    "desoner", "subsidio", "arcabouco", "superavit", "primario", "credito",
+    "pib", "emprego", "tarifa", "inflacao", "ipca", "tesouro", "risco-pais",
+    "investidor", "juros",
+)
 
-    tags_list = ", ".join(VALID_TAGS)
-    macro_rel = _macro_topic_relevance(title, content, tag_hint)
-    lenses = select_analysis_lenses(title, content, tag_hint, count=2)
-    lens_block = _build_lens_prompt_block(lenses)
-    macro_rules = _build_macro_usage_rules(macro_rel, tag_hint)
 
-    prompt = f"""
-Você é o editor-chefe de análise do portal "Clareza Capital" (financas-news.net.br), especializado em economia brasileira, mercado de capitais e criptoativos.
+def ordered_rss_feeds() -> list[dict[str, str]]:
+    """No período político, a mesa de Brasília entra primeiro na cota da rodada."""
+    if not robot_politico_feeds_first():
+        return list(RSS_FEEDS)
+    politico = [f for f in RSS_FEEDS if f.get("tag_hint") == "Política Econômica"]
+    rest = [f for f in RSS_FEEDS if f.get("tag_hint") != "Política Econômica"]
+    return politico + rest
 
-Sua missão é produzir uma ANÁLISE EDITORIAL ORIGINAL de alto valor — não um resumo, não uma paráfrase da notícia fonte. O Google e leitores exigem conteúdo com dados concretos, contexto histórico e utilidade prática.
 
-## REGRAS INEGOCIÁVEIS
-- PROIBIDO: resumir a notícia, usar "segundo a matéria", "o texto relata", "conforme publicado".
-- PROIBIDO: parágrafo só com opinião genérica sem número concreto dos DADOS DE MERCADO ou do acervo.
-- PROIBIDO: abrir toda matéria com Selic/juros quando o fato for de outro tema (cripto, política local, consumo, etc.).
-- PROIBIDO: repetir a mesma fórmula macro (Selic + IPCA + dólar) em todos os parágrafos — varie os indicadores.
-- OBRIGATÓRIO: usar números concretos do painel em pelo menos 4 dos 6 parágrafos (indicadores VARIADOS).
-- OBRIGATÓRIO: citar pelo menos 1 cotação ou indicador alinhado à categoria `{tag_hint}`.
-- OBRIGATÓRIO: quando houver tendência 7d/30d nos dados, usar em pelo menos 2 parágrafos (direção, não só o print do dia).
-- OBRIGATÓRIO: conectar o fato da notícia com o cenário macro brasileiro SOMENTE quando fizer sentido editorial.
-- OBRIGATÓRIO: cruzar com o ACERVO EDITORIAL — mencione se há tendência (ex.: "terceira notícia negativa sobre X esta semana").
-- OBRIGATÓRIO: incorporar as 2 lentes analíticas abaixo em paráfrase original (sem citações literais de especialistas).
-- OBRIGATÓRIO: dar orientação prática para o leitor comum (investidor iniciante ou chefe de família).
-- Mínimo de 500 palavras no campo resumo_simples.
-- Tom: jornalístico, analítico, acessível. Você domina tecnologia e finanças, com visão de livre mercado e empreendedorismo.
+def is_politico_financeira(title: str, content: str, tag_hint: str) -> bool:
+    """True quando o fato é de Brasília com impacto econômico (não fofoca política)."""
+    if (tag_hint or "") == "Política Econômica":
+        return True
+    text = _fold_label(f"{title} {content[:1800]}")
+    has_politics = any(k in text for k in _POLITICO_KEYWORDS)
+    has_economy = any(k in text for k in _ECONOMIC_ANGLE_KEYWORDS)
+    return has_politics and has_economy
 
-{macro_rules}
 
-{lens_block}
+def should_skip_politico_sem_economia(title: str, content: str, tag_hint: str) -> bool:
+    """Pula política pura (crime, briga partidária) sem canal fiscal/mercado."""
+    if (tag_hint or "") != "Política Econômica":
+        return False
+    text = _fold_label(f"{title} {content[:1800]}")
+    return not any(k in text for k in _ECONOMIC_ANGLE_KEYWORDS)
 
-## NOTÍCIA FONTE
-Fonte RSS: {fonte}
-Categoria sugerida: {tag_hint}
-Título original: {title}
-Conteúdo base (use como ponto de partida, não como texto a reescrever):
-{content[:2500]}
 
-## DADOS PARA CRUZAMENTO (use estes números na análise)
-{market_context}
-
-## ESTRUTURA DO ARTIGO (campo resumo_simples — 6 parágrafos separados por \\n\\n)
-1. **Abertura**: O fato em uma frase forte + por que importa AGORA — número ligado ao TEMA (não force Selic se irrelevante).
-2. **Contexto com dados**: Indicadores macro/cotações RELEVANTES — valores e tendência 7d/30d quando disponível.
-3. **Cruzamento de fontes**: Relacione com o acervo editorial + 1 lente analítica aplicada ao caso.
-4. **Análise aprofundada**: Causas e riscos — cada afirmação forte amarrada a um dado citado.
-5. **Cenários**: 30/90/180 dias com âncoras numéricas variadas (não só juros).
-6. **Guia prático**: 2-3 ações concretas + segunda lente analítica (disciplina, risco ou ciclo).
-
-Retorne APENAS JSON válido (sem ```json):
+def _article_json_contract(tags_list: str) -> str:
+    return f"""Retorne APENAS JSON válido (sem ```json):
 {{
     "titulo_viral": "Título jornalístico, informativo e específico (máx. 90 caracteres). Evite clickbait vazio.",
     "resumo_simples": "Artigo completo de 6 parágrafos com \\n\\n entre eles. Mínimo 500 palavras.",
@@ -3208,8 +3228,137 @@ Retorne APENAS JSON válido (sem ```json):
             {{"rotulo": "Retorno esperado", "valores": ["~12% a.a.", "~15% a.a.", "~25% a.a."]}}
         ]
     }}
-}}
+}}"""
+
+
+def _build_financeiro_news_prompt(
+    title: str,
+    content: str,
+    fonte: str,
+    tag_hint: str,
+    market_context: str,
+    tags_list: str,
+    macro_rules: str,
+    lens_block: str,
+) -> str:
+    return f"""
+Você é o editor-chefe de análise do portal "Clareza Capital" (financas-news.net.br), especializado em economia brasileira, mercado de capitais e criptoativos.
+
+Sua missão é produzir uma ANÁLISE EDITORIAL ORIGINAL de alto valor — não um resumo, não uma paráfrase da notícia fonte. O Google e leitores exigem conteúdo com dados concretos, contexto histórico e utilidade prática.
+
+## REGRAS INEGOCIÁVEIS
+- PROIBIDO: resumir a notícia, usar "segundo a matéria", "o texto relata", "conforme publicado".
+- PROIBIDO: parágrafo só com opinião genérica sem número concreto dos DADOS DE MERCADO ou do acervo.
+- PROIBIDO: abrir toda matéria com Selic/juros quando o fato for de outro tema (cripto, política local, consumo, etc.).
+- PROIBIDO: repetir a mesma fórmula macro (Selic + IPCA + dólar) em todos os parágrafos — varie os indicadores.
+- OBRIGATÓRIO: usar números concretos do painel em pelo menos 4 dos 6 parágrafos (indicadores VARIADOS).
+- OBRIGATÓRIO: citar pelo menos 1 cotação ou indicador alinhado à categoria `{tag_hint}`.
+- OBRIGATÓRIO: quando houver tendência 7d/30d nos dados, usar em pelo menos 2 parágrafos (direção, não só o print do dia).
+- OBRIGATÓRIO: conectar o fato da notícia com o cenário macro brasileiro SOMENTE quando fizer sentido editorial.
+- OBRIGATÓRIO: cruzar com o ACERVO EDITORIAL — mencione se há tendência (ex.: "terceira notícia negativa sobre X esta semana").
+- OBRIGATÓRIO: incorporar as 2 lentes analíticas abaixo em paráfrase original (sem citações literais de especialistas).
+- OBRIGATÓRIO: dar orientação prática para o leitor comum (investidor iniciante ou chefe de família).
+- Mínimo de 500 palavras no campo resumo_simples.
+- Tom: jornalístico, analítico, acessível. Você domina tecnologia e finanças, com visão de livre mercado e empreendedorismo.
+
+{macro_rules}
+
+{lens_block}
+
+## NOTÍCIA FONTE
+Fonte RSS: {fonte}
+Categoria sugerida: {tag_hint}
+Título original: {title}
+Conteúdo base (use como ponto de partida, não como texto a reescrever):
+{content[:2500]}
+
+## DADOS PARA CRUZAMENTO (use estes números na análise)
+{market_context}
+
+## ESTRUTURA DO ARTIGO (campo resumo_simples — 6 parágrafos separados por \\n\\n)
+1. **Abertura**: O fato em uma frase forte + por que importa AGORA — número ligado ao TEMA (não force Selic se irrelevante).
+2. **Contexto com dados**: Indicadores macro/cotações RELEVANTES — valores e tendência 7d/30d quando disponível.
+3. **Cruzamento de fontes**: Relacione com o acervo editorial + 1 lente analítica aplicada ao caso.
+4. **Análise aprofundada**: Causas e riscos — cada afirmação forte amarrada a um dado citado.
+5. **Cenários**: 30/90/180 dias com âncoras numéricas variadas (não só juros).
+6. **Guia prático**: 2-3 ações concretas + segunda lente analítica (disciplina, risco ou ciclo).
+
+{_article_json_contract(tags_list)}
 """
+
+
+def _build_politico_financeira_prompt(
+    title: str,
+    content: str,
+    fonte: str,
+    tag_hint: str,
+    market_context: str,
+    tags_list: str,
+    macro_rules: str,
+    lens_block: str,
+) -> str:
+    return f"""
+Você é o editor de POLÍTICA ECONÔMICA do portal "Clareza Capital" (financas-news.net.br) — mesa SEPARADA da cobertura de mercado, cripto e copom.
+
+Sua missão: traduzir o fato de Brasília (Congresso, Executivo, STF, eleições, orçamento, tributos) em impacto no bolso, no crédito, no câmbio e no risco fiscal. Não é comentarista partidário.
+
+## REGRAS DA MESA POLÍTICO-FINANCEIRA
+- PROIBIDO: pedir voto, elogiar ou atacar partido/pessoa como tese, clickbait eleitoral, fofoca sem canal econômico.
+- PROIBIDO: resumir a notícia ("segundo a matéria", "o texto relata").
+- PROIBIDO: abrir com Selic se o fato for votação, PEC, orçamento, imposto ou eleição — o canal é fiscal/institucional.
+- OBRIGATÓRIO: tag preferencial `Política Econômica` (só mude se o fato for claramente outra categoria).
+- OBRIGATÓRIO: mostrar o CANAL econômico (gasto, imposto, dívida, regra fiscal, regulação, emprego, câmbio).
+- OBRIGATÓRIO: quem ganha e quem perde (família, poupança, setor, investidor) com pelo menos 1 número do painel ou do acervo.
+- OBRIGATÓRIO: números concretos em pelo menos 3 dos 6 parágrafos — priorize fiscal, câmbio, Ibovespa, IPCA; Selic só se o fato for monetário.
+- OBRIGATÓRIO: cruzar com o ACERVO EDITORIAL (ex.: segundo pacote fiscal neste trimestre).
+- OBRIGATÓRIO: incorporar as 2 lentes analíticas em paráfrase original.
+- OBRIGATÓRIO: orientação prática (o que observar no calendário político; o que NÃO fazer: pânico de manchete).
+- Mínimo de 500 palavras no campo resumo_simples.
+- Tom: sóbrio, analítico, acessível. Livre mercado e regras do jogo — sem torcida.
+
+{macro_rules}
+
+{lens_block}
+
+## NOTÍCIA FONTE
+Fonte RSS: {fonte}
+Categoria sugerida: {tag_hint} (prefira Política Econômica)
+Título original: {title}
+Conteúdo base (ponto de partida, não texto a reescrever):
+{content[:2500]}
+
+## DADOS PARA CRUZAMENTO (use estes números na análise)
+{market_context}
+
+## ESTRUTURA DO ARTIGO (resumo_simples — 6 parágrafos separados por \\n\\n)
+1. **Abertura**: o fato de poder + por que o leitor/mercado deve ligar AGORA.
+2. **Canal econômico**: gasto, tributo, dívida, regra fiscal ou regulação — com número.
+3. **Cruzamento**: acervo + 1 lente (incentivos, ciclo de crédito ou risco).
+4. **Ganhadores e perdedores**: setores, famílias, poupança — cada afirmação com dado.
+5. **Cenários**: 30/90/180 dias (votação, implementação, reação de câmbio/bolsa).
+6. **Guia prático**: 2-3 ações (calendário, reserva, evitar timing político) + segunda lente.
+
+{_article_json_contract(tags_list)}
+"""
+
+
+def process_news_with_ai(title, content, fonte, tag_hint, market_context):
+    if not get_gemini_api_keys():
+        return None
+
+    politico = is_politico_financeira(title, content, tag_hint)
+    desk = "politico-financeira" if politico else "financeira"
+    print(f"   🤖 Enviando para IA ({desk}): {title[:40]}...")
+
+    tags_list = ", ".join(VALID_TAGS)
+    macro_rel = _macro_topic_relevance(title, content, tag_hint)
+    lenses = select_analysis_lenses(title, content, tag_hint, count=2)
+    lens_block = _build_lens_prompt_block(lenses)
+    macro_rules = _build_macro_usage_rules(macro_rel, tag_hint)
+    builder = _build_politico_financeira_prompt if politico else _build_financeiro_news_prompt
+    prompt = builder(
+        title, content, fonte, tag_hint, market_context, tags_list, macro_rules, lens_block
+    )
 
     try:
         text = generate_content_with_fallback(prompt)
@@ -3767,13 +3916,18 @@ def fetch_and_process(
     print(f"   🖼️ Fallback Hugging Face: {hf_label}")
     print(f"   🔑 Chaves Gemini: {len(get_gemini_api_keys())} (imagem prioriza 2→3→1)")
     print(f"   📰 Fontes: {len(RSS_FEEDS)} | até {max_per_feed}/feed | teto {max_articles}/rodada")
+    if robot_politico_feeds_first():
+        print(
+            f"   🏛 Mesa político-financeira primeiro "
+            + f"(até {get_robot_politico_max_per_feed()}/feed político)"
+        )
 
     market = fetch_market_snapshot()
     bcb = fetch_bcb_snapshot()
     historico = fetch_market_historical()
     print(f"   📊 Dados de mercado coletados: {len(market)} cotações, {len(bcb)} indicadores BCB")
 
-    for feed_config in RSS_FEEDS:
+    for feed_config in ordered_rss_feeds():
         if len(noticias_processadas) >= max_articles:
             print(f"   🛑 Teto da rodada atingido ({max_articles} artigos).")
             break
@@ -3781,6 +3935,11 @@ def fetch_and_process(
         feed_url = feed_config["url"]
         fonte = feed_config["fonte"]
         tag_hint = feed_config["tag_hint"]
+        feed_limit = (
+            get_robot_politico_max_per_feed()
+            if tag_hint == "Política Econômica"
+            else max_per_feed
+        )
 
         print(f"🔍 Acessando: {fonte} ({feed_url})")
         try:
@@ -3797,7 +3956,7 @@ def fetch_and_process(
             db_context = get_editorial_context(tag_hint=tag_hint)
             data_context = format_data_context(market, bcb, db_context, historico, tag_hint)
 
-            entries = list(feed.entries[:max_per_feed])
+            entries = list(feed.entries[:feed_limit])
             entry_links: list[str] = []
             for entry in entries:
                 entry_link = str(getattr(entry, "link", "") or "")
@@ -3826,6 +3985,10 @@ def fetch_and_process(
 
                 if len(clean_text) < 80:
                     print("   ⚠️ Texto muito curto, pulando.")
+                    continue
+
+                if should_skip_politico_sem_economia(entry.title, clean_text, tag_hint):
+                    print("   ⏭️ Política sem ângulo econômico — pulando.")
                     continue
 
                 ai_data = process_news_with_ai(entry.title, clean_text, fonte, tag_hint, data_context)
