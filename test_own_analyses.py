@@ -32,6 +32,49 @@ def test_macro_relevance_avoids_selic_for_crypto():
     assert rel["dolar"] is True
 
 
+def test_macro_relevance_economia_without_ipca_dolar():
+    rel = core._macro_topic_relevance(
+        "Governo lança programa de habitação",
+        "Ministério anuncia novas unidades habitacionais no Nordeste.",
+        "Economia",
+    )
+    assert rel["selic"] is False
+    assert rel["ipca"] is False
+    assert rel["dolar"] is False
+
+
+def test_format_data_context_omits_selic_for_crypto_without_juros():
+    market = {
+        "coletado_em": "30/08/2026 10:00",
+        "Dólar (USD/BRL)": {"cotacao": "R$ 5,10", "variacao_24h": "0%"},
+        "Bitcoin (BTC/BRL)": {"cotacao": "R$ 350000", "variacao_24h": "+1%"},
+    }
+    bcb = {
+        "Selic meta (% a.a.)": {"valor": "14.25", "data": "17/07/2026"},
+        "IPCA acumulado 12 meses (%)": {"valor": "4.64", "data": "17/07/2026"},
+        "Dólar comercial (R$)": {"valor": "5.10", "data": "17/07/2026"},
+    }
+    rel = core._macro_topic_relevance(
+        "Bitcoin rompe resistência após ETF",
+        "Fluxo institucional em criptoativos após ETF.",
+        "Cripto",
+    )
+    ctx = core.format_data_context(market, bcb, "acervo", None, "Cripto", rel)
+    assert "14.25" not in ctx
+    assert "4.64" not in ctx
+    assert "Bitcoin (BTC/BRL)" in ctx
+    assert "R$ 350000" in ctx
+
+
+def test_financeiro_prompt_anchors_fact_not_bcb_quota():
+    prompt = core._build_financeiro_news_prompt(
+        "Bitcoin", "texto", "G1", "Cripto", "dados", "Cripto, Economia", "", ""
+    )
+    assert "4 dos 6 parágrafos" not in prompt
+    assert "2 a 3 âncoras numéricas do TEMA" in prompt
+    assert "se o fato não for sobre juros, inflação ou câmbio" in prompt
+
+
 def test_macro_relevance_flags_selic_for_copom():
     rel = core._macro_topic_relevance(
         "Copom mantém Selic em 14,25%",
@@ -104,6 +147,9 @@ def test_generate_skips_without_api_key():
 def main() -> int:
     test_slugify_and_link()
     test_macro_relevance_avoids_selic_for_crypto()
+    test_macro_relevance_economia_without_ipca_dolar()
+    test_format_data_context_omits_selic_for_crypto_without_juros()
+    test_financeiro_prompt_anchors_fact_not_bcb_quota()
     test_macro_relevance_flags_selic_for_copom()
     test_select_analysis_lenses_returns_two_distinct()
     test_pick_angles_diverse_tags()

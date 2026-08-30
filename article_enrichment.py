@@ -574,13 +574,20 @@ def build_related_entities(dados_mercado: dict[str, Any], tag: str) -> list[dict
     return entities[:8]
 
 
-def build_market_stats(dados_mercado: dict[str, Any], tag: str = "Economia") -> dict[str, Any]:
-    """Painel consistente: Selic + IPCA + dólar + 1–2 cotações da tag, com tendência 7d/30d."""
+def build_market_stats(
+    dados_mercado: dict[str, Any],
+    tag: str = "Economia",
+    resumo: str = "",
+) -> dict[str, Any]:
+    """Painel do artigo: BCB e cotações só se a tag/fato (ou dados_citados) pedir."""
     import core
 
     cot_data = dados_mercado.get("cotacoes") or {}
     bcb = dados_mercado.get("bcb") or {}
     historico = dados_mercado.get("historico") or {}
+    citados = dados_mercado.get("dados_citados") or []
+    cited_blob = " ".join(str(item) for item in citados)
+    relevance = core._macro_topic_relevance(resumo or "", cited_blob, tag)
 
     tag_extra_quotes: dict[str, list[str]] = {
         "Cripto": ["Bitcoin (BTC/BRL)"],
@@ -595,11 +602,13 @@ def build_market_stats(dados_mercado: dict[str, Any], tag: str = "Economia") -> 
         "Economia": ["Euro (EUR/BRL)"],
     }
 
-    preferred_quote_labels = ["Dólar (USD/BRL)"]
-    for label in tag_extra_quotes.get(tag, ["Euro (EUR/BRL)"]):
+    preferred_quote_labels: list[str] = []
+    if relevance.get("dolar") or tag == "Dólar":
+        preferred_quote_labels.append("Dólar (USD/BRL)")
+    for label in tag_extra_quotes.get(tag, []):
         if label not in preferred_quote_labels:
             preferred_quote_labels.append(label)
-    preferred_quote_labels = preferred_quote_labels[:3]  # dólar + até 2 extras
+    preferred_quote_labels = preferred_quote_labels[:3]
 
     def _attach_series(label: str, item: dict[str, Any]) -> dict[str, Any]:
         series = core._find_hist_series(historico, label, label.split("(")[0].strip())
@@ -625,19 +634,22 @@ def build_market_stats(dados_mercado: dict[str, Any], tag: str = "Economia") -> 
                     "minima": info.get("minima"),
                     "positivo": pct is None or pct >= 0,
                     "bar": min(abs(pct or 0) * 12, 100) if pct is not None else 35,
-                    "nucleo": label == "Dólar (USD/BRL)",
+                    "nucleo": label == "Dólar (USD/BRL)" and bool(relevance.get("dolar")),
                 },
             )
         )
         seen_quotes.add(label)
 
-    # Se faltar cotação preferida, completa com o que houver (máx. 3 no total).
     if len(cotacoes) < 2:
         for label, info in cot_data.items():
             if label in ("coletado_em", "erro_cotacoes") or label in seen_quotes:
                 continue
             if not isinstance(info, dict):
                 continue
+            folded = core._fold_label(label)
+            if "usd" in folded or "dolar" in folded:
+                if not (relevance.get("dolar") or tag == "Dólar"):
+                    continue
             pct = _parse_pct(info.get("variacao_24h", ""))
             cotacoes.append(
                 _attach_series(
@@ -657,8 +669,7 @@ def build_market_stats(dados_mercado: dict[str, Any], tag: str = "Economia") -> 
             if len(cotacoes) >= 3:
                 break
 
-    # Núcleo BCB sempre: Selic, IPCA, Dólar comercial (ordem fixa).
-    core_hints = ("selic", "ipca", "dolar")
+    core_hints = [key for key in ("selic", "ipca", "dolar") if relevance.get(key)]
     indicadores: list[dict[str, Any]] = []
     numeric_values = [
         n
@@ -702,6 +713,8 @@ def build_market_stats(dados_mercado: dict[str, Any], tag: str = "Economia") -> 
     for label, info in bcb.items():
         if label in used_bcb or not isinstance(info, dict):
             continue
+        if core._bcb_core_key(label):
+            continue
         num = _parse_br_number(str(info.get("valor", "")))
         indicadores.append(
             _attach_series(
@@ -718,7 +731,6 @@ def build_market_stats(dados_mercado: dict[str, Any], tag: str = "Economia") -> 
 
     pontos = dados_mercado.get("pontos_chave") or []
     if not pontos:
-        citados = dados_mercado.get("dados_citados") or []
         if citados:
             pontos = [
                 {"titulo": dado, "descricao": "", "categoria": tag}
@@ -730,11 +742,6 @@ def build_market_stats(dados_mercado: dict[str, Any], tag: str = "Economia") -> 
                     "titulo": f"Tendências em {tag}",
                     "descricao": "Compare esta análise com outras matérias da mesma categoria no acervo.",
                     "categoria": tag,
-                },
-                {
-                    "titulo": "Indicadores macro",
-                    "descricao": "Selic, IPCA e câmbio contextualizam o impacto desta notícia no bolso.",
-                    "categoria": "Economia",
                 },
             ]
 
@@ -808,7 +815,7 @@ def build_market_stats(dados_mercado: dict[str, Any], tag: str = "Economia") -> 
         "cotacoes": cotacoes,
         "indicadores": indicadores,
         "pontos_chave": pontos,
-        "painel_nucleo": True,
+        "painel_nucleo": bool(core_hints),
     }
 
 
@@ -1161,7 +1168,7 @@ def build_article_enrichment(
     related_articles = get_related_articles(client, tag, noticia_id)
     linked_parts = link_text_parts(resumo, market_data.get("referencias_internas"))
 
-    market_stats = build_market_stats(market_data, tag)
+    market_stats = build_market_stats(market_data, tag, resumo=resumo)
     try:
         market_stats["pontos_chave"] = resolve_pontos_chave_links(
             client,

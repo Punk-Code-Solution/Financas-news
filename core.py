@@ -1405,8 +1405,8 @@ ANALYTICAL_LENSES: list[dict[str, Any]] = [
 
 
 def _macro_topic_relevance(title: str, content: str, tag_hint: str) -> dict[str, bool]:
-    """Indica quais indicadores macro são centrais à matéria (evita forçar Selic em tudo)."""
-    text = _fold_label(f"{title} {content[:1500]} {tag_hint}")
+    """Indica quais indicadores macro são centrais ao fato (não à tag genérica Economia)."""
+    text = _fold_label(f"{title} {content[:1500]}")
     return {
         "selic": any(
             k in text
@@ -1414,10 +1414,22 @@ def _macro_topic_relevance(title: str, content: str, tag_hint: str) -> dict[str,
         )
         or tag_hint == "Juros",
         "ipca": any(k in text for k in ("ipca", "inflacao", "precos", "custos", "cesta"))
-        or tag_hint in ("Inflação", "Economia"),
+        or tag_hint == "Inflação",
         "dolar": any(k in text for k in ("dolar", "cambio", "usd", "eur", "forex", "real "))
-        or tag_hint in ("Dólar", "Commodities", "Economia"),
+        or tag_hint == "Dólar",
     }
+
+
+def _bcb_core_key(label: str) -> str | None:
+    """Classifica rótulo BCB no trio Selic / IPCA / dólar, ou None se for outro indicador."""
+    folded = _fold_label(label)
+    if "selic" in folded:
+        return "selic"
+    if "ipca" in folded:
+        return "ipca"
+    if "dolar" in folded:
+        return "dolar"
+    return None
 
 
 def _score_analysis_lens(lens: dict[str, Any], text_fold: str, tag_hint: str) -> int:
@@ -1497,22 +1509,23 @@ def _build_macro_usage_rules(relevance: dict[str, bool], tag_hint: str) -> str:
         )
     else:
         lines.append(
-            "- Selic/juros: PERIFÉRICOS — no máximo 1 menção breve no box `contexto_mercado` "
-            "(ou omita se não agregar). NÃO abra o artigo com Selic."
+            "- Selic/juros: NÃO cite Selic, Copom nem taxa básica. NÃO abra o artigo com Selic."
         )
     if relevance.get("ipca"):
         lines.append("- IPCA/inflação: relevante — use com número concreto.")
     else:
-        lines.append("- IPCA: só cite se conectar naturalmente ao fato (evite clichê).")
+        lines.append("- IPCA: NÃO cite se o fato não for inflação/preços.")
     if relevance.get("dolar"):
         lines.append("- Câmbio: relevante — use dólar ou par correlato da tag.")
     else:
-        lines.append("- Câmbio: cite só se o fato tiver vínculo direto com FX ou commodities.")
+        lines.append("- Câmbio: NÃO cite dólar se o fato não for FX ou câmbio.")
     lines.extend(
         [
             f"- Categoria {tag_hint}: priorize cotações e indicadores da tag antes do núcleo macro.",
-            "- Em 6 parágrafos, use números concretos em pelo menos 4 — mas VARIE os indicadores "
-            "(não repita Selic em todos).",
+            "- Prefira números do TEXTO-FONTE (orçamento, IOF, voto, receita, preço da ação) "
+            "aos do BCB.",
+            "- Em 6 parágrafos, use 2 a 3 âncoras numéricas do TEMA (preço, volume, %, voto). "
+            "Não complete com Selic/IPCA/dólar se não forem centrais.",
             "- Se o acervo recente já saturou Selic/juros, traga ângulo novo (setorial, fiscal, "
             "comportamental ou internacional).",
         ]
@@ -1520,27 +1533,46 @@ def _build_macro_usage_rules(relevance: dict[str, bool], tag_hint: str) -> str:
     return "\n".join(lines)
 
 
-def format_data_context(market, bcb, db_context, historico=None, tag_hint: str = "Economia"):
-    """Monta bloco de dados para injetar no prompt da IA (painel fixo + tendência)."""
+def format_data_context(
+    market,
+    bcb,
+    db_context,
+    historico=None,
+    tag_hint: str = "Economia",
+    relevance: dict[str, bool] | None = None,
+):
+    """Monta bloco de dados para o prompt: só indicadores centrais ao fato."""
     hist = historico or {}
+    rel = relevance or {"selic": False, "ipca": False, "dolar": False}
     lines = [
-        "=== PAINEL MACRO DE REFERÊNCIA (use só indicadores relevantes à matéria) ===",
+        "=== PAINEL DO FATO (só indicadores centrais — não é checklist) ===",
         f"Coletado em: {market.get('coletado_em', 'agora')}",
         f"Categoria da matéria: {tag_hint}",
+        "Prefira números do texto-fonte (orçamento, IOF, voto, receita da empresa) aos do BCB.",
     ]
 
-    # Núcleo BCB
+    omitted_core: list[str] = []
+    primary_bcb: list[tuple[str, dict[str, Any], str]] = []
+    extra_bcb: list[tuple[str, dict[str, Any], str]] = []
     if bcb:
-        lines.append("\n--- Indicadores macro (BCB) ---")
         for key, val in bcb.items():
             if not isinstance(val, dict):
                 continue
             label = str(key)
-            hint = "selic" if "selic" in label.lower() else (
-                "ipca" if "ipca" in label.lower() else (
-                    "dolar" if "dolar" in label.lower() or "dólar" in label.lower() else label[:12]
-                )
-            )
+            core_key = _bcb_core_key(label)
+            hint = core_key or label[:12]
+            if core_key and not rel.get(core_key):
+                omitted_core.append(label)
+                continue
+            row = (label, val, hint)
+            if core_key:
+                primary_bcb.append(row)
+            else:
+                extra_bcb.append(row)
+
+    if primary_bcb or extra_bcb:
+        lines.append("\n--- Indicadores relevantes ao fato (BCB) ---")
+        for label, val, hint in primary_bcb + extra_bcb:
             series = _find_hist_series(hist, hint, label)
             d7 = _series_delta(series, 7)
             d30 = _series_delta(series, 30)
@@ -1548,17 +1580,33 @@ def format_data_context(market, bcb, db_context, historico=None, tag_hint: str =
                 f"- {label}: {val.get('valor')} (ref. {val.get('data')}) | "
                 + f"tendência 7d: {_format_delta_line(d7)} | 30d: {_format_delta_line(d30)}"
             )
+    if omitted_core:
+        lines.append(
+            "\n--- NÃO use Selic, IPCA nem dólar salvo se o fato citar explicitamente ---"
+        )
 
-    # Cotações: dólar sempre + extras da tag
     tag_extras = {
         "Cripto": ["Bitcoin (BTC/BRL)"],
         "Ações": ["Bitcoin (BTC/BRL)", "Euro (EUR/BRL)"],
         "Commodities": ["Euro (EUR/BRL)", "Bitcoin (BTC/BRL)"],
         "Dólar": ["Euro (EUR/BRL)"],
         "Fintech": ["Bitcoin (BTC/BRL)"],
+        "Imóveis": ["Euro (EUR/BRL)"],
+        "Juros": ["Euro (EUR/BRL)"],
+        "Inflação": ["Euro (EUR/BRL)"],
+        "Política Econômica": ["Euro (EUR/BRL)"],
+        "Economia": ["Euro (EUR/BRL)"],
     }
-    preferred_quotes = ["Dólar (USD/BRL)"] + tag_extras.get(tag_hint, ["Euro (EUR/BRL)"])[:1]
-    lines.append("\n--- Cotações (AwesomeAPI) — use 1–2 relevantes à tag ---")
+    preferred_quotes: list[str] = []
+    if rel.get("dolar") or tag_hint == "Dólar":
+        preferred_quotes.append("Dólar (USD/BRL)")
+    for extra in tag_extras.get(tag_hint, []):
+        if extra not in preferred_quotes:
+            preferred_quotes.append(extra)
+    preferred_quotes = preferred_quotes[:3]
+
+    lines.append("\n--- Cotações (AwesomeAPI) — só as da tag / câmbio se for o fato ---")
+    quoted_any = False
     for key in preferred_quotes:
         val = market.get(key)
         if not isinstance(val, dict):
@@ -1570,14 +1618,9 @@ def format_data_context(market, bcb, db_context, historico=None, tag_hint: str =
             f"- {key}: {val.get('cotacao')} (var. 24h: {val.get('variacao_24h')}) | "
             + f"7d: {_format_delta_line(d7)} | 30d: {_format_delta_line(d30)}"
         )
-    # Demais cotações disponíveis (contexto extra, sem obrigar)
-    for key, val in market.items():
-        if key in ("coletado_em", "erro_cotacoes") or key in preferred_quotes:
-            continue
-        if isinstance(val, dict):
-            lines.append(
-                f"- {key}: {val.get('cotacao')} (var. 24h: {val.get('variacao_24h')}) [opcional]"
-            )
+        quoted_any = True
+    if not quoted_any:
+        lines.append("- Nenhuma cotação central a este fato; use os números da fonte.")
 
     lines.append("\n=== ACERVO EDITORIAL DO PORTAL (cruze tendências, evite repetir) ===")
     lines.append(db_context)
@@ -3248,13 +3291,14 @@ Sua missão é produzir uma ANÁLISE EDITORIAL ORIGINAL de alto valor — não u
 
 ## REGRAS INEGOCIÁVEIS
 - PROIBIDO: resumir a notícia, usar "segundo a matéria", "o texto relata", "conforme publicado".
-- PROIBIDO: parágrafo só com opinião genérica sem número concreto dos DADOS DE MERCADO ou do acervo.
-- PROIBIDO: abrir toda matéria com Selic/juros quando o fato for de outro tema (cripto, política local, consumo, etc.).
-- PROIBIDO: repetir a mesma fórmula macro (Selic + IPCA + dólar) em todos os parágrafos — varie os indicadores.
-- OBRIGATÓRIO: usar números concretos do painel em pelo menos 4 dos 6 parágrafos (indicadores VARIADOS).
-- OBRIGATÓRIO: citar pelo menos 1 cotação ou indicador alinhado à categoria `{tag_hint}`.
-- OBRIGATÓRIO: quando houver tendência 7d/30d nos dados, usar em pelo menos 2 parágrafos (direção, não só o print do dia).
-- OBRIGATÓRIO: conectar o fato da notícia com o cenário macro brasileiro SOMENTE quando fizer sentido editorial.
+- PROIBIDO: parágrafo só com opinião genérica sem número concreto do FATO ou do acervo.
+- PROIBIDO: abrir com Selic/juros quando o fato for de outro tema (cripto, política local, consumo, etc.).
+- PROIBIDO: citar Selic, IPCA ou dólar se o fato não for sobre juros, inflação ou câmbio.
+- PROIBIDO: repetir a fórmula Selic + IPCA + dólar — o trio só entra se for o tema.
+- OBRIGATÓRIO: usar 2 a 3 âncoras numéricas do TEMA (preço da ação, volume, % do projeto, cota da fonte) — não preencha com o painel BCB.
+- OBRIGATÓRIO: citar pelo menos 1 número alinhado à categoria `{tag_hint}` (da fonte ou da cotação da tag).
+- OBRIGATÓRIO: tendência 7d/30d só se o indicador for central ao fato.
+- OBRIGATÓRIO: conectar o fato com o cenário macro brasileiro SOMENTE quando fizer sentido editorial.
 - OBRIGATÓRIO: cruzar com o ACERVO EDITORIAL — mencione se há tendência (ex.: "terceira notícia negativa sobre X esta semana").
 - OBRIGATÓRIO: incorporar as 2 lentes analíticas abaixo em paráfrase original (sem citações literais de especialistas).
 - OBRIGATÓRIO: dar orientação prática para o leitor comum (investidor iniciante ou chefe de família).
@@ -3276,11 +3320,11 @@ Conteúdo base (use como ponto de partida, não como texto a reescrever):
 {market_context}
 
 ## ESTRUTURA DO ARTIGO (campo resumo_simples — 6 parágrafos separados por \\n\\n)
-1. **Abertura**: O fato em uma frase forte + por que importa AGORA — número ligado ao TEMA (não force Selic se irrelevante).
-2. **Contexto com dados**: Indicadores macro/cotações RELEVANTES — valores e tendência 7d/30d quando disponível.
+1. **Abertura**: O fato em uma frase forte + por que importa AGORA — número do FATO (não do BCB).
+2. **Contexto com dados**: âncoras do tema (preço, volume, %, calendário da fonte) — sem trio BCB se irrelevante.
 3. **Cruzamento de fontes**: Relacione com o acervo editorial + 1 lente analítica aplicada ao caso.
-4. **Análise aprofundada**: Causas e riscos — cada afirmação forte amarrada a um dado citado.
-5. **Cenários**: 30/90/180 dias com âncoras numéricas variadas (não só juros).
+4. **Análise aprofundada**: Causas e riscos do FATO — cada afirmação forte amarrada a um dado citado.
+5. **Cenários**: 30/90/180 dias com âncoras do tema (não complete com juros/IPCA/dólar).
 6. **Guia prático**: 2-3 ações concretas + segunda lente analítica (disciplina, risco ou ciclo).
 
 {_article_json_contract(tags_list)}
@@ -3307,9 +3351,9 @@ Sua missão: traduzir o fato de Brasília (Congresso, Executivo, STF, eleições
 - PROIBIDO: resumir a notícia ("segundo a matéria", "o texto relata").
 - PROIBIDO: abrir com Selic se o fato for votação, PEC, orçamento, imposto ou eleição — o canal é fiscal/institucional.
 - OBRIGATÓRIO: tag preferencial `Política Econômica` (só mude se o fato for claramente outra categoria).
-- OBRIGATÓRIO: mostrar o CANAL econômico (gasto, imposto, dívida, regra fiscal, regulação, emprego, câmbio).
-- OBRIGATÓRIO: quem ganha e quem perde (família, poupança, setor, investidor) com pelo menos 1 número do painel ou do acervo.
-- OBRIGATÓRIO: números concretos em pelo menos 3 dos 6 parágrafos — priorize fiscal, câmbio, Ibovespa, IPCA; Selic só se o fato for monetário.
+- OBRIGATÓRIO: mostrar o CANAL econômico (gasto, imposto, dívida, regra fiscal, regulação, emprego).
+- OBRIGATÓRIO: quem ganha e quem perde (família, poupança, setor, investidor) com pelo menos 1 número do fato ou do acervo.
+- OBRIGATÓRIO: números concretos em pelo menos 3 dos 6 parágrafos — âncoras de gasto, tributo, dívida, calendário da votação e quem ganha/perde. Câmbio, Selic e IPCA só se o fato for sobre isso.
 - OBRIGATÓRIO: cruzar com o ACERVO EDITORIAL (ex.: segundo pacote fiscal neste trimestre).
 - OBRIGATÓRIO: incorporar as 2 lentes analíticas em paráfrase original.
 - OBRIGATÓRIO: orientação prática (o que observar no calendário político; o que NÃO fazer: pânico de manchete).
@@ -3836,7 +3880,8 @@ def generate_own_analyses(count: int | None = None) -> list[dict[str, Any]]:
             continue
 
         db_context = get_editorial_context(tag_hint=tag)
-        data_context = format_data_context(market, bcb, db_context, historico, tag)
+        rel = _macro_topic_relevance(seed_title, brief, tag)
+        data_context = format_data_context(market, bcb, db_context, historico, tag, rel)
         print(f"   [analise-propria] Gerando ângulo {tag}/{angle['tone']}: {seed_title[:60]}...")
 
         ai_data = process_news_with_ai(
@@ -3954,7 +3999,6 @@ def fetch_and_process(
                 continue
 
             db_context = get_editorial_context(tag_hint=tag_hint)
-            data_context = format_data_context(market, bcb, db_context, historico, tag_hint)
 
             entries = list(feed.entries[:feed_limit])
             entry_links: list[str] = []
@@ -3991,6 +4035,10 @@ def fetch_and_process(
                     print("   ⏭️ Política sem ângulo econômico — pulando.")
                     continue
 
+                rel = _macro_topic_relevance(entry.title, clean_text, tag_hint)
+                data_context = format_data_context(
+                    market, bcb, db_context, historico, tag_hint, rel
+                )
                 ai_data = process_news_with_ai(entry.title, clean_text, fonte, tag_hint, data_context)
 
                 if ai_data is None and _all_text_models_exhausted():
@@ -4132,7 +4180,8 @@ def generate_weekly_radar(*, force: bool = False) -> list[dict[str, Any]]:
     bcb = fetch_bcb_snapshot()
     historico = fetch_market_historical()
     db_context = get_editorial_context(tag_hint="Economia")
-    data_context = format_data_context(market, bcb, db_context, historico, "Economia")
+    rel = _macro_topic_relevance(seed_title, brief, "Economia")
+    data_context = format_data_context(market, bcb, db_context, historico, "Economia", rel)
 
     print(f"   [radar] Gerando Radar da semana {week_key}...")
     ai_data = process_news_with_ai(
@@ -4259,7 +4308,8 @@ def generate_macro_change_article(
 
     historico = fetch_market_historical()
     db_context = get_editorial_context(tag_hint=tag)
-    data_context = format_data_context(market, bcb, db_context, historico, tag)
+    rel = _macro_topic_relevance(seed_title, brief, tag)
+    data_context = format_data_context(market, bcb, db_context, historico, tag, rel)
     ai_data = process_news_with_ai(seed_title, brief, OWN_ANALYSIS_FONTE, tag, data_context)
     if not ai_data:
         # Fallback sem IA: matéria mínima factual.

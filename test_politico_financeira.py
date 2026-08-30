@@ -103,3 +103,24 @@ def test_macro_politica_does_not_force_selic():
         "Política Econômica",
     )
     assert rel["selic"] is False
+
+
+def test_politico_prompt_does_not_prioritize_ipca_cambio():
+    pol = core._build_politico_financeira_prompt(
+        "IOF", "texto", "Poder360", "Política Econômica", "dados", "Juros, Economia", "", ""
+    )
+    assert "priorize fiscal, câmbio, Ibovespa, IPCA" not in pol
+    assert "Câmbio, Selic e IPCA só se o fato for sobre isso" in pol
+    assert "calendário da votação" in pol
+
+
+if __name__ == "__main__":
+    test_politico_from_tag()
+    test_politico_from_economia_feed_with_fiscal()
+    test_not_politico_for_crypto()
+    test_skip_pure_politics_without_economic_angle()
+    test_prompts_are_distinct()
+    test_process_news_uses_politico_prompt()
+    test_macro_politica_does_not_force_selic()
+    test_politico_prompt_does_not_prioritize_ipca_cambio()
+    print("PASS: test_politico_financeira")

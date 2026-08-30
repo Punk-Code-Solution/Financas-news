@@ -126,7 +126,7 @@ Cripto · Economia · Dólar · Ações · Juros · Inflação · Imóveis · Fi
 - **Título** editorial gerado pela IA
 - **Análise completa** (6 parágrafos: cada um amarrado a pelo menos 1 número citado)
 - **Duas mesas de prompt:** financeira (mercado/cripto/Copom) e **político-financeira** (Brasília, fiscal, eleições) — feeds G1 Política, Poder360 e Agência Brasil entram primeiro na cota; política sem ângulo econômico é pulada
-- **Painel núcleo** — Selic, IPCA 12 meses, dólar + 1–2 cotações da categoria, com data de coleta e tendência 7d/30d
+- **Painel da matéria** — indicadores BCB (Selic, IPCA, dólar) e cotações só quando a tag/fato pedir; tendência 7d/30d quando o indicador for central
 - **Panorama de mercado** (box com números citados)
 - **Impacto no bolso** (3 frases diretas)
 - **Sentimento** (Positivo / Negativo / Neutro)
