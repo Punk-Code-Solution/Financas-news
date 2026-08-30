@@ -173,7 +173,13 @@ async def _lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(lifespan=_lifespan)
+_cloud_host = core.is_cloud_host()
+app = FastAPI(
+    lifespan=_lifespan,
+    docs_url=None if _cloud_host else "/docs",
+    redoc_url=None if _cloud_host else "/redoc",
+    openapi_url=None if _cloud_host else "/openapi.json",
+)
 
 
 @app.exception_handler(DatabaseConfigError)
@@ -1145,6 +1151,12 @@ AUTH_SIGNUP_MAX_HITS = 5
 AUTH_SIGNUP_WINDOW_SEC = 60 * 60
 _AUTH_RATE_LOCK = threading.Lock()
 _AUTH_RATE_HITS: dict[str, list[float]] = {}
+
+
+def reset_auth_rate_limits() -> None:
+    """Zera o limiter in-memory (testes)."""
+    with _AUTH_RATE_LOCK:
+        _AUTH_RATE_HITS.clear()
 
 
 def _auth_rate_limited(bucket: str, *, max_hits: int, window_sec: float) -> bool:

@@ -71,7 +71,41 @@ def test_robots_references_feed():
         assert "Disallow: /idioma" in r.text
 
 
-def test_category_intro_block():
+def test_category_intro_block(tmp_path, monkeypatch):
+    import uuid
+
+    import db as dbmod
+
+    path = str(tmp_path / "feed_cat.db")
+    monkeypatch.setenv("USE_LOCAL_DB", "1")
+    monkeypatch.setenv("LOCAL_DATABASE_PATH", path)
+    monkeypatch.setenv("USE_TURSO", "0")
+    dbmod._client = None
+    dbmod._schema_ready = False
+    dbmod._fts_ready = False
+    local = dbmod.LocalDbClient(path)
+    dbmod.ensure_schema(local)
+    dbmod._client = local
+    resumo = ("Análise da Selic e do Copom para o leitor. " * 30)[:900]
+    local.execute(
+        """
+        INSERT INTO news (
+            titulo, resumo, impacto, link, tag, sentimento, published_at, fonte,
+            created_at, moderation_status, home_priority
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'published', 80)
+        """,
+        [
+            "Copom mantém Selic e o crédito reagiu",
+            resumo,
+            "Juros altos encarecem o financiamento.",
+            f"https://example.test/selic-{uuid.uuid4().hex[:8]}",
+            "Juros",
+            "Neutro",
+            "2026-08-09T20:00:00Z",
+            "Clareza Capital",
+            "2026-08-09T20:00:00Z",
+        ],
+    )
     with (
         patch.object(core, "fetch_market_snapshot", return_value=FAKE_MARKET),
         patch.object(core, "fetch_bcb_snapshot", return_value=FAKE_BCB),

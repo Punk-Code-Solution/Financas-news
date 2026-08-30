@@ -13,6 +13,13 @@ load_dotenv()
 # Força token de teste (sobrescreve .env) — nunca dispara produção nestes asserts.
 os.environ["ROBO_TOKEN"] = "test-robo-token-local"
 os.environ["ROBO_ASYNC"] = "0"
+# Suite local: SQLite (produção na Railway também é SQLite). Evita Turso sem cota.
+os.environ["USE_LOCAL_DB"] = "true"
+os.environ["USE_TURSO"] = "0"
+os.environ.setdefault(
+    "LOCAL_DATABASE_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "qa_suite.db"),
+)
 
 from fastapi.testclient import TestClient
 

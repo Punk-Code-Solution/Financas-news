@@ -21,6 +21,11 @@ from fastapi.testclient import TestClient
 import core
 import db as dbmod
 import main
+import newsletter_service as ns
+
+
+def _fake_verification_email(**_kwargs):
+    return {"ok": True}
 
 FAKE_MARKET = {
     "coletado_em": "09/08/2026 20:00",
@@ -84,6 +89,7 @@ def _qa_db(tmp_path):
     path = str(tmp_path / "frontend_qa.db")
     os.environ["USE_LOCAL_DB"] = "1"
     os.environ["LOCAL_DATABASE_PATH"] = path
+    main.reset_auth_rate_limits()
     dbmod._client = None
     dbmod._schema_ready = False
     dbmod._fts_ready = False
@@ -161,6 +167,7 @@ def test_cadastro_verify_login_perfil_logout(tmp_path):
         patch.object(core, "fetch_bcb_snapshot", return_value=FAKE_BCB),
         patch.object(core, "fetch_sparkline_data", return_value={}),
         patch.object(core, "warmup_market_caches", return_value=None),
+        patch.object(ns, "send_verification_email", side_effect=_fake_verification_email),
     ):
         c = _client()
         bad_pw = c.post(
@@ -249,6 +256,7 @@ def test_comments_guest_publish_upvote_delete_moderation(tmp_path):
         patch.object(core, "fetch_bcb_snapshot", return_value=FAKE_BCB),
         patch.object(core, "fetch_sparkline_data", return_value={}),
         patch.object(core, "warmup_market_caches", return_value=None),
+        patch.object(ns, "send_verification_email", side_effect=_fake_verification_email),
     ):
         c = _client()
         guest = c.post(
@@ -323,6 +331,7 @@ def test_columnist_apply_admin_cms_boost(tmp_path):
         patch.object(core, "fetch_bcb_snapshot", return_value=FAKE_BCB),
         patch.object(core, "fetch_sparkline_data", return_value={}),
         patch.object(core, "warmup_market_caches", return_value=None),
+        patch.object(ns, "send_verification_email", side_effect=_fake_verification_email),
         patch.dict(os.environ, {"COLUMNIST_ADMIN_EMAILS": admin_email}, clear=False),
     ):
         user = _client()
