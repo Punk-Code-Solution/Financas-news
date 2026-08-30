@@ -49,6 +49,46 @@ def test_skip_pure_politics_without_economic_angle():
         "O aumento do IOF encarece o crédito e pressiona o câmbio.",
         "Política Econômica",
     )
+    assert not core.should_skip_politico_sem_economia(
+        "Congresso vota taxa das blusinhas e escala 6x1",
+        "A pauta inclui a MP das blusinhas e o fim da jornada 6x1.",
+        "Política Econômica",
+    )
+    assert not core.should_skip_politico_sem_economia(
+        "Brasil cria 58 mil postos, aponta Caged",
+        "O Caged de julho mostra emprego formal e o INSS na pauta do Senado.",
+        "Política Econômica",
+    )
+
+
+def test_expanded_politico_and_economia_feeds():
+    fontes = {f["fonte"] for f in core.RSS_FEEDS}
+    politico = [f["fonte"] for f in core.RSS_FEEDS if f["tag_hint"] == "Política Econômica"]
+    economia = [f["fonte"] for f in core.RSS_FEEDS if f["tag_hint"] == "Economia"]
+    assert "Folha Poder" in politico
+    assert "O Globo Política" in politico
+    assert "Congresso em Foco" in politico
+    assert "JOTA" in politico
+    assert "Agência Brasil Política" in politico
+    assert "O Globo Economia" in economia
+    assert "Veja Economia" in economia
+    assert "CartaCapital Economia" in economia
+    assert "Agência Brasil Economia" in economia
+    assert "CNN Brasil Economia" not in fontes
+    assert "Estadão Economia" not in fontes
+    urls = {f["url"] for f in core.RSS_FEEDS}
+    assert "https://www.cnnbrasil.com.br/economia/feed/" not in urls
+    assert "https://www.estadao.com.br/rss/economia.xml" not in urls
+    assert "https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml" not in urls
+
+
+def test_politico_max_articles_default(monkeypatch):
+    monkeypatch.delenv("ROBOT_POLITICO_MAX_ARTICLES", raising=False)
+    assert core.get_robot_politico_max_articles() == 14
+    monkeypatch.setenv("ROBOT_POLITICO_MAX_ARTICLES", "0")
+    assert core.get_robot_politico_max_articles() == 0
+    monkeypatch.setenv("ROBOT_POLITICO_MAX_ARTICLES", "16")
+    assert core.get_robot_politico_max_articles() == 16
 
 
 def test_prompts_are_distinct():
@@ -119,6 +159,7 @@ if __name__ == "__main__":
     test_politico_from_economia_feed_with_fiscal()
     test_not_politico_for_crypto()
     test_skip_pure_politics_without_economic_angle()
+    test_expanded_politico_and_economia_feeds()
     test_prompts_are_distinct()
     test_process_news_uses_politico_prompt()
     test_macro_politica_does_not_force_selic()

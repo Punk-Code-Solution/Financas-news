@@ -28,7 +28,7 @@ O diferencial não é republicar RSS — é produzir conteúdo com **contexto ma
 
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Feeds RSS (~30)│────▶│  Motor core.py   │────▶│  SQLite (volume │
+│  Feeds RSS (~36)│────▶│  Motor core.py   │────▶│  SQLite (volume │
 │  G1, InfoMoney… │     │  + Google Gemini │     │  Railway)       │
 └─────────────────┘     └────────┬─────────┘     └────────┬────────┘
                                  │                         │
@@ -50,7 +50,7 @@ O diferencial não é republicar RSS — é produzir conteúdo com **contexto ma
 
 1. **Coleta de dados de mercado** — USD/EUR/BTC (AwesomeAPI, com fallback BCB para dólar e Binance para BTC) + Selic, IPCA e dólar comercial (API BCB).
 2. **Análises próprias (cota reservada)** — gera pelo menos `ROBOT_OWN_ANALYSES` (default 3) matérias autorais a partir do acervo do banco (`internal://analise/...`), antes do RSS, para não perder a cota Gemini.
-3. **Leitura de ~30 feeds RSS** (BR + internacionais) — até 3 notícias/fonte, teto 36/rodada (`ROBOT_MAX_PER_FEED` / `ROBOT_MAX_ARTICLES`), com teto reduzido pelo que ainda falta da meta própria.
+3. **Leitura de ~36 feeds RSS** (BR + internacionais) — até 3 notícias/fonte, teto 36/rodada (`ROBOT_MAX_PER_FEED` / `ROBOT_MAX_ARTICLES`), com teto reduzido pelo que ainda falta da meta própria. Mesa política: até `ROBOT_POLITICO_MAX_PER_FEED` por fonte e `ROBOT_POLITICO_MAX_ARTICLES` no total da rodada.
 4. **Dedupe por link** antes da IA (economiza cota).
 5. **Contexto editorial** — cruza com o acervo do portal.
 6. **Geração de texto** — Gemini nas chaves 1→2→3 (análise 500+ palavras / JSON).
@@ -117,7 +117,7 @@ Cripto · Economia · Dólar · Ações · Juros · Inflação · Imóveis · Fi
 
 ### Fontes RSS monitoradas
 
-**Brasil:** G1 Economia/Política, Valor, InfoMoney (geral/mercados/economia/investir), Exame, Money Times, NeoFeed, Investing BR/Commodities/Forex, CNN Brasil, Estadão, Folha Mercado, UOL Economia, Poder360, Agência Brasil, Livecoins, Cointelegraph Brasil.
+**Brasil:** G1 Economia/Política, Valor, InfoMoney (geral/mercados/economia/investir), Exame, Money Times, NeoFeed, Investing BR/Commodities/Forex, O Globo Economia/Política, Folha Mercado/Poder, UOL Economia, Veja Economia, CartaCapital Economia, Poder360, Congresso em Foco, JOTA, Agência Brasil (política e economia), Livecoins, Cointelegraph Brasil.
 
 **Internacional:** BBC Business, CNBC, Reuters Business, MarketWatch, Yahoo Finance, The Guardian Business, Investing.com World, CoinDesk, Cointelegraph.
 
@@ -125,7 +125,7 @@ Cripto · Economia · Dólar · Ações · Juros · Inflação · Imóveis · Fi
 
 - **Título** editorial gerado pela IA
 - **Análise completa** (6 parágrafos: cada um amarrado a pelo menos 1 número citado)
-- **Duas mesas de prompt:** financeira (mercado/cripto/Copom) e **político-financeira** (Brasília, fiscal, eleições) — feeds G1 Política, Poder360 e Agência Brasil entram primeiro na cota; política sem ângulo econômico é pulada
+- **Duas mesas de prompt:** financeira (mercado/cripto/Copom) e **político-financeira** (Brasília, fiscal, eleições) — feeds de Política Econômica entram primeiro na cota (teto `ROBOT_POLITICO_MAX_ARTICLES`); política sem ângulo econômico é pulada
 - **Painel da matéria** — indicadores BCB (Selic, IPCA, dólar) e cotações só quando a tag/fato pedir; tendência 7d/30d quando o indicador for central
 - **Panorama de mercado** (box com números citados)
 - **Impacto no bolso** (3 frases diretas)
@@ -410,6 +410,7 @@ ROBOT_MAX_ARTICLES=36
 ROBOT_OWN_ANALYSES=3      # mínimo diário de análises próprias a partir do acervo (0=desliga)
 # ROBOT_POLITICO_FIRST=1           # 1=feeds de Política Econômica primeiro na rodada
 # ROBOT_POLITICO_MAX_PER_FEED=4    # teto por feed da mesa político-financeira
+# ROBOT_POLITICO_MAX_ARTICLES=14   # teto da mesa política por rodada (0=sem teto extra)
 # GOOGLE_API_KEYS=key1,key2,key3   # alternativa: lista de chaves
 USE_LOCAL_DB=true         # produção: SQLite no volume Railway
 # LOCAL_DATABASE_PATH=    # default: {RAILWAY_VOLUME_MOUNT_PATH}/news.db
@@ -644,7 +645,7 @@ uvicorn main:app --reload
 |-------|-----------|
 | Google rejeitar AdSense (conteúdo IA) | Análises longas com dados reais; transparência; acervo robusto |
 | Cota Gemini esgotada | Fallback de modelos; modelos lite (500 RPD); chaves separadas por projeto |
-| Feed RSS fora do ar | ~30 fontes redundantes (BR + intl); logs por feed |
+| Feed RSS fora do ar | ~36 fontes redundantes (BR + intl); logs por feed |
 | Conteúdo duplicado | Deduplicação por URL + contexto editorial no prompt |
 | Dependência de API Google | Arquitetura permite trocar provedor de IA |
 

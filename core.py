@@ -316,6 +316,14 @@ def get_robot_politico_max_per_feed() -> int:
         return 4
 
 
+def get_robot_politico_max_articles() -> int:
+    """Teto de matérias da mesa política por rodada (0 = sem teto extra)."""
+    try:
+        return max(0, min(int(os.getenv("ROBOT_POLITICO_MAX_ARTICLES", "14")), 40))
+    except ValueError:
+        return 14
+
+
 def robot_politico_feeds_first() -> bool:
     flag = os.getenv("ROBOT_POLITICO_FIRST", "1").strip().lower()
     return flag not in ("0", "false", "no")
@@ -390,6 +398,12 @@ RSS_FEEDS = [
     # --- Brasil ---
     {"url": "https://g1.globo.com/dynamo/economia/rss2.xml", "fonte": "G1 Economia", "tag_hint": "Economia"},
     {"url": "https://g1.globo.com/dynamo/politica/rss2.xml", "fonte": "G1 Política", "tag_hint": "Política Econômica"},
+    {"url": "https://feeds.folha.uol.com.br/poder/rss091.xml", "fonte": "Folha Poder", "tag_hint": "Política Econômica"},
+    {"url": "https://pox.globo.com/rss/oglobo/politica", "fonte": "O Globo Política", "tag_hint": "Política Econômica"},
+    {"url": "https://www.poder360.com.br/feed/", "fonte": "Poder360", "tag_hint": "Política Econômica"},
+    {"url": "https://www.congressoemfoco.com.br/feed/", "fonte": "Congresso em Foco", "tag_hint": "Política Econômica"},
+    {"url": "https://www.jota.info/feed/", "fonte": "JOTA", "tag_hint": "Política Econômica"},
+    {"url": "https://agenciabrasil.ebc.com.br/rss/politica/feed.xml", "fonte": "Agência Brasil Política", "tag_hint": "Política Econômica"},
     {"url": "https://pox.globo.com/rss/valor", "fonte": "Valor Econômico", "tag_hint": "Economia"},
     {"url": "https://www.infomoney.com.br/feed/", "fonte": "InfoMoney", "tag_hint": "Economia"},
     {"url": "https://www.infomoney.com.br/mercados/feed/", "fonte": "InfoMoney Mercados", "tag_hint": "Ações"},
@@ -401,12 +415,12 @@ RSS_FEEDS = [
     {"url": "https://br.investing.com/rss/news.rss", "fonte": "Investing.com Brasil", "tag_hint": "Ações"},
     {"url": "https://br.investing.com/rss/news_301.rss", "fonte": "Investing Commodities", "tag_hint": "Commodities"},
     {"url": "https://br.investing.com/rss/news_25.rss", "fonte": "Investing Forex", "tag_hint": "Dólar"},
-    {"url": "https://www.cnnbrasil.com.br/economia/feed/", "fonte": "CNN Brasil Economia", "tag_hint": "Economia"},
-    {"url": "https://www.estadao.com.br/rss/economia.xml", "fonte": "Estadão Economia", "tag_hint": "Economia"},
+    {"url": "https://pox.globo.com/rss/oglobo/economia", "fonte": "O Globo Economia", "tag_hint": "Economia"},
     {"url": "https://feeds.folha.uol.com.br/mercado/rss091.xml", "fonte": "Folha Mercado", "tag_hint": "Economia"},
     {"url": "https://rss.uol.com.br/feed/economia.xml", "fonte": "UOL Economia", "tag_hint": "Economia"},
-    {"url": "https://www.poder360.com.br/feed/", "fonte": "Poder360", "tag_hint": "Política Econômica"},
-    {"url": "https://agenciabrasil.ebc.com.br/rss/ultimasnoticias/feed.xml", "fonte": "Agência Brasil", "tag_hint": "Política Econômica"},
+    {"url": "https://veja.abril.com.br/economia/feed/", "fonte": "Veja Economia", "tag_hint": "Economia"},
+    {"url": "https://www.cartacapital.com.br/economia/feed/", "fonte": "CartaCapital Economia", "tag_hint": "Economia"},
+    {"url": "https://agenciabrasil.ebc.com.br/rss/economia/feed.xml", "fonte": "Agência Brasil Economia", "tag_hint": "Economia"},
     {"url": "https://livecoins.com.br/feed/", "fonte": "Livecoins", "tag_hint": "Cripto"},
     {"url": "https://cointelegraph.com/rss/tag/brazil", "fonte": "Cointelegraph Brasil", "tag_hint": "Cripto"},
     # --- Internacional ---
@@ -3176,6 +3190,8 @@ _POLITICO_KEYWORDS = (
     "previdencia", "desoneracao", "emenda parlamentar", "salario minimo",
     "candidato", "campanha eleitoral", "governador", "ministro da fazenda",
     "camara dos deputados", "supremo", "tcu", "fundeb",
+    "stf", "stj", "tse", "haddad", "galipolo", "casa civil", "planejamento",
+    "relator", "regulament", "mp das", "inss", "trabalhista",
 )
 
 _ECONOMIC_ANGLE_KEYWORDS = (
@@ -3185,6 +3201,11 @@ _ECONOMIC_ANGLE_KEYWORDS = (
     "desoner", "subsidio", "arcabouco", "superavit", "primario", "credito",
     "pib", "emprego", "tarifa", "inflacao", "ipca", "tesouro", "risco-pais",
     "investidor", "juros",
+    "inss", "caged", "ibge", "desemprego", "trabalhista", "6x1", "blusinha",
+    "icms", "energia", "bandeira", "diesel", "petroleo", "estatal",
+    "inadimplen", "fgts", "bolsa familia", "bpc", "combustivel", "gasolina",
+    "concessao", "leilao", "royalt", "exportac", "importac", "regulament",
+    "emenda parlamentar", "servidor publico", "teto de gastos",
 )
 
 
@@ -3960,11 +3981,14 @@ def fetch_and_process(
     hf_label = ", ".join(hf_models) if hf_models else "(sem HF_TOKEN)"
     print(f"   🖼️ Fallback Hugging Face: {hf_label}")
     print(f"   🔑 Chaves Gemini: {len(get_gemini_api_keys())} (imagem prioriza 2→3→1)")
+    politico_cap = get_robot_politico_max_articles()
+    politico_saved = 0
     print(f"   📰 Fontes: {len(RSS_FEEDS)} | até {max_per_feed}/feed | teto {max_articles}/rodada")
     if robot_politico_feeds_first():
+        extra = f", teto {politico_cap} políticos/rodada" if politico_cap else ""
         print(
             f"   🏛 Mesa político-financeira primeiro "
-            + f"(até {get_robot_politico_max_per_feed()}/feed político)"
+            + f"(até {get_robot_politico_max_per_feed()}/feed político{extra})"
         )
 
     market = fetch_market_snapshot()
@@ -3980,9 +4004,13 @@ def fetch_and_process(
         feed_url = feed_config["url"]
         fonte = feed_config["fonte"]
         tag_hint = feed_config["tag_hint"]
+        is_politico_feed = tag_hint == "Política Econômica"
+        if is_politico_feed and politico_cap and politico_saved >= politico_cap:
+            print(f"   🏛 Teto político da rodada ({politico_cap}) — pulando {fonte}.")
+            continue
         feed_limit = (
             get_robot_politico_max_per_feed()
-            if tag_hint == "Política Econômica"
+            if is_politico_feed
             else max_per_feed
         )
 
@@ -4079,6 +4107,11 @@ def fetch_and_process(
                 }
                 noticias_processadas.append(news_item)
                 already_published.add(entry_link)
+                if is_politico_feed:
+                    politico_saved += 1
+                    if politico_cap and politico_saved >= politico_cap:
+                        print(f"   🏛 Teto político da rodada ({politico_cap}).")
+                        break
                 print("   ✅ Processado com sucesso!")
                 if callable(on_item):
                     try:
