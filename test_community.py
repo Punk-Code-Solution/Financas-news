@@ -20,6 +20,7 @@ from community_auth import (
     is_verify_token_expired,
     issue_email_verification,
     parse_consent_cookie,
+    session_secret,
     verify_email_token,
     verify_password,
 )
@@ -412,6 +413,40 @@ def test_create_comment_json_payload_includes_user_id():
     assert result["status"] == "published"
 
 
+def test_session_secret_cloud_requires_env():
+    with patch.dict(os.environ, {"RAILWAY_ENVIRONMENT": "production", "SESSION_SECRET": ""}, clear=False):
+        try:
+            session_secret()
+        except RuntimeError as exc:
+            assert "SESSION_SECRET" in str(exc)
+        else:
+            raise AssertionError("producao sem SESSION_SECRET deveria falhar")
+
+
+def test_session_secret_accepts_custom():
+    with patch.dict(os.environ, {"SESSION_SECRET": "segredo-de-teste-ok-32chars!!"}, clear=False):
+        assert session_secret() == "segredo-de-teste-ok-32chars!!"
+
+
+def test_auth_rate_limit_blocks_after_max_hits():
+    import main as app_main
+
+    app_main._AUTH_RATE_HITS.clear()
+    bucket = "login:test-rate"
+    for _ in range(app_main.AUTH_LOGIN_MAX_HITS):
+        assert app_main._auth_rate_limited(
+            bucket,
+            max_hits=app_main.AUTH_LOGIN_MAX_HITS,
+            window_sec=60,
+        ) is False
+    assert app_main._auth_rate_limited(
+        bucket,
+        max_hits=app_main.AUTH_LOGIN_MAX_HITS,
+        window_sec=60,
+    ) is True
+    app_main._AUTH_RATE_HITS.clear()
+
+
 if __name__ == "__main__":
     test_profanity_blocks_common_terms()
     test_profanity_allows_clean_finance_text()
@@ -434,4 +469,7 @@ if __name__ == "__main__":
     test_delete_own_comment_not_found()
     test_avatar_upload_uses_railway_volume_path()
     test_create_comment_json_payload_includes_user_id()
+    test_session_secret_cloud_requires_env()
+    test_session_secret_accepts_custom()
+    test_auth_rate_limit_blocks_after_max_hits()
     print("OK test_community")

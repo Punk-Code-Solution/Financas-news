@@ -229,6 +229,8 @@ def missing_runtime_config() -> list[str]:
         missing.append("GOOGLE_API_KEY (ou GEMINI_API_KEY)")
     if not (os.getenv("ROBO_TOKEN") or "").strip():
         missing.append("ROBO_TOKEN")
+    if not (os.getenv("SESSION_SECRET") or "").strip():
+        missing.append("SESSION_SECRET")
     return missing
 
 

@@ -1139,6 +1139,28 @@ async def newsletter_signup(email: str = Form(...)):
 
 
 CONTACT_FORM_COOLDOWN_SEC = 60
+AUTH_LOGIN_MAX_HITS = 8
+AUTH_LOGIN_WINDOW_SEC = 15 * 60
+AUTH_SIGNUP_MAX_HITS = 5
+AUTH_SIGNUP_WINDOW_SEC = 60 * 60
+_AUTH_RATE_LOCK = threading.Lock()
+_AUTH_RATE_HITS: dict[str, list[float]] = {}
+
+
+def _auth_rate_limited(bucket: str, *, max_hits: int, window_sec: float) -> bool:
+    now = time.time()
+    with _AUTH_RATE_LOCK:
+        hits = [t for t in _AUTH_RATE_HITS.get(bucket, []) if now - t < window_sec]
+        if len(hits) >= max_hits:
+            _AUTH_RATE_HITS[bucket] = hits
+            return True
+        hits.append(now)
+        _AUTH_RATE_HITS[bucket] = hits
+        return False
+
+
+def _auth_client_bucket(request: Request, kind: str) -> str:
+    return f"{kind}:{_client_ip(request) or 'unknown'}"
 
 
 @app.post("/fale-conosco")
@@ -1322,6 +1344,13 @@ async def login_submit(
 ):
     from urllib.parse import quote
 
+    if _auth_rate_limited(
+        _auth_client_bucket(request, "login"),
+        max_hits=AUTH_LOGIN_MAX_HITS,
+        window_sec=AUTH_LOGIN_WINDOW_SEC,
+    ):
+        return RedirectResponse(url="/login?erro=Muitas+tentativas.+Aguarde+alguns+minutos.", status_code=303)
+
     user = community.authenticate_local(get_db(), email, password)
     if not user:
         return RedirectResponse(url="/login?erro=Credenciais+inválidas", status_code=303)
@@ -1360,6 +1389,13 @@ async def cadastro_submit(
     password: str = Form(...),
 ):
     from urllib.parse import quote
+
+    if _auth_rate_limited(
+        _auth_client_bucket(request, "cadastro"),
+        max_hits=AUTH_SIGNUP_MAX_HITS,
+        window_sec=AUTH_SIGNUP_WINDOW_SEC,
+    ):
+        return RedirectResponse(url="/cadastro?erro=Muitas+tentativas.+Aguarde+e+tente+de+novo.", status_code=303)
 
     client = get_db()
     try:
@@ -2013,13 +2049,16 @@ def get_sitemap():
 # ROTAS DE INFRAESTRUTURA E ROBÔ
 # ==========================================
 
+ROBO_TOKEN_MIN_LEN = 16
+
+
 def get_robo_token() -> str:
     """Segredo das rotas /api/robô — só via ambiente (nunca hardcoded)."""
     return (os.getenv("ROBO_TOKEN") or os.getenv("ROBOT_TOKEN") or "").strip()
 
 
 def extract_robo_token(request: Request, token: str | None = None) -> str | None:
-    """Ordem: Authorization Bearer → X-Robo-Token → query ?token= (cron)."""
+    """Ordem: Authorization Bearer → X-Robo-Token → query ?token= (cron legado)."""
     auth = (request.headers.get("Authorization") or "").strip()
     if auth.lower().startswith("bearer "):
         value = auth[7:].strip()
@@ -2031,7 +2070,8 @@ def extract_robo_token(request: Request, token: str | None = None) -> str | None
             return value
     if token is not None and str(token).strip():
         return str(token).strip()
-    return None
+    q = (request.query_params.get("token") or "").strip()
+    return q or None
 
 
 def _tokens_match(provided: str, expected: str) -> bool:
@@ -2050,6 +2090,11 @@ def require_robo_auth(request: Request, token: str | None = None) -> None:
         raise HTTPException(
             status_code=503,
             detail="ROBO_TOKEN nao configurado no ambiente",
+        )
+    if core.is_cloud_host() and len(expected) < ROBO_TOKEN_MIN_LEN:
+        raise HTTPException(
+            status_code=503,
+            detail="ROBO_TOKEN demasiado previsivel — defina um segredo longo no painel",
         )
     provided = extract_robo_token(request, token)
     if not provided or not _tokens_match(provided, expected):

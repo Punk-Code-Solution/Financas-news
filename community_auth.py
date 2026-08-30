@@ -42,12 +42,26 @@ def _env(key: str) -> str:
     return (os.getenv(key) or "").strip()
 
 
+_DEV_SESSION_FALLBACK = "financas-news-dev-session-change-me"
+
+
+def _is_cloud_host() -> bool:
+    return bool(
+        os.getenv("RENDER")
+        or os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("RAILWAY_PROJECT_ID")
+    )
+
+
 def session_secret() -> str:
     secret = _env("SESSION_SECRET")
-    if secret:
+    if secret and secret != _DEV_SESSION_FALLBACK:
         return secret
-    # Dev fallback explícito — produção deve definir SESSION_SECRET.
-    return "financas-news-dev-session-change-me"
+    if _is_cloud_host():
+        raise RuntimeError(
+            "SESSION_SECRET obrigatorio em producao (nao use o fallback de desenvolvimento)."
+        )
+    return secret or _DEV_SESSION_FALLBACK
 
 
 def hash_password(password: str) -> str:

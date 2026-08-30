@@ -9,6 +9,8 @@ tools/*.log
 tools/*_fill_*.txt
 qa_frontend.db
 qa_suite.db
+*.db-wal
+*.db-shm
 dumps/
 *.sql.gz
 *.env
