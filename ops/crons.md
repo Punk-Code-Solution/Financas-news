@@ -17,7 +17,7 @@ Schedules em **UTC** (cron-job.org e Railway Cron usam UTC). BRT = UTC−3.
 
 | Job | Método | Path | Cron (UTC) | Equiv. BRT | Timeout |
 |-----|--------|------|------------|------------|---------|
-| Robô | GET | `/api/rodar-robo` | `0 */3 * * *` | a cada 3 h | 60 s (responde 202; o trabalho segue no servidor) |
+| Robô | GET | `/api/rodar-robo` | `0 12 * * *` | 09:00 BRT (1×/dia — qualidade > volume) | 60 s (responde 202; o trabalho segue no servidor) |
 | Capas | GET | `/api/gerar-imagens?limit=5` | `*/20 * * * *` | a cada 20 min | 5–10 min |
 | Mercado nos artigos | GET | `/api/atualizar-artigos?limit=20` | `15 */6 * * *` | a cada 6 h | 5 min |
 | Macro-watch | GET | `/api/macro-watch` | `0 12 * * *` | 09:00 BRT | 5 min |
@@ -28,6 +28,18 @@ Schedules em **UTC** (cron-job.org e Railway Cron usam UTC). BRT = UTC−3.
 | Sync FTS | GET | `/api/sync-news-fts` | `0 6 * * *` | 03:00 BRT | 5 min |
 | Crédito colunistas | POST | `/api/columnists/credit-daily` | `30 2 * * *` | 23:30 BRT | 2 min |
 | Expirar boosts | POST | `/api/columnists/expire-boosts` | `10 * * * *` | a cada hora | 1 min |
+
+**AdSense / qualidade:** preferir **1 rodada/dia** do robô (`0 12 * * *` UTC) com defaults `ROBOT_MAX_ARTICLES=8`, `ROBOT_MAX_PER_FEED=1`, `ROBOT_OWN_ANALYSES=5`. Evitar várias rodadas cheias — volume alto com IA é sinal de *scaled content abuse* para o Google.
+
+Env sugerido (Railway):
+
+```
+ROBOT_MAX_PER_FEED=1
+ROBOT_MAX_ARTICLES=8
+ROBOT_OWN_ANALYSES=5
+ROBOT_POLITICO_MAX_PER_FEED=1
+ROBOT_POLITICO_MAX_ARTICLES=3
+```
 
 ---
 
@@ -66,7 +78,7 @@ Request headers → Add header:
 
 | Title (sugerido) | URL | Method | Schedule (UTC) | Timeout |
 |------------------|-----|--------|----------------|---------|
-| FN rodar-robo | `https://www.financas-news.net.br/api/rodar-robo` | GET | `0 */3 * * *` | 60s |
+| FN rodar-robo | `https://www.financas-news.net.br/api/rodar-robo` | GET | `0 12 * * *` | 60s |
 | FN gerar-imagens | `https://www.financas-news.net.br/api/gerar-imagens?limit=5` | GET | `*/20 * * * *` | 600s |
 | FN atualizar-artigos | `https://www.financas-news.net.br/api/atualizar-artigos?limit=20` | GET | `15 */6 * * *` | 300s |
 | FN macro-watch | `https://www.financas-news.net.br/api/macro-watch` | GET | `0 12 * * *` | 300s |
@@ -107,7 +119,7 @@ Preencha assim:
 1. **Title:** `FN rodar-robo`
 2. **Address:** `https://www.financas-news.net.br/api/rodar-robo` (sem `?token=`)
 3. **Request method:** GET
-4. **Schedule:** `0 */3 * * *` · timezone **UTC**
+4. **Schedule:** `0 12 * * *` · timezone **UTC** (1×/dia — qualidade AdSense)
 5. **Request timeout:** 60 segundos (ou o máximo do plano; não precisa 1200)
 6. **Request headers → Add header**
    - Name: `Authorization`

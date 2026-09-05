@@ -91,7 +91,8 @@ import columnists
 _ = load_dotenv()
 
 # Limiar alinhado ao sitemap / purge_thin_news — artigos abaixo recebem noindex.
-THIN_RESUMO_CHARS = 800
+# Proxy conservador de ~800 palavras (ver core.MIN_ARTICLE_WORDS / MIN_ARTICLE_CHARS).
+THIN_RESUMO_CHARS = core.MIN_ARTICLE_CHARS
 
 FEED_BATCH = 8
 FEATURED_COUNT = 4
@@ -970,9 +971,12 @@ def _render_noticia_page(
     hreflang_full = has_en or has_ja
     article_hreflang = build_hreflang_map(SITE_ORIGIN, path, {}, full=hreflang_full)
 
-    # Thin content: evita indexação de análises curtas (mesmo limiar do sitemap).
+    # Thin content: evita indexação de análises curtas (mesmo limiar do sitemap / quality gate).
     resumo_len = len(str(resumo or ""))
-    thin_article = resumo_len < THIN_RESUMO_CHARS
+    resumo_words = core.count_words(resumo)
+    thin_article = (
+        resumo_len < THIN_RESUMO_CHARS and resumo_words < core.MIN_ARTICLE_WORDS
+    )
 
     user = _current_user(request)
 
@@ -1233,6 +1237,19 @@ async def fale_conosco(
 @app.get("/quem-somos", response_class=HTMLResponse)
 async def quem_somos(request: Request):
     return _render(request, "quem-somos.html")
+
+
+@app.get("/contato", response_class=HTMLResponse)
+def contato(request: Request):
+    return _render(
+        request,
+        "contato.html",
+        {
+            "canonical_path": "/contato",
+            "canonical_query": {},
+            "canonical_url": absolute_url(SITE_ORIGIN, "/contato"),
+        },
+    )
 
 
 @app.get("/metodologia", response_class=HTMLResponse)
@@ -2003,12 +2020,13 @@ def get_sitemap():
             SELECT id,
                    COALESCE(NULLIF(updated_at, ''), NULLIF(published_at, ''), created_at) AS lastmod
             FROM news
-            WHERE LENGTH(COALESCE(resumo, '')) >= 800
+            WHERE LENGTH(COALESCE(resumo, '')) >= ?
             ORDER BY
               CASE WHEN imagem_url IS NOT NULL AND TRIM(imagem_url) != '' THEN 0 ELSE 1 END,
               id DESC
             LIMIT 500
-            """
+            """,
+            [THIN_RESUMO_CHARS],
         )
         noticias = result.rows
     except Exception as exc:
@@ -2019,6 +2037,7 @@ def get_sitemap():
         (absolute_url(SITE_ORIGIN, "/"), "daily", "1.0", today),
         (absolute_url(SITE_ORIGIN, "/quem-somos"), "monthly", "0.6", today),
         (absolute_url(SITE_ORIGIN, "/metodologia"), "monthly", "0.7", today),
+        (absolute_url(SITE_ORIGIN, "/contato"), "monthly", "0.5", today),
         (absolute_url(SITE_ORIGIN, "/mercado"), "hourly", "0.8", today),
         (absolute_url(SITE_ORIGIN, "/privacidade"), "monthly", "0.3", today),
         (absolute_url(SITE_ORIGIN, "/termos"), "monthly", "0.3", today),
@@ -2443,7 +2462,7 @@ def gerar_analises_proprias(request: Request, token: str | None = None, count: i
     """Gera análises editoriais próprias a partir do acervo (sem RSS).
 
     Consome a cota diária de texto Gemini. Por padrão completa a meta
-    ``ROBOT_OWN_ANALYSES`` (mín. 3/dia) — só gera o que ainda falta hoje.
+    ``ROBOT_OWN_ANALYSES`` (mín. 5/dia) — só gera o que ainda falta hoje.
     """
     require_robo_auth(request, token)
 

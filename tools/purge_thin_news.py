@@ -19,16 +19,17 @@ _ = load_dotenv(ROOT / ".env")
 
 from db import get_db, sync_news_fts  # noqa: E402
 from educational_guides import EDUCATIONAL_GUIDES, find_guide_noticia_id  # noqa: E402
+from core import MIN_ARTICLE_CHARS  # noqa: E402
 
-# Alinhado ao filtro do sitemap (>= 800). Artigos abaixo disso são thin para indexação.
-MIN_RESUMO = 800
+# Alinhado ao filtro do sitemap / quality gate (>= MIN_ARTICLE_CHARS ~800 palavras).
+MIN_RESUMO = MIN_ARTICLE_CHARS
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Remove notícias com resumo curto (thin content). "
-            "Default min=800 (mesmo limiar do sitemap). "
+            f"Remove notícias com resumo curto (thin content). "
+            f"Default min={MIN_RESUMO} (mesmo limiar do sitemap / AdSense). "
             "Protege guias evergreen. Ex.: --dry-run implícito; --apply para apagar."
         )
     )

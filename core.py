@@ -288,40 +288,108 @@ def get_gemini_api_keys_for_images() -> list[str]:
 
 def get_robot_max_per_feed() -> int:
     try:
-        return max(1, min(int(os.getenv("ROBOT_MAX_PER_FEED", "3")), 8))
+        return max(1, min(int(os.getenv("ROBOT_MAX_PER_FEED", "1")), 8))
     except ValueError:
-        return 3
+        return 1
 
 
 def get_robot_max_articles() -> int:
     try:
-        return max(1, min(int(os.getenv("ROBOT_MAX_ARTICLES", "36")), 80))
+        return max(1, min(int(os.getenv("ROBOT_MAX_ARTICLES", "8")), 80))
     except ValueError:
-        return 36
+        return 8
 
 
 def get_robot_own_analyses_count() -> int:
     """Mínimo de análises próprias (a partir do acervo) a gerar por dia."""
     try:
-        return max(0, min(int(os.getenv("ROBOT_OWN_ANALYSES", "3")), 10))
+        return max(0, min(int(os.getenv("ROBOT_OWN_ANALYSES", "5")), 10))
     except ValueError:
-        return 3
+        return 5
+
+
+# Limiar de qualidade para indexação/AdSense (palavras + proxy em caracteres).
+# Alinhado a prompts, sitemap, noindex e purge_thin_news.
+MIN_ARTICLE_WORDS = 800
+MIN_ARTICLE_CHARS = 4500
+
+_BANNED_SUMMARY_PHRASES = (
+    "segundo a matéria",
+    "o texto relata",
+    "conforme publicado",
+    "de acordo com a matéria",
+    "a reportagem diz",
+    "no mundo atual",
+    "nos dias de hoje",
+    "em um mundo cada vez mais",
+    "especialistas afirmam",
+    "especialistas dizem",
+    "é importante ressaltar",
+    "vale destacar que",
+)
+
+_DIGIT_RE = re.compile(r"\d")
+
+
+def count_words(text: str | None) -> int:
+    if not text:
+        return 0
+    return len(re.findall(r"\w+", str(text), flags=re.UNICODE))
+
+
+def passes_publish_quality_gate(ai_data: dict[str, Any] | None) -> tuple[bool, str]:
+    """Valida se a análise IA tem profundidade e informação ganha para publicar/indexar.
+
+    Retorna (ok, motivo). Falhas descartam a matéria (não publicam thin no índice).
+    """
+    if not ai_data or not isinstance(ai_data, dict):
+        return False, "sem_json"
+
+    resumo = str(ai_data.get("resumo_simples") or "").strip()
+    words = count_words(resumo)
+    if words < MIN_ARTICLE_WORDS and len(resumo) < MIN_ARTICLE_CHARS:
+        return False, f"thin_words={words}_chars={len(resumo)}"
+
+    folded = resumo.casefold()
+    for phrase in _BANNED_SUMMARY_PHRASES:
+        if phrase in folded:
+            return False, f"frase_proibida:{phrase}"
+
+    impacto = str(ai_data.get("impacto_bolso") or "").strip()
+    contexto = str(ai_data.get("contexto_mercado") or "").strip()
+    if len(impacto) < 40:
+        return False, "impacto_bolso_curto"
+    if len(contexto) < 40:
+        return False, "contexto_mercado_curto"
+    if not _DIGIT_RE.search(impacto) and not _DIGIT_RE.search(contexto):
+        return False, "caixas_sem_numero"
+
+    dados = ai_data.get("dados_citados") or []
+    if isinstance(dados, list):
+        numeric_hits = sum(1 for d in dados if _DIGIT_RE.search(str(d)))
+    else:
+        numeric_hits = 1 if _DIGIT_RE.search(str(dados)) else 0
+    body_digits = len(_DIGIT_RE.findall(resumo))
+    if numeric_hits < 2 and body_digits < 3:
+        return False, "poucos_dados_numericos"
+
+    return True, "ok"
 
 
 def get_robot_politico_max_per_feed() -> int:
     """Teto por feed da mesa político-financeira (período eleitoral/fiscal)."""
     try:
-        return max(1, min(int(os.getenv("ROBOT_POLITICO_MAX_PER_FEED", "4")), 8))
+        return max(1, min(int(os.getenv("ROBOT_POLITICO_MAX_PER_FEED", "1")), 8))
     except ValueError:
-        return 4
+        return 1
 
 
 def get_robot_politico_max_articles() -> int:
     """Teto de matérias da mesa política por rodada (0 = sem teto extra)."""
     try:
-        return max(0, min(int(os.getenv("ROBOT_POLITICO_MAX_ARTICLES", "14")), 40))
+        return max(0, min(int(os.getenv("ROBOT_POLITICO_MAX_ARTICLES", "3")), 40))
     except ValueError:
-        return 14
+        return 3
 
 
 def robot_politico_feeds_first() -> bool:
@@ -3240,12 +3308,12 @@ def _article_json_contract(tags_list: str) -> str:
     return f"""Retorne APENAS JSON válido (sem ```json):
 {{
     "titulo_viral": "Título jornalístico, informativo e específico (máx. 90 caracteres). Evite clickbait vazio.",
-    "resumo_simples": "Artigo completo de 6 parágrafos com \\n\\n entre eles. Mínimo 500 palavras.",
-    "contexto_mercado": "Box de 3-4 frases com os principais números citados (variados; não só Selic).",
-    "impacto_bolso": "3 frases diretas: impacto no bolso, na poupança/investimentos e no custo de vida.",
+    "resumo_simples": "Artigo completo de 6 parágrafos com \\n\\n entre eles. Mínimo 800 palavras. O 1º parágrafo DEVE abrir com uma TESE EDITORIAL específica (afirmação concreta + número do fato), nunca com generalidade.",
+    "contexto_mercado": "Box de 3-4 frases com os principais números citados (variados; não só Selic). Obrigatório pelo menos 1 número concreto.",
+    "impacto_bolso": "3 frases diretas com números quando possível: impacto no bolso, na poupança/CDI/investimentos e no custo de vida (salário, aluguel, crédito).",
     "tag": "UMA de: {tags_list}",
     "sentimento": "UM de: Positivo, Negativo, Neutro",
-    "dados_citados": ["lista dos dados numéricos que você efetivamente usou no texto"],
+    "dados_citados": ["lista dos dados numéricos que você efetivamente usou no texto — mínimo 3 itens"],
     "lentes_analiticas": [
         {{"escola": "nome curto da escola", "aplicacao": "2-3 frases originais aplicando a matéria"}}
     ],
@@ -3308,22 +3376,25 @@ def _build_financeiro_news_prompt(
     return f"""
 Você é o editor-chefe de análise do portal "Clareza Capital" (financas-news.net.br), especializado em economia brasileira, mercado de capitais e criptoativos.
 
-Sua missão é produzir uma ANÁLISE EDITORIAL ORIGINAL de alto valor — não um resumo, não uma paráfrase da notícia fonte. O Google e leitores exigem conteúdo com dados concretos, contexto histórico e utilidade prática.
+Sua missão é produzir uma ANÁLISE EDITORIAL ORIGINAL de alto valor — não um resumo, não uma paráfrase da notícia fonte. O Google e leitores exigem conteúdo com dados concretos, contexto histórico e utilidade prática (information gain).
 
 ## REGRAS INEGOCIÁVEIS
-- PROIBIDO: resumir a notícia, usar "segundo a matéria", "o texto relata", "conforme publicado".
+- PROIBIDO: resumir a notícia, usar "segundo a matéria", "o texto relata", "conforme publicado", "de acordo com a matéria".
 - PROIBIDO: parágrafo só com opinião genérica sem número concreto do FATO ou do acervo.
 - PROIBIDO: abrir com Selic/juros quando o fato for de outro tema (cripto, política local, consumo, etc.).
 - PROIBIDO: citar Selic, IPCA ou dólar se o fato não for sobre juros, inflação ou câmbio.
 - PROIBIDO: repetir a fórmula Selic + IPCA + dólar — o trio só entra se for o tema.
+- PROIBIDO fillers de IA: "no mundo atual", "nos dias de hoje", "em um mundo cada vez mais", "especialistas afirmam/dizem" sem fonte, "é importante ressaltar", "vale destacar que".
+- OBRIGATÓRIO: o 1º parágrafo abre com TESE EDITORIAL específica (afirmação concreta + número do fato) — nunca generalidade.
 - OBRIGATÓRIO: usar 2 a 3 âncoras numéricas do TEMA (preço da ação, volume, % do projeto, cota da fonte) — não preencha com o painel BCB.
 - OBRIGATÓRIO: citar pelo menos 1 número alinhado à categoria `{tag_hint}` (da fonte ou da cotação da tag).
+- OBRIGATÓRIO: cruzar com pelo menos 1 indicador BCB/cotação do bloco de dados E 1 trecho/tendência do ACERVO EDITORIAL.
 - OBRIGATÓRIO: tendência 7d/30d só se o indicador for central ao fato.
 - OBRIGATÓRIO: conectar o fato com o cenário macro brasileiro SOMENTE quando fizer sentido editorial.
-- OBRIGATÓRIO: cruzar com o ACERVO EDITORIAL — mencione se há tendência (ex.: "terceira notícia negativa sobre X esta semana").
 - OBRIGATÓRIO: incorporar as 2 lentes analíticas abaixo em paráfrase original (sem citações literais de especialistas).
+- OBRIGATÓRIO: seção prática "O que muda na prática" no guia final — com números do cotidiano BR (CDI, poupança, salário, aluguel, crédito) quando couber.
 - OBRIGATÓRIO: dar orientação prática para o leitor comum (investidor iniciante ou chefe de família).
-- Mínimo de 500 palavras no campo resumo_simples.
+- Mínimo de 800 palavras no campo resumo_simples.
 - Tom: jornalístico, analítico, acessível. Você domina tecnologia e finanças, com visão de livre mercado e empreendedorismo.
 
 {macro_rules}
@@ -3341,12 +3412,12 @@ Conteúdo base (use como ponto de partida, não como texto a reescrever):
 {market_context}
 
 ## ESTRUTURA DO ARTIGO (campo resumo_simples — 6 parágrafos separados por \\n\\n)
-1. **Abertura**: O fato em uma frase forte + por que importa AGORA — número do FATO (não do BCB).
+1. **Abertura / tese**: Afirmação específica + por que importa AGORA — número do FATO (não do BCB). Sem filler.
 2. **Contexto com dados**: âncoras do tema (preço, volume, %, calendário da fonte) — sem trio BCB se irrelevante.
-3. **Cruzamento de fontes**: Relacione com o acervo editorial + 1 lente analítica aplicada ao caso.
+3. **Cruzamento de fontes**: Relacione com o acervo editorial + 1 lente analítica aplicada ao caso + 1 dado BCB/cotação quando pertinente.
 4. **Análise aprofundada**: Causas e riscos do FATO — cada afirmação forte amarrada a um dado citado.
 5. **Cenários**: 30/90/180 dias com âncoras do tema (não complete com juros/IPCA/dólar).
-6. **Guia prático**: 2-3 ações concretas + segunda lente analítica (disciplina, risco ou ciclo).
+6. **O que muda na prática**: 2-3 ações concretas (CDI/poupança/salário/aluguel/crédito quando couber) + segunda lente analítica.
 
 {_article_json_contract(tags_list)}
 """
@@ -3365,20 +3436,22 @@ def _build_politico_financeira_prompt(
     return f"""
 Você é o editor de POLÍTICA ECONÔMICA do portal "Clareza Capital" (financas-news.net.br) — mesa SEPARADA da cobertura de mercado, cripto e copom.
 
-Sua missão: traduzir o fato de Brasília (Congresso, Executivo, STF, eleições, orçamento, tributos) em impacto no bolso, no crédito, no câmbio e no risco fiscal. Não é comentarista partidário.
+Sua missão: traduzir o fato de Brasília (Congresso, Executivo, STF, eleições, orçamento, tributos) em impacto no bolso, no crédito, no câmbio e no risco fiscal. Não é comentarista partidário. Entregue information gain — não paráfrase.
 
 ## REGRAS DA MESA POLÍTICO-FINANCEIRA
 - PROIBIDO: pedir voto, elogiar ou atacar partido/pessoa como tese, clickbait eleitoral, fofoca sem canal econômico.
-- PROIBIDO: resumir a notícia ("segundo a matéria", "o texto relata").
+- PROIBIDO: resumir a notícia ("segundo a matéria", "o texto relata", "conforme publicado").
 - PROIBIDO: abrir com Selic se o fato for votação, PEC, orçamento, imposto ou eleição — o canal é fiscal/institucional.
+- PROIBIDO fillers de IA: "no mundo atual", "especialistas afirmam" sem fonte, "é importante ressaltar", "vale destacar que".
+- OBRIGATÓRIO: 1º parágrafo com TESE EDITORIAL específica (fato de poder + canal econômico + número).
 - OBRIGATÓRIO: tag preferencial `Política Econômica` (só mude se o fato for claramente outra categoria).
 - OBRIGATÓRIO: mostrar o CANAL econômico (gasto, imposto, dívida, regra fiscal, regulação, emprego).
 - OBRIGATÓRIO: quem ganha e quem perde (família, poupança, setor, investidor) com pelo menos 1 número do fato ou do acervo.
 - OBRIGATÓRIO: números concretos em pelo menos 3 dos 6 parágrafos — âncoras de gasto, tributo, dívida, calendário da votação e quem ganha/perde. Câmbio, Selic e IPCA só se o fato for sobre isso.
-- OBRIGATÓRIO: cruzar com o ACERVO EDITORIAL (ex.: segundo pacote fiscal neste trimestre).
+- OBRIGATÓRIO: cruzar com o ACERVO EDITORIAL E com pelo menos 1 dado BCB/cotação do bloco quando pertinente.
 - OBRIGATÓRIO: incorporar as 2 lentes analíticas em paráfrase original.
-- OBRIGATÓRIO: orientação prática (o que observar no calendário político; o que NÃO fazer: pânico de manchete).
-- Mínimo de 500 palavras no campo resumo_simples.
+- OBRIGATÓRIO: "O que muda na prática" (calendário político; CDI/crédito/imposto; o que NÃO fazer: pânico de manchete).
+- Mínimo de 800 palavras no campo resumo_simples.
 - Tom: sóbrio, analítico, acessível. Livre mercado e regras do jogo — sem torcida.
 
 {macro_rules}
@@ -3396,12 +3469,12 @@ Conteúdo base (ponto de partida, não texto a reescrever):
 {market_context}
 
 ## ESTRUTURA DO ARTIGO (resumo_simples — 6 parágrafos separados por \\n\\n)
-1. **Abertura**: o fato de poder + por que o leitor/mercado deve ligar AGORA.
+1. **Abertura / tese**: o fato de poder + por que o leitor/mercado deve ligar AGORA (número).
 2. **Canal econômico**: gasto, tributo, dívida, regra fiscal ou regulação — com número.
-3. **Cruzamento**: acervo + 1 lente (incentivos, ciclo de crédito ou risco).
+3. **Cruzamento**: acervo + 1 lente (incentivos, ciclo de crédito ou risco) + dado oficial quando couber.
 4. **Ganhadores e perdedores**: setores, famílias, poupança — cada afirmação com dado.
 5. **Cenários**: 30/90/180 dias (votação, implementação, reação de câmbio/bolsa).
-6. **Guia prático**: 2-3 ações (calendário, reserva, evitar timing político) + segunda lente.
+6. **O que muda na prática**: 2-3 ações (calendário, reserva, evitar timing político) + segunda lente.
 
 {_article_json_contract(tags_list)}
 """
@@ -3850,7 +3923,7 @@ def generate_own_analyses(count: int | None = None) -> list[dict[str, Any]]:
     """Gera análises editoriais próprias a partir do acervo (sem RSS).
 
     Consome cota Gemini de texto (e tenta capa). Respeita o mínimo diário
-    configurado em ``ROBOT_OWN_ANALYSES`` (default 3): só gera o que ainda falta hoje.
+    configurado em ``ROBOT_OWN_ANALYSES`` (default 5): só gera o que ainda falta hoje.
     """
     target_day = get_robot_own_analyses_count() if count is None else max(0, min(int(count), 10))
     if target_day <= 0:
@@ -3918,6 +3991,11 @@ def generate_own_analyses(count: int | None = None) -> list[dict[str, Any]]:
             break
         if not ai_data:
             print("   [analise-propria] IA não retornou JSON — próximo ângulo.")
+            continue
+
+        ok_gate, gate_reason = passes_publish_quality_gate(ai_data)
+        if not ok_gate:
+            print(f"   [analise-propria] Quality gate: descartado ({gate_reason}).")
             continue
 
         out_tag = ai_data.get("tag", tag)
@@ -4077,6 +4155,11 @@ def fetch_and_process(
                 if not ai_data:
                     continue
 
+                ok_gate, gate_reason = passes_publish_quality_gate(ai_data)
+                if not ok_gate:
+                    print(f"   ⏭️ Quality gate: descartado ({gate_reason}).")
+                    continue
+
                 tag = ai_data.get("tag", tag_hint)
                 if tag not in VALID_TAGS:
                     tag = tag_hint if tag_hint in VALID_TAGS else "Economia"
@@ -4228,6 +4311,11 @@ def generate_weekly_radar(*, force: bool = False) -> list[dict[str, Any]]:
         print("   [radar] IA não retornou JSON.")
         return []
 
+    ok_gate, gate_reason = passes_publish_quality_gate(ai_data)
+    if not ok_gate:
+        print(f"   [radar] Quality gate: descartado ({gate_reason}).")
+        return []
+
     out_tag = ai_data.get("tag", "Economia")
     if out_tag not in VALID_TAGS:
         out_tag = "Economia"
@@ -4345,23 +4433,13 @@ def generate_macro_change_article(
     data_context = format_data_context(market, bcb, db_context, historico, tag, rel)
     ai_data = process_news_with_ai(seed_title, brief, OWN_ANALYSIS_FONTE, tag, data_context)
     if not ai_data:
-        # Fallback sem IA: matéria mínima factual.
-        ai_data = {
-            "titulo_viral": seed_title,
-            "resumo_simples": (
-                f"O indicador {label} passou de {old_value} para {new_value} "
-                "segundo dados oficiais do Banco Central. Esta nota registra a variação "
-                "para acompanhar o impacto em juros, crédito e preços."
-            ),
-            "impacto_bolso": (
-                "Mudanças na Selic ou no IPCA afetam custo do crédito, rendimento da renda fixa "
-                "e poder de compra. Reavalie reservas e prazos com o novo patamar."
-            ),
-            "tag": tag,
-            "sentimento": "Neutro",
-            "urgencia": "Alta",
-            "contexto_mercado": f"{label}: {old_value} → {new_value}",
-        }
+        print(f"   [macro-watch] IA falhou para {label} — sem publicar nota thin.")
+        return None
+
+    ok_gate, gate_reason = passes_publish_quality_gate(ai_data)
+    if not ok_gate:
+        print(f"   [macro-watch] Quality gate: descartado ({gate_reason}).")
+        return None
 
     out_tag = ai_data.get("tag", tag)
     if out_tag not in VALID_TAGS:

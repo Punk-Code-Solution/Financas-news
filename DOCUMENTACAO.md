@@ -49,11 +49,11 @@ O diferencial não é republicar RSS — é produzir conteúdo com **contexto ma
 ### Etapas de cada execução do robô
 
 1. **Coleta de dados de mercado** — USD/EUR/BTC (AwesomeAPI, com fallback BCB para dólar e Binance para BTC) + Selic, IPCA e dólar comercial (API BCB).
-2. **Análises próprias (cota reservada)** — gera pelo menos `ROBOT_OWN_ANALYSES` (default 3) matérias autorais a partir do acervo do banco (`internal://analise/...`), antes do RSS, para não perder a cota Gemini.
-3. **Leitura de ~36 feeds RSS** (BR + internacionais) — até 3 notícias/fonte, teto 36/rodada (`ROBOT_MAX_PER_FEED` / `ROBOT_MAX_ARTICLES`), com teto reduzido pelo que ainda falta da meta própria. Mesa política: até `ROBOT_POLITICO_MAX_PER_FEED` por fonte e `ROBOT_POLITICO_MAX_ARTICLES` no total da rodada.
+2. **Análises próprias (cota reservada)** — gera pelo menos `ROBOT_OWN_ANALYSES` (default 5) matérias autorais a partir do acervo do banco (`internal://analise/...`), antes do RSS, para não perder a cota Gemini.
+3. **Leitura de ~36 feeds RSS** (BR + internacionais) — até 1 notícia/fonte, teto 8/rodada (`ROBOT_MAX_PER_FEED` / `ROBOT_MAX_ARTICLES`), com teto reduzido pelo que ainda falta da meta própria. Mesa política: até `ROBOT_POLITICO_MAX_PER_FEED` por fonte e `ROBOT_POLITICO_MAX_ARTICLES` no total da rodada. Volume baixo de propósito (qualidade AdSense > escala).
 4. **Dedupe por link** antes da IA (economiza cota).
 5. **Contexto editorial** — cruza com o acervo do portal.
-6. **Geração de texto** — Gemini nas chaves 1→2→3 (análise 500+ palavras / JSON).
+6. **Geração de texto** — Gemini nas chaves 1→2→3 (análise 800+ palavras / JSON) + **quality gate** (descarta thin/genérico antes de gravar).
 6. **Geração de imagem** — Gemini na varredura; fallback OpenAI/DALL-E no backfill (1/min); lote ordena com capa primeiro.
 7. **Publicação** — grava no SQLite do volume Railway e exibe no frontend.
 
@@ -405,12 +405,12 @@ SITE_ORIGIN=https://financas-news.net.br  # obrigatório em produção (canônic
 # Verificação de conta também exige mailer: RESEND_API_KEY + NEWSLETTER_FROM (ou SMTP_*) — ver seção Newsletter
 # EMAIL_VERIFY_TTL_HOURS=48
 # EMAIL_VERIFY_RESEND_COOLDOWN_SEC=120
-ROBOT_MAX_PER_FEED=3
-ROBOT_MAX_ARTICLES=36
-ROBOT_OWN_ANALYSES=3      # mínimo diário de análises próprias a partir do acervo (0=desliga)
+ROBOT_MAX_PER_FEED=1
+ROBOT_MAX_ARTICLES=8
+ROBOT_OWN_ANALYSES=5      # mínimo diário de análises próprias a partir do acervo (0=desliga)
 # ROBOT_POLITICO_FIRST=1           # 1=feeds de Política Econômica primeiro na rodada
-# ROBOT_POLITICO_MAX_PER_FEED=4    # teto por feed da mesa político-financeira
-# ROBOT_POLITICO_MAX_ARTICLES=14   # teto da mesa política por rodada (0=sem teto extra)
+# ROBOT_POLITICO_MAX_PER_FEED=1    # teto por feed da mesa político-financeira
+# ROBOT_POLITICO_MAX_ARTICLES=3    # teto da mesa política por rodada (0=sem teto extra)
 # GOOGLE_API_KEYS=key1,key2,key3   # alternativa: lista de chaves
 USE_LOCAL_DB=true         # produção: SQLite no volume Railway
 # LOCAL_DATABASE_PATH=    # default: {RAILWAY_VOLUME_MOUNT_PATH}/news.db
@@ -427,16 +427,18 @@ Agendar no cron-job.org (Railway), com `Authorization: Bearer $ROBO_TOKEN` — v
 
 Cada digest inclui **no máximo 1–2** matérias de urgência Alta (`home_priority` ≥ 80). Se não houver conteúdo importante na janela, a API responde `Ignorado` e **não envia** e-mail. Assunto e layout usam a marca **Clareza Capital**; rodapé com link de privacidade (LGPD).
 
-### Thin content
+### Thin content / quality gate
 
-- Sitemap e `noindex` de artigo: resumo &lt; **800** caracteres.
-- Ferramenta: `PYTHONPATH=. python tools/purge_thin_news.py` (default `--min-resumo 800`; `--apply` para apagar).
+- Sitemap e `noindex` de artigo: resumo &lt; **4500** caracteres **e** &lt; **800** palavras (`core.MIN_ARTICLE_CHARS` / `MIN_ARTICLE_WORDS`).
+- Antes de gravar: `passes_publish_quality_gate` em `core.py` (descarta thin, frases de paráfrase, caixas sem número).
+- Ferramenta: `PYTHONPATH=. python tools/purge_thin_news.py` (default `--min-resumo 4500`; `--apply` para apagar).
+- Cron do robô: **1×/dia** recomendado (`ops/crons.md`) — qualidade &gt; volume (anti *scaled content abuse*).
 
 ---
 
 ## 11b. Checklist — reconsideração Google (conteúdo de baixo valor / spam)
 
-Use no Search Console ao pedir reconsideração. Evidências no código/site:
+Use no Search Console / AdSense ao pedir reconsideração. Evidências no código/site:
 
 | Item | Situação | Onde |
 |------|----------|------|
@@ -444,13 +446,17 @@ Use no Search Console ao pedir reconsideração. Evidências no código/site:
 | Disclaimer afiliado + copy sóbrio | OK | partial + `DEFAULT_AFFILIATES` |
 | Originalidade (dados BCB, lentes, impacto, tempo leitura) | OK / reforçado | enrichment + `/metodologia` + quem-somos |
 | `/mercado` com valor (dados + links análises) | OK | `mercado.html` + sitemap |
-| Thin fora do índice | OK — purge 800 = sitemap; noindex thin | `purge_thin_news.py`, `_render_noticia_page` |
+| Thin fora do índice | OK — limiar 4500 chars / 800 palavras; quality gate no publish | `purge_thin_news.py`, `_render_noticia_page`, `passes_publish_quality_gate` |
+| Volume reduzido (anti scaled abuse) | OK — max 8/rodada, 1/feed, 5 próprias/dia, cron 1×/dia | `core.py` defaults, `ops/crons.md`, Railway env |
 | Doorways busca/paginação/conta | OK — noindex + robots Disallow | `robots.txt`, i18n canônica |
 | Alternates `?lang=pt` (GSC “canônica adequada”) | OK — PT sem query; robots Disallow `lang=pt`; EN/JA permitidos | `localized_path`, `lang_switch_url`, `robots.txt` |
 | Categorias vazias | OK — noindex | `index()` |
-| Exemplos de qualidade | Análises com LENGTH(resumo)≥800, guias `/artigo/*`, painel `/mercado`, `/metodologia` | produção |
+| E-E-A-T / contato | OK — `/contato`, byline IA+BCB, metodologia, about | `contato.html`, `noticia.html`, about |
+| Exemplos de qualidade | Análises densas indexáveis, guias `/artigo/*`, painel `/mercado`, `/metodologia`, `/contato` | produção |
 
-Texto sugerido (adaptar): *Corrigimos páginas afiliadas thin (afiliados só em contexto editorial), alinhamos limiar de conteúdo fino (800), reforçamos metodologia original com dados oficiais, enriquecemos /mercado, e bloqueamos indexação de busca/paginação/contas/thin.*
+**Antes de reaplicar:** rodar purge dry-run→apply; confirmar ~20–30 URLs recentes no sitemap acima do limiar; aguardar **2–4 semanas** de crawl no GSC com o novo padrão estável.
+
+Texto sugerido (adaptar): *Reduzimos o volume diário de publicações automatizadas (teto 8/rodada, prioridade a análises próprias), elevamos o limiar de conteúdo indexável (~800 palavras / 4500 caracteres) com quality gate que descarta análises thin ou genéricas, reforçamos metodologia e transparência sobre IA com dados oficiais, publicamos /contato e byline editorial, e bloqueamos indexação de busca/paginação/contas/thin.*
 
 ---
 
@@ -553,7 +559,7 @@ Agenda completa (UTC, Bearer, URLs): ver **`ops/crons.md`**.
 
 Resumo: robô a cada 3 h (`GET /api/rodar-robo`), capas a cada 20 min, digest 08:00/17:00 BRT, etc. Preferir header `Authorization: Bearer $ROBO_TOKEN` (sem `?token=`).
 
-Variáveis úteis: `ROBO_TOKEN`, `ROBOT_MAX_PER_FEED=3`, `ROBOT_MAX_ARTICLES=36`, `ROBOT_OWN_ANALYSES=3`, `ROBOT_POLITICO_FIRST=1`, `ROBOT_POLITICO_MAX_PER_FEED=4`, `GOOGLE_API_KEY` / `_2` / `_3`.
+Variáveis úteis: `ROBO_TOKEN`, `ROBOT_MAX_PER_FEED=1`, `ROBOT_MAX_ARTICLES=8`, `ROBOT_OWN_ANALYSES=5`, `ROBOT_POLITICO_FIRST=1`, `ROBOT_POLITICO_MAX_PER_FEED=1`, `GOOGLE_API_KEY` / `_2` / `_3`.
 
 O robô prioriza a meta diária de **análises próprias** (síntese do acervo, sem RSS). Se ainda faltar, tenta de novo após os feeds. Endpoint dedicado: `/api/gerar-analises-proprias`.
 
@@ -606,7 +612,7 @@ uvicorn main:app --reload
 - [x] Newsletter digest/alerta (provedor env-driven)
 - [x] CSP + headers de segurança no middleware
 - [x] Mover token do robô para variável de ambiente (`ROBO_TOKEN`)
-- [x] Mitigações anti-spam Google (thin 800, metodologia, mercado editorial, afiliados)
+- [x] Mitigações anti-spam Google (thin 4500/800 palavras, quality gate, volume baixo, metodologia, mercado, afiliados, `/contato`)
 - [x] Comunidade: users, login/OAuth Google, comentários, cookies LGPD
 - [x] Verificação de e-mail no cadastro local (link + bloqueio de login)
 - [x] Newsletter digest 2x/dia (`/api/newsletter-digest-diario`) — máx. 1–2 Alta; skip se vazio
@@ -617,10 +623,10 @@ uvicorn main:app --reload
 
 ### Curto prazo (0–30 dias)
 
-- [ ] Agendar crons (Railway / cron-job.org): ver `ops/crons.md` — robô, capas, radar, macro, traduzir, digest, FTS, colunistas
+- [ ] Agendar crons (Railway / cron-job.org): ver `ops/crons.md` — robô **1×/dia**, capas, radar, macro, traduzir, digest, FTS, colunistas
 - [ ] Configurar `SESSION_SECRET`, `IP_HASH_SALT`, `GOOGLE_OAUTH_*`, `COLUMNIST_ADMIN_EMAILS`, `MERCADOPAGO_ACCESS_TOKEN`, `COLUMNIST_SHARE_RATE` / `COLUMNIST_SITE_RPM_BRL` em produção
 - [ ] Migrar crons restantes de `?token=` para `Authorization: Bearer` (e rotacionar se houve vazamento em logs)
-- [ ] Reaplicar ao Google AdSense / reconsideração Search Console (§11b) — UGC de colunistas exige moderação rigorosa
+- [ ] Em produção: `PYTHONPATH=. python tools/purge_thin_news.py --dry-run` depois `--apply`; aguardar 2–4 semanas de crawl; então reaplicar AdSense (§11b)
 - [ ] Cadastrar programas de afiliados (Binance, Amazon) e preencher URLs no env
 
 ### Médio prazo (1–3 meses)

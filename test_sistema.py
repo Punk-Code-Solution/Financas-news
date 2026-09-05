@@ -116,7 +116,7 @@ def run() -> int:
         check("CSP header", "default-src 'self'" in csp and "cdn.jsdelivr.net" in csp)
 
         # Páginas
-        for path in ["/", "/quem-somos", "/privacidade", "/termos", "/mercado", "/login", "/cadastro", "/metodologia"]:
+        for path in ["/", "/quem-somos", "/privacidade", "/termos", "/mercado", "/login", "/cadastro", "/metodologia", "/contato"]:
             r = client.get(path)
             check(f"GET {path}", r.status_code == 200 and "FINAN" in r.text.upper(), f"status={r.status_code}")
 
@@ -532,18 +532,28 @@ def run() -> int:
         check("Sitemap lastmod", "<lastmod>" in r.text)
         check("Sitemap guias", "/artigo/selic" in r.text)
         check("Sitemap categorias", "categoria=" in r.text)
+        check("Sitemap /contato", "/contato" in r.text)
         if ids:
             # Guias evergreen saem do /noticia/ (redirect 301) e ficam só em /artigo/.
+            # Só artigos acima do limiar thin entram no sitemap (AdSense quality).
+            from main import THIN_RESUMO_CHARS
+
             sample_id = None
+            thin_ok = False
             for nid in ids:
                 probe = client.get(f"/noticia/{nid}", follow_redirects=False)
-                if probe.status_code == 200:
+                if probe.status_code != 200:
+                    continue
+                if f"/noticia/{nid}" in r.text:
                     sample_id = nid
                     break
+                # Artigo visível mas thin: corretamente fora do sitemap.
+                if 'name="robots"' in probe.text and "noindex" in probe.text:
+                    thin_ok = True
             check(
-                "Sitemap inclui notícia",
-                (sample_id is not None and f"/noticia/{sample_id}" in r.text) or "/noticia/" in r.text,
-                f"sample={sample_id}",
+                "Sitemap inclui notícia ou exclui thin",
+                sample_id is not None or thin_ok or "/noticia/" in r.text,
+                f"sample={sample_id} thin_ok={thin_ok} limiar={THIN_RESUMO_CHARS}",
             )
 
         r = client.get("/")

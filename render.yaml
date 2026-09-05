@@ -15,11 +15,11 @@ services:
       - key: GOOGLE_API_KEY_3
         sync: false
       - key: ROBOT_MAX_PER_FEED
-        value: "3"
+        value: "1"
       - key: ROBOT_MAX_ARTICLES
-        value: "36"
+        value: "8"
       - key: ROBOT_OWN_ANALYSES
-        value: "3"
+        value: "5"
       - key: GEMINI_MODELOS
         value: gemini-3.1-flash-lite-preview,gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-2.5-flash-lite,gemini-2.5-flash,gemini-3-flash,gemini-3.5-flash
       - key: GEMINI_IMAGE_MODELOS

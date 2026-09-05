@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="{{ html_lang }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t('contact_page_meta_title') }}</title>
+    <meta name="description" content="{{ t('contact_page_meta_description') }}">
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="{{ t('contact_page_meta_title') }}" />
+    <meta property="og:description" content="{{ t('contact_page_meta_description') }}" />
+    <meta property="og:site_name" content="{{ t('site_name') }}" />
+    {% include "partials/_seo_brand.html" %}
+    <link rel="icon" href="/static/favicon.svg?v=2" type="image/svg+xml">
+    {% include "partials/_hreflang.html" %}
+    {% include "partials/_styles.html" %}
+    <script>
+        if (localStorage.getItem('color-theme') === 'dark') document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+    </script>
+</head>
+<body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 min-h-screen flex flex-col">
+    {% include "partials/_market_ticker.html" %}
+    <nav class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-[#0f172a] py-4">
+        <div class="container mx-auto px-4 max-w-3xl flex justify-between items-center gap-3">
+            <a href="{{ lp('/') }}" class="text-xl font-black tracking-tighter">
+                <span class="text-green-600 dark:text-[#4ade80]">{{ t('brand_finance') }}</span><span class="text-gray-900 dark:text-white">{{ t('brand_news') }}</span>
+            </a>
+            <a href="{{ lp('/quem-somos') }}" class="text-sm font-semibold text-gray-600 dark:text-slate-400">{{ t('nav_about') }}</a>
+        </div>
+    </nav>
+    <main class="container mx-auto px-4 py-10 max-w-3xl flex-grow">
+        <p class="text-xs font-bold uppercase tracking-[0.2em] text-blue-600 dark:text-[#4ade80]">{{ t('contact_page_eyebrow') }}</p>
+        <h1 class="mt-2 font-serif text-3xl md:text-4xl font-black text-gray-900 dark:text-white">{{ t('contact_page_title') }}</h1>
+        <p class="mt-4 text-lg text-gray-700 dark:text-slate-300 leading-relaxed">{{ t('contact_page_intro') }}</p>
+
+        <section class="mt-10 space-y-6 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-[#1e293b] p-6 md:p-8">
+            <div>
+                <h2 class="text-lg font-bold text-gray-900 dark:text-white mb-2">{{ t('contact_page_org') }}</h2>
+                <p class="text-gray-700 dark:text-slate-300 leading-relaxed">
+                    <strong class="text-gray-900 dark:text-white">Punk Code Solution</strong><br>
+                    {{ t('contact_page_org_blurb') }}
+                </p>
+                <p class="mt-3">
+                    <a href="https://www.punkcodesolution.com.br/" target="_blank" rel="noopener noreferrer"
+                       class="font-semibold text-blue-600 dark:text-[#4ade80] underline underline-offset-2">www.punkcodesolution.com.br</a>
+                </p>
+            </div>
+            <div>
+                <h2 class="text-lg font-bold text-gray-900 dark:text-white mb-2">{{ t('contact_page_editorial') }}</h2>
+                <p class="text-gray-700 dark:text-slate-300 leading-relaxed">{{ t('contact_page_editorial_blurb') }}</p>
+                <p class="mt-3">
+                    <a href="{{ lp('/metodologia') }}" class="font-semibold text-blue-600 dark:text-[#4ade80] underline underline-offset-2">{{ t('nav_methodology') }}</a>
+                    ·
+                    <a href="{{ lp('/quem-somos') }}" class="font-semibold text-blue-600 dark:text-[#4ade80] underline underline-offset-2">{{ t('nav_about') }}</a>
+                </p>
+            </div>
+            <div>
+                <h2 class="text-lg font-bold text-gray-900 dark:text-white mb-2">{{ t('contact_page_form_title') }}</h2>
+                <p class="text-gray-700 dark:text-slate-300 leading-relaxed mb-4">{{ t('contact_page_form_blurb') }}</p>
+                <button type="button" id="fn-contact-open"
+                        class="inline-flex items-center justify-center min-h-11 px-5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold transition"
+                        aria-haspopup="dialog" aria-controls="fn-contact-modal">
+                    {{ t('contact_us') }}
+                </button>
+            </div>
+            <div>
+                <h2 class="text-lg font-bold text-gray-900 dark:text-white mb-2">{{ t('contact_page_policies') }}</h2>
+                <ul class="space-y-2 text-gray-700 dark:text-slate-300">
+                    <li><a href="{{ lp('/privacidade') }}" class="underline font-semibold text-blue-600 dark:text-[#4ade80]">{{ t('nav_privacy') }}</a></li>
+                    <li><a href="{{ lp('/termos') }}" class="underline font-semibold text-blue-600 dark:text-[#4ade80]">{{ t('nav_terms') }}</a></li>
+                </ul>
+            </div>
+        </section>
+    </main>
+    {% include "partials/_footer.html" %}
+    {% include "partials/_cookie_banner.html" %}
+    {% include "partials/_contact_modal.html" %}
+</body>
+</html>

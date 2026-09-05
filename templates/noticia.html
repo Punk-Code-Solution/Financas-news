@@ -306,6 +306,11 @@
                     <img src="{{ columnist_author.avatar_url or '/static/avatars/default.svg?v=2' }}" alt="" width="28" height="28" class="rounded-full object-cover bg-slate-700" data-fallback="/static/avatars/default.svg?v=2" onerror="this.onerror=null;this.src=this.dataset.fallback||'/static/avatars/default.svg?v=2'">
                     {{ t('columnist_byline', name=columnist_author.name) }}
                 </span>
+                {% elif not is_columnist_article %}
+                <span class="inline-flex flex-wrap items-center gap-x-2 gap-y-1 font-medium text-gray-700 dark:text-slate-300">
+                    <span>{{ t('editorial_byline') }}</span>
+                    <a href="{{ lp('/metodologia') }}" class="underline underline-offset-2 hover:text-blue-600 dark:hover:text-[#4ade80]">{{ t('editorial_byline_link') }}</a>
+                </span>
                 {% endif %}
                 {% if noticia[7] %}
                 <span class="flex items-center gap-1">

@@ -56,16 +56,21 @@
             </div>
             <div>
                 <h2 class="text-xl font-bold text-blue-600 dark:text-[#4ade80] mb-2">4. Qualidade e thin content</h2>
-                <p class="text-gray-700 dark:text-slate-300 leading-relaxed">Artigos com corpo curto (&lt; 800 caracteres de análise) ficam fora do sitemap e podem receber <code class="text-sm">noindex</code>. Ferramenta operacional: <code class="text-sm">tools/purge_thin_news.py</code> (limiar alinhado ao sitemap).</p>
+                <p class="text-gray-700 dark:text-slate-300 leading-relaxed">Publicamos só análises que passam no quality gate (~800 palavras / ≥ 4500 caracteres, caixas com números, sem frases de paráfrase). Abaixo do limiar: fora do sitemap e <code class="text-sm">noindex</code>. Volume diário é limitado de propósito (poucas matérias densas). Ferramenta: <code class="text-sm">tools/purge_thin_news.py</code>.</p>
             </div>
             <div>
-                <h2 class="text-xl font-bold text-blue-600 dark:text-[#4ade80] mb-2">5. Afiliados</h2>
+                <h2 class="text-xl font-bold text-blue-600 dark:text-[#4ade80] mb-2">5. Transparência sobre IA</h2>
+                <p class="text-gray-700 dark:text-slate-300 leading-relaxed">O Google permite conteúdo assistido por IA quando há valor real para o leitor. No Clareza Capital a IA redige a análise; dados oficiais, acervo e orientação prática são o ganho informacional. Byline nas matérias e esta página deixam o processo explícito.</p>
+            </div>
+            <div>
+                <h2 class="text-xl font-bold text-blue-600 dark:text-[#4ade80] mb-2">6. Afiliados</h2>
                 <p class="text-gray-700 dark:text-slate-300 leading-relaxed">Links de parceiros só aparecem <em>dentro</em> de páginas com análise editorial completa — nunca como landing só de CTA. Disclaimer de afiliado é exibido junto ao bloco.</p>
             </div>
         </section>
 
         <p class="mt-10 text-sm text-gray-500 dark:text-slate-500">
             Também em <a href="{{ lp('/quem-somos') }}" class="underline">Quem somos</a> ·
+            <a href="{{ lp('/contato') }}" class="underline">Contato</a> ·
             <a href="{{ lp('/privacidade') }}" class="underline">Privacidade</a>
         </p>
     </main>

@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 os.environ.setdefault("ROBO_TOKEN", "test-token-fake")
-os.environ.setdefault("ROBOT_OWN_ANALYSES", "3")
+os.environ.setdefault("ROBOT_OWN_ANALYSES", "5")
 
 import core
 
