@@ -1914,8 +1914,10 @@ def _pexels_use_remote_url() -> bool:
     return is_cloud_host()
 
 
-# Flag setada em HTTP 429 para o backfill/script pausar (tier free ~200 req/h).
-_pexels_rate_limited_flag = False
+# Pausa temporária após HTTP 429 (tier free ~200 req/h). Não é permanente:
+# o processo web fica dias no ar e uma flag eterna impedia qualquer capa nova.
+_pexels_rate_limited_until: float = 0.0
+_PEXELS_RATE_LIMIT_DEFAULT_SECONDS = 50 * 60.0
 
 # IDs de foto Pexels ja usados em capas (DB + sessao) — evita repetir a mesma imagem.
 _USED_PEXELS_LOCK = threading.Lock()
@@ -1923,12 +1925,37 @@ _used_pexels_ids: set[str] | None = None
 
 
 def pexels_rate_limited() -> bool:
-    return bool(_pexels_rate_limited_flag)
+    return time.time() < _pexels_rate_limited_until
 
 
 def clear_pexels_rate_limit() -> None:
-    global _pexels_rate_limited_flag
-    _pexels_rate_limited_flag = False
+    global _pexels_rate_limited_until
+    _pexels_rate_limited_until = 0.0
+
+
+def _pexels_retry_after_seconds(resp) -> float:
+    raw = ""
+    headers = getattr(resp, "headers", None)
+    if headers is not None:
+        raw = str(headers.get("Retry-After") or "").strip()
+    try:
+        seconds = float(raw)
+    except ValueError:
+        seconds = _PEXELS_RATE_LIMIT_DEFAULT_SECONDS
+    return min(max(seconds, 60.0), 3600.0)
+
+
+def _mark_pexels_rate_limited(retry_after: float | None = None) -> None:
+    """Pausa o Pexels por uma janela finita; os outros provedores seguem na fila."""
+    global _pexels_rate_limited_until
+    delay = (
+        float(retry_after)
+        if retry_after is not None and retry_after > 0
+        else _PEXELS_RATE_LIMIT_DEFAULT_SECONDS
+    )
+    delay = min(max(delay, 60.0), 3600.0)
+    _pexels_rate_limited_until = time.time() + delay
+    print(f"   [img/pexels] Rate limit (429) — pausa de {delay:.0f}s, depois tenta de novo.")
 
 
 def clear_used_pexels_cache() -> None:
@@ -2014,9 +2041,8 @@ def _pexels_search(
         "page": max(1, min(int(page), 80)),
     }
     # Uma busca por vez — workers paralelos reusam o pool sem martelar a API.
-    global _pexels_rate_limited_flag
     with _PEXELS_SEARCH_LOCK:
-        if _pexels_rate_limited_flag:
+        if pexels_rate_limited():
             return []
         try:
             resp = requests.get(
@@ -2047,8 +2073,7 @@ def _pexels_search(
             print("   [img/pexels] Token invalido (401).")
             return []
         if resp.status_code == 429:
-            _pexels_rate_limited_flag = True
-            print("   [img/pexels] Rate limit (429) — pulando.")
+            _mark_pexels_rate_limited(_pexels_retry_after_seconds(resp))
             return []
         if resp.status_code != 200:
             print(f"   [img/pexels] HTTP {resp.status_code} na busca.")
@@ -2924,6 +2949,9 @@ def generate_article_image(
 
     for provider in providers:
         if provider == "pexels":
+            if pexels_rate_limited():
+                print("   [img/pexels] Em pausa por rate limit — proximo provedor.")
+                continue
             if not get_pexels_api_key():
                 print("   [img/pexels] PEXELS_API_KEY ausente — pulando.")
                 continue
@@ -3091,8 +3119,6 @@ def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[
         article_id = int(row[0])
         titulo, tag, link, resumo = row[1], row[2], row[3] or "", row[4] or ""
         print(f"   [img] Capa pendente #{article_id}: {(titulo or '')[:60]}...")
-        if pexels_rate_limited():
-            return article_id, titulo or "", None, "rate_limit"
         url = generate_article_image(
             titulo,
             tag,
@@ -3132,9 +3158,6 @@ def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[
     results: list[tuple[int, str, str | None, str]] = []
     if workers == 1:
         for row in rows:
-            if pexels_rate_limited():
-                failed.append({"id": int(row[0]), "titulo": "rate_limit_429"})
-                break
             results.append(_process_row(row))
     else:
         with ThreadPoolExecutor(max_workers=workers) as executor:

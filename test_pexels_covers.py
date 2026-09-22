@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import os
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -229,6 +230,50 @@ def test_pexels_generate_saves_file(tmp_path: Path | None = None):
     core.clear_pexels_pool()
 
 
+def test_pexels_429_is_temporary():
+    core.clear_pexels_rate_limit()
+    resp = MagicMock(status_code=429)
+    resp.headers = {"Retry-After": "90"}
+    with patch("core.requests.get", return_value=resp):
+        photos = core._pexels_search("key", "economy", 1, True)
+    assert photos == []
+    assert core.pexels_rate_limited() is True
+    assert core._pexels_rate_limited_until <= time.time() + 120
+    core.clear_pexels_rate_limit()
+    assert core.pexels_rate_limited() is False
+
+
+def test_generate_falls_through_when_pexels_rate_limited():
+    core.clear_pexels_rate_limit()
+    core._mark_pexels_rate_limited(90)
+    os.environ["IMAGE_PROVIDER"] = "pexels,gemini"
+    try:
+        with patch.object(core, "get_pexels_api_key", return_value="fake-key"):
+            with patch.object(core, "get_gemini_api_keys", return_value=["fake-gemini"]):
+                with patch.object(core, "_resolve_existing_article_image", return_value=None):
+                    with patch.object(
+                        core,
+                        "_generate_article_image_pexels",
+                    ) as pexels:
+                        with patch.object(
+                            core,
+                            "_generate_article_image_gemini",
+                            return_value="/media/articles/fallback.jpg",
+                        ) as gemini:
+                            url = core.generate_article_image(
+                                "Selic e credito",
+                                "Juros",
+                                "https://example.com/capa-fallback",
+                                use_openai=False,
+                            )
+        assert url == "/media/articles/fallback.jpg"
+        pexels.assert_not_called()
+        gemini.assert_called_once()
+    finally:
+        os.environ.pop("IMAGE_PROVIDER", None)
+        core.clear_pexels_rate_limit()
+
+
 def test_pexels_skipped_without_key():
     with patch.dict(os.environ, {"PEXELS_API_KEY": ""}, clear=False):
         os.environ.pop("PEXELS_API_KEY", None)
@@ -251,5 +296,7 @@ if __name__ == "__main__":
     test_pexels_use_remote_url_defaults_on_railway()
     test_pexels_skips_already_used_photo_id()
     test_pexels_generate_saves_file()
+    test_pexels_429_is_temporary()
+    test_generate_falls_through_when_pexels_rate_limited()
     test_pexels_skipped_without_key()
     print("PASS: test_pexels_covers")
