@@ -2,6 +2,7 @@
 __pycache__/
 venv/
 .venv/
+.tools/
 node_modules/
 tools/tailwindcss.exe
 tools/tailwindcss

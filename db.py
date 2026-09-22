@@ -260,6 +260,14 @@ def log_runtime_config_checklist() -> None:
 
 
 def _configure_ssl_certs() -> None:
+    # Com SSL_VERIFY=false (MITM/antivírus no Windows), NÃO injeta CA bundle:
+    # REQUESTS_CA_BUNDLE/SSL_CERT_FILE fazem o urllib3 voltar a validar e falhar
+    # mesmo com session.verify=False.
+    if not _http_verify():
+        for key in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE"):
+            _ = os.environ.pop(key, None)
+        return
+
     try:
         import certifi
 

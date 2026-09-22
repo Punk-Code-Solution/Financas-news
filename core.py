@@ -206,6 +206,11 @@ _openai_last_image_at: float = 0.0
 
 
 def _configure_ssl_certs() -> None:
+    # Alinhado a db._configure_ssl_certs: com SSL_VERIFY=false nao injeta CA bundle.
+    if not _ssl_verify_enabled():
+        for key in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE"):
+            _ = os.environ.pop(key, None)
+        return
     try:
         import certifi
 
@@ -3030,6 +3035,11 @@ def _cover_url_ready(imagem_url: str | None) -> bool:
     if not imagem_url:
         return False
     url = str(imagem_url).strip()
+    if not url:
+        return False
+    # Placeholder de categoria nao conta como capa editorial.
+    if "/media/default/" in url:
+        return False
     if url.startswith(("http://", "https://")):
         return True
     return _media_file_exists(url)
@@ -3049,7 +3059,9 @@ def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[
         """
         SELECT id, titulo, tag, link, resumo, imagem_url
         FROM news
-        WHERE imagem_url IS NULL OR TRIM(COALESCE(imagem_url, '')) = ''
+        WHERE imagem_url IS NULL
+           OR TRIM(COALESCE(imagem_url, '')) = ''
+           OR imagem_url LIKE '%/media/default/%'
         ORDER BY id DESC
         LIMIT ?
         """,
@@ -3058,13 +3070,31 @@ def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[
 
     rows: list[Any] = []
     repaired_ids: list[int] = []
+    seen_ids: set[int] = set()
     for row in result.rows:
+        article_id = int(row[0])
+        if article_id in seen_ids:
+            continue
+        seen_ids.add(article_id)
         rows.append(row)
         if len(rows) >= limit:
             break
 
     if repair_broken and len(rows) < limit:
-        broken_scan = max(limit * 40, 80)
+        # 1) Caminhos /media/articles locais (quebrados apos deploy sem volume).
+        # 2) Qualquer URL recente nao-pronta (fallback generico).
+        broken_scan = max(limit * 80, 400)
+        media_rows = client_db.execute(
+            """
+            SELECT id, titulo, tag, link, resumo, imagem_url
+            FROM news
+            WHERE imagem_url LIKE '/media/%'
+               OR imagem_url LIKE '%/media/articles/%'
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            [broken_scan],
+        ).rows
         recent = client_db.execute(
             """
             SELECT id, titulo, tag, link, resumo, imagem_url
@@ -3074,14 +3104,17 @@ def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[
             LIMIT ?
             """,
             [broken_scan],
-        )
-        for row in recent.rows:
+        ).rows
+
+        for row in list(media_rows) + list(recent):
             if len(rows) >= limit:
                 break
             article_id = int(row[0])
+            if article_id in seen_ids:
+                continue
             imagem_url = row[5] if len(row) > 5 else None
-            # Só repara caminhos locais quebrados. URL http(s) (Pexels CDN etc.)
-            # é capa válida — _media_file_exists falharia e apagaria capas remotas.
+            # Só repara caminhos locais quebrados / placeholders.
+            # URL http(s) (Pexels CDN etc.) é capa válida.
             if not _cover_url_ready(imagem_url):
                 print(
                     f"   [img] URL quebrada #{article_id}: {imagem_url} "
@@ -3092,6 +3125,7 @@ def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[
                     [article_id],
                 )
                 repaired_ids.append(article_id)
+                seen_ids.add(article_id)
                 rows.append(row)
 
     updated: list[dict[str, Any]] = []
@@ -3169,7 +3203,9 @@ def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[
                     print(f"   [img] Worker falhou: {exc}")
 
     for article_id, titulo, imagem_url, status in results:
-        if status == "rate_limit" or pexels_rate_limited() and not imagem_url:
+        # Nao abortar o lote so porque o Pexels esta em pausa: outros provedores
+        # podem ter gerado URL; se nao geraram, conta como falha normal.
+        if status == "rate_limit":
             failed.append({"id": article_id, "titulo": "rate_limit_429"})
             continue
         if imagem_url and _cover_url_ready(imagem_url):
@@ -3181,7 +3217,8 @@ def backfill_missing_images(limit: int = 1, repair_broken: bool = True) -> dict[
         else:
             if imagem_url and not _cover_url_ready(imagem_url):
                 print(f"   [img] Arquivo nao persistiu apos gerar ({imagem_url}) — nao atualiza DB.")
-            failed.append({"id": article_id, "titulo": (titulo or "")[:80]})
+            label = "rate_limit_429" if pexels_rate_limited() and not imagem_url else (titulo or "")[:80]
+            failed.append({"id": article_id, "titulo": label})
 
     client_db.close()
     return {

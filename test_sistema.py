@@ -295,6 +295,10 @@ def run() -> int:
             "cover_url_ready: /media local inexistente NÃO é válida",
             not core._cover_url_ready("/media/articles/arquivo-inexistente-xyz.png"),
         )
+        check(
+            "cover_url_ready: placeholder /media/default NÃO é capa editorial",
+            not core._cover_url_ready("/media/default/economia.svg?v=3"),
+        )
         os.environ.pop("IMAGE_PROVIDER", None)
 
         # Evita cookie lang=en/ja afetar o restante da suíte (padrão PT).
