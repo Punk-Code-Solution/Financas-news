@@ -251,27 +251,53 @@ def test_generate_falls_through_when_pexels_rate_limited():
         with patch.object(core, "get_pexels_api_key", return_value="fake-key"):
             with patch.object(core, "get_gemini_api_keys", return_value=["fake-gemini"]):
                 with patch.object(core, "_resolve_existing_article_image", return_value=None):
-                    with patch.object(
-                        core,
-                        "_generate_article_image_pexels",
-                    ) as pexels:
+                    with patch.object(core, "_pexels_reuse_existing_cover", return_value=None):
                         with patch.object(
                             core,
-                            "_generate_article_image_gemini",
-                            return_value="/media/articles/fallback.jpg",
-                        ) as gemini:
-                            url = core.generate_article_image(
-                                "Selic e credito",
-                                "Juros",
-                                "https://example.com/capa-fallback",
-                                use_openai=False,
-                            )
+                            "_generate_article_image_pexels",
+                        ) as pexels:
+                            with patch.object(
+                                core,
+                                "_generate_article_image_gemini",
+                                return_value="/media/articles/fallback.jpg",
+                            ) as gemini:
+                                url = core.generate_article_image(
+                                    "Selic e credito",
+                                    "Juros",
+                                    "https://example.com/capa-fallback",
+                                    use_openai=False,
+                                )
         assert url == "/media/articles/fallback.jpg"
         pexels.assert_not_called()
         gemini.assert_called_once()
     finally:
         os.environ.pop("IMAGE_PROVIDER", None)
         core.clear_pexels_rate_limit()
+
+
+def test_generate_reuses_acervo_when_pexels_rate_limited():
+    core.clear_pexels_rate_limit()
+    core.clear_pexels_reuse_cache()
+    core._mark_pexels_rate_limited(90)
+    os.environ["IMAGE_PROVIDER"] = "pexels,gemini"
+    stock = "https://images.pexels.com/photos/999999/finance.jpeg"
+    try:
+        with patch.object(core, "_resolve_existing_article_image", return_value=None):
+            with patch.object(core, "_pexels_reuse_existing_cover", return_value=stock) as reuse:
+                with patch.object(core, "_generate_article_image_gemini") as gemini:
+                    url = core.generate_article_image(
+                        "Ibovespa sobe",
+                        "Mercado",
+                        "https://example.com/capa-reuse",
+                        use_openai=False,
+                    )
+        assert url == stock
+        reuse.assert_called_once()
+        gemini.assert_not_called()
+    finally:
+        os.environ.pop("IMAGE_PROVIDER", None)
+        core.clear_pexels_rate_limit()
+        core.clear_pexels_reuse_cache()
 
 
 def test_pexels_skipped_without_key():
@@ -298,5 +324,6 @@ if __name__ == "__main__":
     test_pexels_generate_saves_file()
     test_pexels_429_is_temporary()
     test_generate_falls_through_when_pexels_rate_limited()
+    test_generate_reuses_acervo_when_pexels_rate_limited()
     test_pexels_skipped_without_key()
     print("PASS: test_pexels_covers")

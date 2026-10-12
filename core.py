@@ -2025,6 +2025,64 @@ def clear_pexels_pool() -> None:
         _PEXELS_POOL_NEXT_PAGE.clear()
 
 
+_PEXELS_REUSE_CACHE: list[str] | None = None
+_PEXELS_REUSE_LOCK = threading.Lock()
+
+
+def clear_pexels_reuse_cache() -> None:
+    global _PEXELS_REUSE_CACHE
+    with _PEXELS_REUSE_LOCK:
+        _PEXELS_REUSE_CACHE = None
+
+
+def _pexels_reuse_existing_cover(slug: str) -> str | None:
+    """Reusa URL CDN Pexels já gravada no acervo (sem chamar a API).
+
+    Útil quando a cota/429 do Pexels impede busca nova: o CDN continua
+    público e o portal já tem milhares de capas válidas para variar.
+    """
+    global _PEXELS_REUSE_CACHE
+    with _PEXELS_REUSE_LOCK:
+        urls = _PEXELS_REUSE_CACHE
+    if urls is None:
+        loaded: list[str] = []
+        try:
+            client_db = get_db()
+            rows = client_db.execute(
+                """
+                SELECT imagem_url FROM news
+                WHERE imagem_url LIKE '%images.pexels.com/photos/%'
+                  AND TRIM(COALESCE(imagem_url, '')) != ''
+                ORDER BY id DESC
+                LIMIT 1200
+                """
+            ).rows
+            client_db.close()
+            seen: set[str] = set()
+            for row in rows:
+                raw = str(row[0] or "").strip()
+                if not raw.startswith("http") or raw in seen:
+                    continue
+                if _cover_url_ready(raw):
+                    seen.add(raw)
+                    loaded.append(raw)
+                if len(loaded) >= 800:
+                    break
+        except Exception as exc:
+            print(f"   [img/pexels] Falha ao carregar acervo para reuso: {exc}")
+            return None
+        with _PEXELS_REUSE_LOCK:
+            _PEXELS_REUSE_CACHE = loaded
+            urls = loaded
+        print(f"   [img/pexels] Acervo reutilizavel: {len(urls)} URL(s)")
+    if not urls:
+        return None
+    idx = int(hashlib.sha256((slug or "cover").encode()).hexdigest(), 16) % len(urls)
+    chosen = urls[idx]
+    print(f"   [img/pexels] Reuso de acervo (API indisponivel): {chosen[:80]}...")
+    return chosen
+
+
 def _pexels_photo_url(photo: dict[str, Any] | None) -> str | None:
     if not photo:
         return None
@@ -2955,14 +3013,26 @@ def generate_article_image(
     for provider in providers:
         if provider == "pexels":
             if pexels_rate_limited():
-                print("   [img/pexels] Em pausa por rate limit — proximo provedor.")
+                print("   [img/pexels] Em pausa por rate limit — tentando reuso do acervo.")
+                reused = _pexels_reuse_existing_cover(slug)
+                if reused:
+                    return reused
+                print("   [img/pexels] Sem reuso — proximo provedor.")
                 continue
             if not get_pexels_api_key():
-                print("   [img/pexels] PEXELS_API_KEY ausente — pulando.")
+                print("   [img/pexels] PEXELS_API_KEY ausente — tentando reuso do acervo.")
+                reused = _pexels_reuse_existing_cover(slug)
+                if reused:
+                    return reused
+                print("   [img/pexels] Sem chave/reuso — pulando.")
                 continue
             url = _generate_article_image_pexels(title, tag, resumo, slug)
             if url:
                 return url
+            if pexels_rate_limited():
+                reused = _pexels_reuse_existing_cover(slug)
+                if reused:
+                    return reused
             print("   [img/pexels] Sem capa — proximo provedor.")
             continue
 

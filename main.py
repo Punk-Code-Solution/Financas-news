@@ -2437,14 +2437,11 @@ def ping():
     return {"status": "Render acordado!"}
 
 
-@app.get("/api/gerar-imagens")
-def gerar_imagens(request: Request, token: str | None = None, limit: int = 1):
-    """Gera capas pendentes (Pexels/stock rápido; IA como fallback). Prioriza noticias novas."""
-    require_robo_auth(request, token)
+_gerar_imagens_lock = threading.Lock()
 
-    # Stock permite lotes maiores; IA ainda respeita cotas internas.
-    limit = max(1, min(limit, 40))
-    print(f"Gerando imagens para ate {limit} artigos sem capa (prioridade: novas)...")
+
+def _execute_gerar_imagens(limit: int) -> dict[str, Any]:
+    print(f"Gerando imagens para ate {limit} artigos sem capa (prioridade: novas)...", flush=True)
     resultado = core.backfill_missing_images(limit=limit)
     _invalidate_home_cache()
     return {
@@ -2455,6 +2452,54 @@ def gerar_imagens(request: Request, token: str | None = None, limit: int = 1):
         "pexels_key": bool(core.get_pexels_api_key()),
         "pexels_remote_url": core._pexels_use_remote_url(),
     }
+
+
+@app.get("/api/gerar-imagens")
+def gerar_imagens(request: Request, token: str | None = None, limit: int = 1):
+    """Gera capas pendentes (Pexels/stock rápido; IA como fallback). Prioriza noticias novas.
+
+    Em host cloud, lotes > 1 rodam em segundo plano (202) para não estourar
+    o proxy (Cloudflare 524) quando a IA entra como fallback.
+    """
+    require_robo_auth(request, token)
+
+    # Stock permite lotes maiores; IA ainda respeita cotas internas.
+    limit = max(1, min(limit, 40))
+    run_async = _robo_runs_async() and limit > 1
+    if run_async:
+        if not _gerar_imagens_lock.acquire(blocking=False):
+            return JSONResponse(
+                {"status": "Ignorado", "detail": "Geracao de capas ja em execucao"},
+                status_code=202,
+            )
+
+        def _job() -> None:
+            try:
+                _execute_gerar_imagens(limit)
+            except Exception as exc:
+                print(
+                    f"   [img] falha em background: {type(exc).__name__}: {exc}",
+                    flush=True,
+                )
+                traceback.print_exc()
+            finally:
+                _gerar_imagens_lock.release()
+
+        try:
+            threading.Thread(target=_job, name="gerar-imagens", daemon=True).start()
+        except Exception:
+            _gerar_imagens_lock.release()
+            raise
+        return JSONResponse(
+            {
+                "status": "Aceito",
+                "detail": f"Backfill de ate {limit} capa(s) iniciado em segundo plano.",
+                "limit": limit,
+            },
+            status_code=202,
+        )
+
+    return _execute_gerar_imagens(limit)
 
 
 @app.get("/api/gerar-analises-proprias")
