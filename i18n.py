@@ -9,45 +9,22 @@ from fastapi import Request
 
 # Marca + pilares para SEO (meta keywords + schema.org). Legado leve = equity de busca.
 SITE_BRAND_KEYWORDS: list[str] = [
-    # Marca atual
     "clareza capital",
-    "clareza",
     "clarezacapital",
-    # Equity legado (sem stuffing)
     "finanças news",
     "financas news",
-    "financas-news",
-    # Pilares do produto
     "notícias financeiras",
     "análise financeira",
-    "analise financeira",
     "radar de mercado",
-    "painel de mercado",
     "economia brasil",
-    "economia brasileira",
     "mercado financeiro",
     "mercado de capitais",
     "investimentos",
-    "ações",
-    "acoes",
-    "criptomoedas",
-    "bitcoin",
-    "dólar",
-    "dolar",
-    "euro",
     "selic",
     "ipca",
-    "inflação",
-    "inflacao",
-    "juros",
+    "dólar",
+    "bitcoin",
     "banco central",
-    "newsletter financeira",
-    "metodologia editorial",
-    "fintech",
-    "commodities",
-    "renda fixa",
-    "câmbio",
-    "cambio",
 ]
 
 SITE_BRAND_ALTERNATE_NAMES: list[str] = [
@@ -1245,7 +1222,8 @@ def build_i18n_context(request: Request) -> dict[str, Any]:
         "canonical_url": canonical_url,
         "robots_noindex": robots_noindex,
         "hreflang_urls": hreflang_urls,
-        "default_og_image": f"{site_origin}/media/default/economia.svg?v=3",
+        "default_og_image": f"{site_origin}/static/brand/og-default.png",
+        "brand_logo_url": f"{site_origin}/static/brand/logo-512.png",
         # Institucionais: hreflang EN/JA. Artigos sobrescrevem via _render_noticia_page.
         "hreflang_full": True,
         "lp": lambda path, current=lang: localized_path(path, current),

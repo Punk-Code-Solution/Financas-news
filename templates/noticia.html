@@ -20,8 +20,7 @@
     <script src="/static/js/adsense-loader.js" defer></script>
     {% endif %}
 
-    {% set meta_desc = (noticia[2] or '')|replace('\n', ' ')|trim %}
-    {% if meta_desc|length > 160 %}{% set meta_desc = meta_desc[:157] ~ '…' %}{% endif %}
+    {% set meta_desc = clip_meta_description(noticia[2] or '') %}
     <meta name="description" content="{{ meta_desc }}">
     {% if robots_noindex %}
     <meta name="robots" content="noindex, follow">
@@ -35,7 +34,10 @@
     <meta property="og:description" content="{{ meta_desc }}" />
     <meta property="og:url" content="{{ canonical_url }}" />
     <meta property="og:site_name" content="{{ t('site_name') }}" />
-    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:locale" content="{{ 'pt_BR' if lang == 'pt' else ('en_US' if lang == 'en' else 'ja_JP') }}" />
+    {% if lang != 'en' %}<meta property="og:locale:alternate" content="en_US" />{% endif %}
+    {% if lang != 'ja' %}<meta property="og:locale:alternate" content="ja_JP" />{% endif %}
+    {% if lang != 'pt' %}<meta property="og:locale:alternate" content="pt_BR" />{% endif %}
     {% set og_image = article_cover(noticia[11], noticia[5]) %}
     {% set og_image_abs = og_image if og_image.startswith('http') else (site_origin ~ og_image) %}
     <meta property="og:image" content="{{ og_image_abs }}" />
@@ -65,7 +67,7 @@
         "datePublished": {{ (published_iso or noticia[7] or '') | tojson }},
         "dateModified": {{ (updated_iso or published_iso or noticia[7] or '') | tojson }},
         "articleSection": {{ (noticia[5] or 'Economia') | tojson }},
-        "inLanguage": "pt-BR",
+        "inLanguage": {{ html_lang | tojson }},
         "mainEntityOfPage": {
             "@type": "WebPage",
             "@id": {{ canonical_url | tojson }}
@@ -82,7 +84,7 @@
             "url": {{ site_origin | tojson }},
             "logo": {
                 "@type": "ImageObject",
-                "url": {{ (site_origin ~ '/static/favicon.svg?v=2') | tojson }}
+                "url": {{ brand_logo_url | tojson }}
             },
             "knowsAbout": {{ site_topic_keywords | tojson }}
         }

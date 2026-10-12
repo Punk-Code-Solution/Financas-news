@@ -31,8 +31,13 @@
     {% endif %}
     <meta property="og:url" content="{{ canonical_url }}" />
     <meta property="og:site_name" content="{{ t('site_name') }}" />
-    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:locale" content="{{ 'pt_BR' if lang == 'pt' else ('en_US' if lang == 'en' else 'ja_JP') }}" />
+    {% if lang != 'en' %}<meta property="og:locale:alternate" content="en_US" />{% endif %}
+    {% if lang != 'ja' %}<meta property="og:locale:alternate" content="ja_JP" />{% endif %}
+    {% if lang != 'pt' %}<meta property="og:locale:alternate" content="pt_BR" />{% endif %}
     <meta property="og:image" content="{{ default_og_image }}" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
     {% if categoria_ativa and not q %}
     <meta name="twitter:title" content="{{ t('meta_category_og_title', tag=tr_tag(categoria_ativa)) }}" />
@@ -81,7 +86,7 @@
                 "description": {{ t('meta_home_description') | tojson }},
                 "logo": {
                     "@type": "ImageObject",
-                    "url": {{ (site_origin ~ '/static/favicon.svg?v=2') | tojson }}
+                    "url": {{ brand_logo_url | tojson }}
                 },
                 "sameAs": [
                     "https://www.punkcodesolution.com.br/"

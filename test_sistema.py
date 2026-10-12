@@ -107,6 +107,12 @@ def run() -> int:
         r = client.get("/feed.xml")
         check("GET /feed.xml", r.status_code == 200 and "<rss" in r.text, f"status={r.status_code}")
         check("Feed RSS: channel", "<channel>" in r.text)
+        if "<pubDate>" in r.text:
+            check(
+                "Feed RSS: pubDate RFC-822",
+                "GMT" in r.text or "+" in r.text.split("<pubDate>")[1][:40],
+                r.text[r.text.find("<pubDate>") : r.text.find("<pubDate>") + 50],
+            )
 
         r = client.get("/feed.atom")
         check("GET /feed.atom", r.status_code == 200 and "<feed" in r.text, f"status={r.status_code}")
@@ -121,8 +127,17 @@ def run() -> int:
             check(f"GET {path}", r.status_code == 200 and "FINAN" in r.text.upper(), f"status={r.status_code}")
 
         r = client.get("/sitemap.xml")
-        check("sitemap inclui /mercado", r.status_code == 200 and "/mercado" in r.text)
-        check("sitemap inclui /metodologia", "/metodologia" in r.text)
+        check(
+            "sitemap index",
+            r.status_code == 200 and "sitemapindex" in r.text and "/sitemap-pages.xml" in r.text,
+            f"status={r.status_code}",
+        )
+        check("sitemap index lista news", "/sitemap-news/1.xml" in r.text)
+        r = client.get("/sitemap-pages.xml")
+        check("sitemap-pages inclui /mercado", r.status_code == 200 and "/mercado" in r.text)
+        check("sitemap-pages inclui /metodologia", "/metodologia" in r.text)
+        r = client.get("/sitemap-news/1.xml")
+        check("sitemap-news página 1", r.status_code == 200 and "urlset" in r.text, f"status={r.status_code}")
 
         r = client.get("/mercado")
         check("Mercado: Selic/IPCA", "14.25" in r.text or "Selic" in r.text)

@@ -6,10 +6,11 @@ import threading
 import time
 import traceback
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 from fastapi import FastAPI, Request, Response, HTTPException, Form, File, UploadFile
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -360,6 +361,9 @@ def _request_headers_map(request: Request) -> dict[str, str]:
 
 @app.middleware("http")
 async def security_and_cache_headers(request: Request, call_next):
+    host_redirect = _canonical_host_redirect(request)
+    if host_redirect is not None:
+        return host_redirect
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -452,23 +456,87 @@ templates.env.globals["category_image"] = category_image_url
 templates.env.globals["article_cover"] = article_cover_url
 
 SITE_ORIGIN = os.getenv("SITE_ORIGIN", "https://financas-news.net.br").rstrip("/")
+BRT_TZ = timezone(timedelta(hours=-3))
+SITEMAP_NEWS_PAGE_SIZE = 2000
+BRAND_OG_PATH = "/static/brand/og-default.png"
+BRAND_LOGO_PATH = "/static/brand/logo-512.png"
+
+
+def _ensure_tz(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=BRT_TZ)
+    return dt
 
 
 def _to_iso8601(value: object) -> str | None:
-    """Converte datas do portal (dd/mm/YYYY HH:MM) para ISO-8601 (SEO/schema)."""
+    """Converte datas do portal (dd/mm/YYYY HH:MM) para ISO-8601 com fuso (SEO/schema)."""
     if value is None:
         return None
     text = str(value).strip()
     if not text:
         return None
-    if re.match(r"^\d{4}-\d{2}-\d{2}", text):
+    if re.search(r"(Z|[+-]\d{2}:?\d{2})$", text, re.IGNORECASE):
         return text.replace(" ", "T", 1) if " " in text and "T" not in text else text
+    if re.match(r"^\d{4}-\d{2}-\d{2}", text):
+        normalized = text.replace(" ", "T", 1) if " " in text and "T" not in text else text
+        try:
+            dt = datetime.fromisoformat(normalized)
+        except ValueError:
+            return normalized
+        return _ensure_tz(dt).isoformat()
     for fmt in ("%d/%m/%Y %H:%M", "%d/%m/%Y"):
         try:
-            return datetime.strptime(text, fmt).isoformat()
+            return _ensure_tz(datetime.strptime(text, fmt)).isoformat()
         except ValueError:
             continue
     return None
+
+
+def _to_rfc822(value: object) -> str:
+    """Data RFC-822 para RSS 2.0 (<pubDate>)."""
+    iso = _to_iso8601(value)
+    if iso:
+        try:
+            return format_datetime(_ensure_tz(datetime.fromisoformat(iso)))
+        except ValueError:
+            pass
+    return format_datetime(datetime.now(tz=BRT_TZ))
+
+
+def clip_meta_description(text: object, limit: int = 157) -> str:
+    """Trunca description SEO no último espaço (evita cortar palavra)."""
+    raw = re.sub(r"\s+", " ", str(text or "").strip())
+    if len(raw) <= limit:
+        return raw
+    cut = raw[:limit].rsplit(" ", 1)[0].rstrip(" ,.;:!-")
+    if len(cut) < max(40, limit // 3):
+        cut = raw[:limit].rstrip()
+    return f"{cut}…"
+
+
+def _canonical_host_redirect(request: Request) -> RedirectResponse | None:
+    """301 entre www/apex para o host de SITE_ORIGIN (evita conteúdo duplicado)."""
+    try:
+        canonical_host = (urlparse(SITE_ORIGIN).hostname or "").lower()
+    except Exception:
+        return None
+    if not canonical_host:
+        return None
+    raw_host = (request.headers.get("host") or request.url.hostname or "").split(":")[0].lower()
+    if not raw_host or raw_host in {"localhost", "127.0.0.1", "testserver", "0.0.0.0"}:
+        return None
+    apex = canonical_host[4:] if canonical_host.startswith("www.") else canonical_host
+    pair = {apex, f"www.{apex}"}
+    if raw_host not in pair or raw_host == canonical_host:
+        return None
+    query = {k: v for k, v in request.query_params.multi_items()}
+    target = absolute_url(SITE_ORIGIN, request.url.path or "/", query or None)
+    return RedirectResponse(url=target, status_code=301)
+
+
+templates.env.globals["clip_meta_description"] = clip_meta_description
+templates.env.globals["brand_logo_path"] = BRAND_LOGO_PATH
+templates.env.globals["brand_og_path"] = BRAND_OG_PATH
 
 
 def _guide_slug_from_link(link: object) -> str | None:
@@ -1913,7 +1981,7 @@ def _feed_rows(limit: int = RSS_FEED_LIMIT) -> list[Any]:
 
 def _row_pub_iso(row: tuple | list) -> str:
     iso = _to_iso8601(row[7] if len(row) > 7 else None)
-    return iso or datetime.now().isoformat()
+    return iso or datetime.now(tz=BRT_TZ).isoformat()
 
 
 def _build_rss_xml(rows: list[Any]) -> str:
@@ -1931,7 +1999,7 @@ def _build_rss_xml(rows: list[Any]) -> str:
         nid = int(row[0])
         titulo = _xml_escape(row[1])
         resumo = _xml_escape((str(row[2] or ""))[:500])
-        pub = _xml_escape(_row_pub_iso(row))
+        pub = _xml_escape(_to_rfc822(row[7] if len(row) > 7 else None))
         link = _xml_escape(absolute_url(SITE_ORIGIN, f"/noticia/{nid}"))
         parts.extend(
             [
@@ -1949,7 +2017,7 @@ def _build_rss_xml(rows: list[Any]) -> str:
 
 
 def _build_atom_xml(rows: list[Any]) -> str:
-    updated = _row_pub_iso(rows[0]) if rows else datetime.now().isoformat()
+    updated = _row_pub_iso(rows[0]) if rows else datetime.now(tz=BRT_TZ).isoformat()
     parts = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<feed xmlns="http://www.w3.org/2005/Atom">',
@@ -1999,9 +2067,7 @@ def get_feed_atom():
     )
 
 
-@app.get("/sitemap.xml", response_class=Response)
-def get_sitemap():
-    client = get_db()
+def _sitemap_guide_ids(client: Any) -> set[int]:
     guide_ids: set[int] = set()
     for guide in EDUCATIONAL_GUIDES:
         try:
@@ -2010,29 +2076,26 @@ def get_sitemap():
                 guide_ids.add(int(nid))
         except Exception:
             continue
+    return guide_ids
 
-    # Só artigos com corpo mínimo (evita thin/legado no sitemap).
-    # Prioriza capas presentes — sinal forte para Discover/indexação.
-    noticias: list[Any] = []
+
+def _sitemap_indexable_count(client: Any) -> int:
     try:
-        result = client.execute(
+        raw = client.execute(
             """
-            SELECT id,
-                   COALESCE(NULLIF(updated_at, ''), NULLIF(published_at, ''), created_at) AS lastmod
-            FROM news
+            SELECT COUNT(*) FROM news
             WHERE LENGTH(COALESCE(resumo, '')) >= ?
-            ORDER BY
-              CASE WHEN imagem_url IS NOT NULL AND TRIM(imagem_url) != '' THEN 0 ELSE 1 END,
-              id DESC
-            LIMIT 500
             """,
             [THIN_RESUMO_CHARS],
-        )
-        noticias = result.rows
+        ).rows[0][0]
+        return int(raw)
     except Exception as exc:
-        print(f"   [sitemap] Turso falhou ({type(exc).__name__}); só URLs estáticas.", flush=True)
+        print(f"   [sitemap] contagem falhou ({type(exc).__name__})", flush=True)
+        return 0
 
-    today = datetime.now().date().isoformat()
+
+def _sitemap_static_entries() -> list[tuple[str, str, str, str]]:
+    today = datetime.now(tz=BRT_TZ).date().isoformat()
     static_urls = [
         (absolute_url(SITE_ORIGIN, "/"), "daily", "1.0", today),
         (absolute_url(SITE_ORIGIN, "/quem-somos"), "monthly", "0.6", today),
@@ -2050,17 +2113,85 @@ def get_sitemap():
         static_urls.append(
             (absolute_url(SITE_ORIGIN, f"/artigo/{guide['slug']}"), "weekly", "0.9", today)
         )
+    return static_urls
 
+
+@app.get("/sitemap.xml", response_class=Response)
+def get_sitemap():
+    """Sitemap index: páginas estáticas + fatias de notícias (até 2k/arquivo)."""
+    client = get_db()
+    total = _sitemap_indexable_count(client)
+    pages = max(1, (total + SITEMAP_NEWS_PAGE_SIZE - 1) // SITEMAP_NEWS_PAGE_SIZE) if total else 1
+    today = datetime.now(tz=BRT_TZ).date().isoformat()
+    parts = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+        "  <sitemap>"
+        + f"<loc>{_xml_escape(absolute_url(SITE_ORIGIN, '/sitemap-pages.xml'))}</loc>"
+        + f"<lastmod>{today}</lastmod></sitemap>",
+    ]
+    for page in range(1, pages + 1):
+        loc = absolute_url(SITE_ORIGIN, f"/sitemap-news/{page}.xml")
+        parts.append(
+            f"  <sitemap><loc>{_xml_escape(loc)}</loc><lastmod>{today}</lastmod></sitemap>"
+        )
+    parts.append("</sitemapindex>")
+    return Response(
+        content="\n".join(parts),
+        media_type="application/xml",
+        headers={"Cache-Control": "public, max-age=600, stale-while-revalidate=1800"},
+    )
+
+
+@app.get("/sitemap-pages.xml", response_class=Response)
+def get_sitemap_pages():
     xml_parts = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
     ]
-    for loc, changefreq, priority, lastmod in static_urls:
+    for loc, changefreq, priority, lastmod in _sitemap_static_entries():
         xml_parts.append(
-            f"  <url><loc>{loc}</loc><lastmod>{lastmod}</lastmod>"
+            f"  <url><loc>{_xml_escape(loc)}</loc><lastmod>{lastmod}</lastmod>"
             + f"<changefreq>{changefreq}</changefreq><priority>{priority}</priority></url>"
         )
+    xml_parts.append("</urlset>")
+    return Response(
+        content="\n".join(xml_parts),
+        media_type="application/xml",
+        headers={"Cache-Control": "public, max-age=3600, stale-while-revalidate=86400"},
+    )
 
+
+@app.get("/sitemap-news/{page}.xml", response_class=Response)
+def get_sitemap_news(page: int):
+    page = max(1, min(int(page), 500))
+    client = get_db()
+    guide_ids = _sitemap_guide_ids(client)
+    offset = (page - 1) * SITEMAP_NEWS_PAGE_SIZE
+    noticias: list[Any] = []
+    try:
+        result = client.execute(
+            """
+            SELECT id,
+                   COALESCE(NULLIF(updated_at, ''), NULLIF(published_at, ''), created_at) AS lastmod
+            FROM news
+            WHERE LENGTH(COALESCE(resumo, '')) >= ?
+            ORDER BY
+              CASE WHEN imagem_url IS NOT NULL AND TRIM(imagem_url) != '' THEN 0 ELSE 1 END,
+              id DESC
+            LIMIT ? OFFSET ?
+            """,
+            [THIN_RESUMO_CHARS, SITEMAP_NEWS_PAGE_SIZE, offset],
+        )
+        noticias = list(result.rows or [])
+    except Exception as exc:
+        print(f"   [sitemap-news] falhou ({type(exc).__name__})", flush=True)
+
+    today = datetime.now(tz=BRT_TZ).date().isoformat()
+    xml_parts = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ]
     for row in noticias:
         nid = int(row[0])
         if nid in guide_ids:
@@ -2068,13 +2199,16 @@ def get_sitemap():
         lastmod = _to_iso8601(row[1] if len(row) > 1 else None)
         lastmod_date = (lastmod or today)[:10]
         xml_parts.append(
-            f"  <url><loc>{absolute_url(SITE_ORIGIN, f'/noticia/{nid}')}</loc>"
+            f"  <url><loc>{_xml_escape(absolute_url(SITE_ORIGIN, f'/noticia/{nid}'))}</loc>"
             + f"<lastmod>{lastmod_date}</lastmod>"
             + f"<changefreq>weekly</changefreq><priority>0.6</priority></url>"
         )
-
     xml_parts.append("</urlset>")
-    return Response(content="\n".join(xml_parts), media_type="application/xml")
+    return Response(
+        content="\n".join(xml_parts),
+        media_type="application/xml",
+        headers={"Cache-Control": "public, max-age=600, stale-while-revalidate=1800"},
+    )
 
 # ==========================================
 # ROTAS DE INFRAESTRUTURA E ROBÔ
