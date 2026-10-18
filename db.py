@@ -1099,6 +1099,7 @@ def ensure_schema(client: DbClient, *, force: bool = False) -> None:
                 ("content_origin", "TEXT"),
                 ("moderation_status", "TEXT"),
                 ("boost_until", "TEXT"),
+                ("seo_noindex", "INTEGER"),
             ]:
                 try:
                     _ = client.execute(f"ALTER TABLE news ADD COLUMN {col} {col_type}")

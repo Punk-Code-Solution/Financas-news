@@ -1,6 +1,9 @@
 """Remove notícias thin (resumo curto) que prejudicam indexação no Google.
 
-Protege guias evergreen. Uso:
+Protege guias evergreen. Para encolher o índice sem apagar (seo_noindex
+na vitrine curada), use tools/curate_adsense_index.py.
+
+Uso:
   PYTHONPATH=. python tools/purge_thin_news.py --dry-run
   PYTHONPATH=. python tools/purge_thin_news.py --apply
 """

@@ -299,18 +299,53 @@ def get_robot_max_per_feed() -> int:
 
 
 def get_robot_max_articles() -> int:
+    """Teto baixo por padrão (AdSense / anti scaled content)."""
     try:
-        return max(1, min(int(os.getenv("ROBOT_MAX_ARTICLES", "8")), 80))
+        return max(1, min(int(os.getenv("ROBOT_MAX_ARTICLES", "2")), 80))
     except ValueError:
-        return 8
+        return 2
 
 
 def get_robot_own_analyses_count() -> int:
     """Mínimo de análises próprias (a partir do acervo) a gerar por dia."""
     try:
-        return max(0, min(int(os.getenv("ROBOT_OWN_ANALYSES", "5")), 10))
+        return max(0, min(int(os.getenv("ROBOT_OWN_ANALYSES", "1")), 10))
     except ValueError:
-        return 5
+        return 1
+
+
+def robot_paused() -> bool:
+    """Interrompe o robô (Fase 0 AdSense). Default ligado; ROBOT_PAUSED=0 retoma."""
+    raw = os.getenv("ROBOT_PAUSED", "1").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def editorial_review_required() -> bool:
+    """Novas peças do robô entram como pending até aprovação humana."""
+    raw = os.getenv("EDITORIAL_REVIEW_REQUIRED", "1").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def editorial_auto_publish_own() -> bool:
+    """Híbrido B: análises próprias (internal://) podem publicar sem fila."""
+    raw = os.getenv("EDITORIAL_AUTO_PUBLISH_OWN", "1").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def editorial_auto_publish_daily_cap() -> int:
+    """Teto diário de auto-publicação de peças próprias (default 2)."""
+    try:
+        return max(0, min(int(os.getenv("EDITORIAL_AUTO_PUBLISH_DAILY_CAP", "2")), 10))
+    except ValueError:
+        return 2
+
+
+def editorial_auto_publish_min_score() -> int:
+    """Score mínimo (0–100) para auto-publicar análise própria."""
+    try:
+        return max(0, min(int(os.getenv("EDITORIAL_AUTO_PUBLISH_MIN_SCORE", "70")), 100))
+    except ValueError:
+        return 70
 
 
 # Limiar de qualidade para indexação/AdSense (palavras + proxy em caracteres).
@@ -318,12 +353,29 @@ def get_robot_own_analyses_count() -> int:
 MIN_ARTICLE_WORDS = 800
 MIN_ARTICLE_CHARS = 4500
 
+# Peças geradas do acervo / mesa própria (não RSS externo).
+OWN_CONTENT_LINK_PREFIXES = (
+    "internal://analise/",
+    "internal://radar/",
+    "internal://macro/",
+)
+
+
+def is_desk_own_link(link: str | None) -> bool:
+    """True se o link for análise própria, radar ou macro (não RSS)."""
+    raw = (link or "").strip()
+    return any(raw.startswith(prefix) for prefix in OWN_CONTENT_LINK_PREFIXES)
+
 _BANNED_SUMMARY_PHRASES = (
     "segundo a matéria",
     "o texto relata",
     "conforme publicado",
     "de acordo com a matéria",
     "a reportagem diz",
+    "a matéria afirma",
+    "o site informa",
+    "segundo o portal",
+    "como noticiado",
     "no mundo atual",
     "nos dias de hoje",
     "em um mundo cada vez mais",
@@ -331,6 +383,9 @@ _BANNED_SUMMARY_PHRASES = (
     "especialistas dizem",
     "é importante ressaltar",
     "vale destacar que",
+    "não perca tempo",
+    "fique atento",
+    "em suma",
 )
 
 _DIGIT_RE = re.compile(r"\d")
@@ -342,7 +397,27 @@ def count_words(text: str | None) -> int:
     return len(re.findall(r"\w+", str(text), flags=re.UNICODE))
 
 
-def passes_publish_quality_gate(ai_data: dict[str, Any] | None) -> tuple[bool, str]:
+def _token_set(text: str) -> set[str]:
+    return {t for t in re.findall(r"\w+", text.casefold(), flags=re.UNICODE) if len(t) > 3}
+
+
+def source_overlap_ratio(resumo: str, source_text: str | None) -> float:
+    """Fração de tokens do resumo que também aparecem na fonte RSS (parafrase)."""
+    if not source_text:
+        return 0.0
+    # Compara o início do resumo (lead + corpo) com um trecho amplo da fonte.
+    a = _token_set(str(resumo)[:6000])
+    b = _token_set(str(source_text)[:8000])
+    if len(a) < 20 or not b:
+        return 0.0
+    return len(a & b) / float(len(a))
+
+
+def passes_publish_quality_gate(
+    ai_data: dict[str, Any] | None,
+    *,
+    source_text: str | None = None,
+) -> tuple[bool, str]:
     """Valida se a análise IA tem profundidade e informação ganha para publicar/indexar.
 
     Retorna (ok, motivo). Falhas descartam a matéria (não publicam thin no índice).
@@ -378,7 +453,117 @@ def passes_publish_quality_gate(ai_data: dict[str, Any] | None) -> tuple[bool, s
     if numeric_hits < 2 and body_digits < 3:
         return False, "poucos_dados_numericos"
 
+    # Exige âncora numérica no corpo (fato) além das caixas laterais.
+    if body_digits < 4:
+        return False, "corpo_sem_ancoras_numericas"
+
+    overlap = source_overlap_ratio(resumo, source_text or str(ai_data.get("fonte_conteudo") or ""))
+    if overlap >= 0.55:
+        return False, f"parafrase_fonte_overlap={overlap:.2f}"
+
     return True, "ok"
+
+
+def compute_editorial_score(
+    *,
+    resumo: str,
+    impacto: str = "",
+    contexto: str = "",
+    dados_citados: list[Any] | str | None = None,
+    source_text: str | None = None,
+) -> int:
+    """Score 0–100 para priorizar a fila e decidir auto-publish de peças próprias."""
+    resumo = str(resumo or "")
+    impacto = str(impacto or "")
+    contexto = str(contexto or "")
+    score = 0
+
+    words = count_words(resumo)
+    if words >= MIN_ARTICLE_WORDS:
+        score += 30
+    elif words >= 500:
+        score += 15
+    elif words >= 300:
+        score += 5
+
+    body_digits = len(_DIGIT_RE.findall(resumo))
+    score += min(25, body_digits * 3)
+
+    if len(impacto) >= 80:
+        score += 10
+    elif len(impacto) >= 40:
+        score += 5
+    if len(contexto) >= 80:
+        score += 10
+    elif len(contexto) >= 40:
+        score += 5
+
+    if isinstance(dados_citados, list):
+        numeric_hits = sum(1 for d in dados_citados if _DIGIT_RE.search(str(d)))
+    elif dados_citados:
+        numeric_hits = 1 if _DIGIT_RE.search(str(dados_citados)) else 0
+    else:
+        numeric_hits = 0
+    score += min(10, numeric_hits * 3)
+
+    overlap = source_overlap_ratio(resumo, source_text)
+    if source_text:
+        if overlap < 0.25:
+            score += 15
+        elif overlap < 0.40:
+            score += 8
+        elif overlap >= 0.55:
+            score -= 25
+
+    gate_payload = {
+        "resumo_simples": resumo,
+        "impacto_bolso": impacto,
+        "contexto_mercado": contexto,
+        "dados_citados": dados_citados or [],
+    }
+    ok, _ = passes_publish_quality_gate(gate_payload, source_text=source_text)
+    if ok:
+        score += 10
+
+    return max(0, min(100, int(score)))
+
+
+def should_auto_publish_item(
+    *,
+    link: str,
+    resumo: str,
+    impacto: str = "",
+    contexto: str = "",
+    dados_citados: list[Any] | str | None = None,
+    source_text: str | None = None,
+    auto_published_today: int = 0,
+) -> tuple[bool, int, str]:
+    """Híbrido B: só auto-publica desk própria com score alto e dentro do teto diário.
+
+    Retorna (auto_publish, score, motivo).
+    """
+    score = compute_editorial_score(
+        resumo=resumo,
+        impacto=impacto,
+        contexto=contexto,
+        dados_citados=dados_citados,
+        source_text=source_text,
+    )
+    if not editorial_review_required():
+        return True, score, "review_disabled"
+    if not is_desk_own_link(link):
+        return False, score, "rss_requires_human"
+    if not editorial_auto_publish_own():
+        return False, score, "auto_own_disabled"
+    cap = editorial_auto_publish_daily_cap()
+    if cap <= 0:
+        return False, score, "daily_cap_zero"
+    if auto_published_today >= cap:
+        return False, score, "daily_cap_reached"
+    min_score = editorial_auto_publish_min_score()
+    if score < min_score:
+        return False, score, f"score_below_{min_score}"
+    return True, score, "auto_own_ok"
 
 
 def get_robot_politico_max_per_feed() -> int:
@@ -1883,7 +2068,8 @@ def _build_image_prompt(title: str, tag: str, resumo: str = "") -> str:
         + "Strict rules: no text, letters, numbers, logos, watermarks, brand marks, or readable UI; "
         + "no celebrity faces; no generic gold Bitcoin coin piles or repeated crypto wallpaper "
         + "unless the headline is literally about physical coins; avoid looking like a stock template "
-        + "used for every crypto article."
+        + "used for every crypto article. Prefer a data-journalism feel (charts, trading desk screens, "
+        + "policy documents) over generic lifestyle stock photography."
     )
 
 
@@ -3519,11 +3705,13 @@ Sua missão é produzir uma ANÁLISE EDITORIAL ORIGINAL de alto valor — não u
 - OBRIGATÓRIO: usar 2 a 3 âncoras numéricas do TEMA (preço da ação, volume, % do projeto, cota da fonte) — não preencha com o painel BCB.
 - OBRIGATÓRIO: citar pelo menos 1 número alinhado à categoria `{tag_hint}` (da fonte ou da cotação da tag).
 - OBRIGATÓRIO: cruzar com pelo menos 1 indicador BCB/cotação do bloco de dados E 1 trecho/tendência do ACERVO EDITORIAL.
+- OBRIGATÓRIO: pelo menos 1 âncora numérica EXCLUSIVA do fato (preço, %, volume, data, valor citado na fonte) que NÃO seja o painel genérico Selic/IPCA/dólar.
 - OBRIGATÓRIO: tendência 7d/30d só se o indicador for central ao fato.
 - OBRIGATÓRIO: conectar o fato com o cenário macro brasileiro SOMENTE quando fizer sentido editorial.
 - OBRIGATÓRIO: incorporar as 2 lentes analíticas abaixo em paráfrase original (sem citações literais de especialistas).
 - OBRIGATÓRIO: seção prática "O que muda na prática" no guia final — com números do cotidiano BR (CDI, poupança, salário, aluguel, crédito) quando couber.
 - OBRIGATÓRIO: dar orientação prática para o leitor comum (investidor iniciante ou chefe de família).
+- PROIBIDO: reescrever o lead da fonte com sinônimos — se o overlap lexical com o RSS for alto, a peça será descartada.
 - Mínimo de 800 palavras no campo resumo_simples.
 - Tom: jornalístico, analítico, acessível. Você domina tecnologia e finanças, com visão de livre mercado e empreendedorismo.
 
@@ -3915,6 +4103,31 @@ def count_own_analyses_today() -> int:
         return 0
 
 
+def count_auto_publish_own_today() -> int:
+    """Peças desk próprias já publicadas hoje (conta no teto de auto-publish)."""
+    day = datetime.now().strftime("%Y%m%d")
+    try:
+        client = get_db()
+        # link carrega a data no path (analise/radar/macro-YYYYMMDD-...)
+        total = 0
+        for prefix in OWN_CONTENT_LINK_PREFIXES:
+            like = f"{prefix}%{day}%"
+            row = client.execute(
+                """
+                SELECT COUNT(*) FROM news
+                WHERE link LIKE ?
+                  AND (moderation_status IS NULL OR moderation_status = ''
+                       OR moderation_status = 'published')
+                """,
+                [like],
+            ).rows
+            total += int(row[0][0]) if row else 0
+        return total
+    except Exception as exc:
+        print(f"   [auto-publish] Falha ao contar do dia: {exc}")
+        return 0
+
+
 def _fetch_recent_source_news(limit: int = 40) -> list[tuple]:
     """Notícias externas recentes do acervo (exclui guias e análises próprias)."""
     client = get_db()
@@ -4123,7 +4336,7 @@ def generate_own_analyses(count: int | None = None) -> list[dict[str, Any]]:
             print("   [analise-propria] IA não retornou JSON — próximo ângulo.")
             continue
 
-        ok_gate, gate_reason = passes_publish_quality_gate(ai_data)
+        ok_gate, gate_reason = passes_publish_quality_gate(ai_data, source_text=brief)
         if not ok_gate:
             print(f"   [analise-propria] Quality gate: descartado ({gate_reason}).")
             continue
@@ -4285,7 +4498,9 @@ def fetch_and_process(
                 if not ai_data:
                     continue
 
-                ok_gate, gate_reason = passes_publish_quality_gate(ai_data)
+                ok_gate, gate_reason = passes_publish_quality_gate(
+                    ai_data, source_text=clean_text
+                )
                 if not ok_gate:
                     print(f"   ⏭️ Quality gate: descartado ({gate_reason}).")
                     continue
@@ -4441,7 +4656,7 @@ def generate_weekly_radar(*, force: bool = False) -> list[dict[str, Any]]:
         print("   [radar] IA não retornou JSON.")
         return []
 
-    ok_gate, gate_reason = passes_publish_quality_gate(ai_data)
+    ok_gate, gate_reason = passes_publish_quality_gate(ai_data, source_text=brief)
     if not ok_gate:
         print(f"   [radar] Quality gate: descartado ({gate_reason}).")
         return []
@@ -4566,7 +4781,7 @@ def generate_macro_change_article(
         print(f"   [macro-watch] IA falhou para {label} — sem publicar nota thin.")
         return None
 
-    ok_gate, gate_reason = passes_publish_quality_gate(ai_data)
+    ok_gate, gate_reason = passes_publish_quality_gate(ai_data, source_text=brief)
     if not ok_gate:
         print(f"   [macro-watch] Quality gate: descartado ({gate_reason}).")
         return None

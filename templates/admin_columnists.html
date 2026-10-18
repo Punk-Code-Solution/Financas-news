@@ -11,7 +11,21 @@
 <body class="bg-gray-50 dark:bg-[#0f172a] text-gray-800 dark:text-slate-200 min-h-screen">
     <main class="mx-auto max-w-4xl px-4 py-10 space-y-10">
         <h1 class="text-2xl font-black">Admin · Colunistas</h1>
+        <p class="text-sm"><a class="underline" href="/admin/editorial">Fila editorial do robô</a></p>
         {% if flash %}<p class="text-sm {% if flash_ok %}text-green-600{% else %}text-red-600{% endif %}">{{ flash }}</p>{% endif %}
+
+        {% if editorial_queue %}
+        <section>
+            <h2 class="font-black mb-3">Robô · aguardando revisão ({{ editorial_queue|length }})</h2>
+            <p class="text-xs text-gray-500 mb-3">Matérias IA não entram no feed/sitemap até aprovação. <a class="underline" href="/admin/editorial">Abrir fila completa</a></p>
+            {% for a in editorial_queue[:5] %}
+            <div class="rounded-xl border p-4 mb-3 bg-white dark:bg-[#1e293b]">
+                <a class="font-bold hover:underline" href="/noticia/{{ a.id }}">{{ a.titulo }}</a>
+                <p class="text-xs text-gray-500">{{ a.tag }} · {{ a.fonte }} · {{ a.resumo_len }} chars</p>
+            </div>
+            {% endfor %}
+        </section>
+        {% endif %}
 
         <section>
             <h2 class="font-black mb-3">Candidaturas</h2>

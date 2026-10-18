@@ -315,8 +315,9 @@ def require_admin_or_robo(request: Request, token: str | None = None) -> None:
 
 
 def _and_published(sql_has_where: bool) -> str:
+    """Feed/home: só publicados e indexáveis (exclui draft/pending e seo_noindex)."""
     joiner = " AND " if sql_has_where else " WHERE "
-    return joiner + columnists.PUBLISHED_SQL
+    return joiner + columnists.FEED_VISIBLE_SQL
 
 
 def _safe_next_url(raw: str | None, default: str = "/") -> str:
@@ -693,10 +694,9 @@ def _execute_fts_listing(
     if categoria:
         where += " AND news.tag = ?"
         params.append(categoria)
-    where += (
-        " AND (news.moderation_status IS NULL OR news.moderation_status = ''"
-        " OR news.moderation_status = 'published')"
-    )
+    where += " AND " + columnists.FEED_VISIBLE_SQL.replace(
+        "moderation_status", "news.moderation_status"
+    ).replace("seo_noindex", "news.seo_noindex")
     params.extend([fetch_limit, offset])
     ranked_sql = (
         FTS_NEWS_LIST_SELECT
@@ -769,7 +769,10 @@ def _load_home_listing(
             )
         else:
             result = client.execute(
-                NEWS_LIST_SELECT + " WHERE " + columnists.PUBLISHED_SQL + " ORDER BY id DESC LIMIT ? OFFSET ?",
+                NEWS_LIST_SELECT
+                + " WHERE "
+                + columnists.FEED_VISIBLE_SQL
+                + " ORDER BY id DESC LIMIT ? OFFSET ?",
                 [fetch_limit, offset],
             )
     except Exception as exc:
@@ -791,12 +794,18 @@ def _load_home_listing(
         try:
             if categoria:
                 suggested_result = client.execute(
-                    NEWS_LIST_SELECT + " WHERE tag != ? ORDER BY id DESC LIMIT ?",
+                    NEWS_LIST_SELECT
+                    + " WHERE tag != ?"
+                    + _and_published(True)
+                    + " ORDER BY id DESC LIMIT ?",
                     [categoria, FEED_BATCH],
                 )
             else:
                 suggested_result = client.execute(
-                    NEWS_LIST_SELECT + " ORDER BY id DESC LIMIT ?",
+                    NEWS_LIST_SELECT
+                    + " WHERE "
+                    + columnists.FEED_VISIBLE_SQL
+                    + " ORDER BY id DESC LIMIT ?",
                     [FEED_BATCH],
                 )
             suggested_news = suggested_result.rows
@@ -1051,10 +1060,12 @@ def _render_noticia_page(
     columnist_author = None
     columnist_body = None
     is_columnist_article = False
+    seo_noindex_flag = False
     try:
         meta = client.execute(
             """
-            SELECT author_id, content_origin, moderation_status, conteudo_extra
+            SELECT author_id, content_origin, moderation_status, conteudo_extra,
+                   COALESCE(seo_noindex, 0)
             FROM news WHERE id = ? LIMIT 1
             """,
             [int(noticia_id)],
@@ -1062,20 +1073,28 @@ def _render_noticia_page(
         if meta.rows:
             author_id = meta.rows[0][0]
             origin = str(meta.rows[0][1] or "")
-            mod_status = str(meta.rows[0][2] or columnists.STATUS_PUBLISHED)
+            mod_raw = meta.rows[0][2]
+            mod_status = str(mod_raw or columnists.STATUS_PUBLISHED)
             extra = meta.rows[0][3]
+            seo_noindex_flag = bool(int(meta.rows[0][4] or 0))
             is_columnist_article = origin == columnists.ORIGIN_COLUMNIST
+            is_published = mod_raw is None or mod_status in ("", columnists.STATUS_PUBLISHED)
+            # Draft/pending/rejected: só admin (ou autor colunista) vê; público recebe 404.
+            if not is_published:
+                allowed = bool(user and columnists.is_admin_user(user))
+                if (
+                    not allowed
+                    and user
+                    and is_columnist_article
+                    and author_id is not None
+                    and int(user["id"]) == int(author_id)
+                ):
+                    allowed = True
+                if not allowed:
+                    raise HTTPException(status_code=404, detail="Notícia não encontrada")
             if is_columnist_article:
                 columnist_body = str(extra or impacto or "")
                 columnist_author = columnists.get_author_public(client, int(author_id) if author_id else None)
-                allowed = mod_status == columnists.STATUS_PUBLISHED
-                if not allowed and user:
-                    if columnists.is_admin_user(user) or (
-                        author_id is not None and int(user["id"]) == int(author_id)
-                    ):
-                        allowed = True
-                if not allowed:
-                    raise HTTPException(status_code=404, detail="Notícia não encontrada")
                 if mod_status == columnists.STATUS_PUBLISHED and author_id:
                     try:
                         columnists.record_page_view(
@@ -1122,7 +1141,7 @@ def _render_noticia_page(
             "canonical_url": article_canonical,
             "hreflang_urls": article_hreflang,
             "hreflang_full": hreflang_full,
-            "robots_noindex": thin_article or is_columnist_article,
+            "robots_noindex": thin_article or is_columnist_article or seo_noindex_flag,
             "published_iso": published_iso,
             "updated_iso": updated_iso,
             "content_translated": lang != "pt" and _article_has_translation(noticia, lang),
@@ -2082,9 +2101,10 @@ def _sitemap_guide_ids(client: Any) -> set[int]:
 def _sitemap_indexable_count(client: Any) -> int:
     try:
         raw = client.execute(
-            """
+            f"""
             SELECT COUNT(*) FROM news
             WHERE LENGTH(COALESCE(resumo, '')) >= ?
+              AND {columnists.FEED_VISIBLE_SQL}
             """,
             [THIN_RESUMO_CHARS],
         ).rows[0][0]
@@ -2171,11 +2191,12 @@ def get_sitemap_news(page: int):
     noticias: list[Any] = []
     try:
         result = client.execute(
-            """
+            f"""
             SELECT id,
                    COALESCE(NULLIF(updated_at, ''), NULLIF(published_at, ''), created_at) AS lastmod
             FROM news
             WHERE LENGTH(COALESCE(resumo, '')) >= ?
+              AND {columnists.FEED_VISIBLE_SQL}
             ORDER BY
               CASE WHEN imagem_url IS NOT NULL AND TRIM(imagem_url) != '' THEN 0 ELSE 1 END,
               id DESC
@@ -2267,13 +2288,18 @@ def require_robo_auth(request: Request, token: str | None = None) -> None:
 
 
 def _persist_generated_news(noticias_geradas: list[dict[str, Any]]) -> int:
-    """Insere no banco o lote gerado pela IA. Retorna quantas linhas novas."""
+    """Insere o lote gerado pela IA.
+
+    Híbrido B: RSS → pending (fila humana). Análises próprias (internal://analise|radar|macro)
+    com score alto e dentro do teto diário → publicadas. Demais próprias → pending.
+    """
     if not noticias_geradas:
         return 0
 
     client = get_db()
     salvas = 0
     existing = existing_news_links([n.get("original_link", "") for n in noticias_geradas])
+    auto_today = core.count_auto_publish_own_today()
 
     for n in noticias_geradas:
         link = n.get("original_link") or ""
@@ -2292,6 +2318,26 @@ def _persist_generated_news(noticias_geradas: list[dict[str, Any]]) -> int:
             except json.JSONDecodeError:
                 pass
 
+        auto_ok, score, reason = core.should_auto_publish_item(
+            link=link,
+            resumo=str(n.get("resumo_simples") or ""),
+            impacto=str(n.get("impacto_bolso") or ""),
+            contexto=str(n.get("contexto_mercado") or n.get("contexto_editorial") or ""),
+            dados_citados=n.get("dados_citados"),
+            source_text=str(n.get("fonte_conteudo") or ""),
+            auto_published_today=auto_today,
+        )
+        mod_status = (
+            columnists.STATUS_PUBLISHED if auto_ok else columnists.STATUS_PENDING
+        )
+        if auto_ok and core.is_desk_own_link(link):
+            auto_today += 1
+
+        ctx = str(n.get("contexto_editorial") or "")
+        ctx_note = f"\n[editorial_score={score} decide={reason}]"
+        if ctx_note.strip() not in ctx:
+            ctx = (ctx + ctx_note).strip()
+
         priority = core.compute_home_priority(n)
         try:
             client.execute(
@@ -2299,9 +2345,9 @@ def _persist_generated_news(noticias_geradas: list[dict[str, Any]]) -> int:
                 INSERT INTO news (
                     titulo, resumo, impacto, link, tag, sentimento, published_at,
                     fonte, dados_mercado, contexto_editorial, created_at, imagem_url, versao_analise,
-                    home_priority
+                    home_priority, content_origin, moderation_status, seo_noindex
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     n["titulo_viral"],
@@ -2310,15 +2356,23 @@ def _persist_generated_news(noticias_geradas: list[dict[str, Any]]) -> int:
                     link,
                     n["tag"],
                     n.get("sentimento", "Neutro"),
-                    agora,
+                    agora if mod_status == columnists.STATUS_PUBLISHED else None,
                     n.get("fonte"),
                     dados_raw if dados_raw else n.get("dados_mercado"),
-                    n.get("contexto_editorial", ""),
+                    ctx,
                     agora,
                     n.get("imagem_url"),
                     n.get("versao_analise", 1),
                     priority,
+                    columnists.ORIGIN_EDITORIAL,
+                    mod_status,
+                    0,
                 ],
+            )
+            print(
+                f"   [editorial] id-link={link[:48]}… status={mod_status} "
+                f"score={score} ({reason})",
+                flush=True,
             )
         except Exception as exc:
             print(
@@ -2669,6 +2723,14 @@ def gerar_analises_proprias(request: Request, token: str | None = None, count: i
 @app.get("/api/rodar-robo")
 def rodar_robo(request: Request, token: str | None = None):
     require_robo_auth(request, token)
+    if core.robot_paused():
+        return JSONResponse(
+            {
+                "status": "Ignorado",
+                "detail": "ROBOT_PAUSED=1 — publicacao automatica suspensa (AdSense Fase 0).",
+            },
+            status_code=202,
+        )
     if _robo_runs_async():
         if not _robo_job_lock.acquire(blocking=False):
             return JSONResponse(
@@ -3188,11 +3250,43 @@ def admin_columnists_get(request: Request):
         {
             "applications": columnists.list_pending_applications(client),
             "articles": columnists.list_pending_articles(client),
+            "editorial_queue": columnists.list_pending_editorial(client),
             "payouts": columnists.list_pending_payouts(client),
             "flash": request.query_params.get("msg"),
             "flash_ok": request.query_params.get("ok") == "1",
         },
     )
+
+
+@app.get("/admin/editorial", response_class=HTMLResponse)
+def admin_editorial_get(request: Request):
+    """Fila de aprovação humana das matérias do robô (AdSense)."""
+    _require_admin_user(request)
+    client = get_db()
+    return _render(
+        request,
+        "admin_editorial.html",
+        {
+            "editorial_queue": columnists.list_pending_editorial(client, limit=100),
+            "flash": request.query_params.get("msg"),
+            "flash_ok": request.query_params.get("ok") == "1",
+        },
+    )
+
+
+@app.post("/admin/editorial/{news_id}")
+async def admin_review_editorial(
+    request: Request,
+    news_id: int,
+    decision: str = Form(...),
+    admin_note: str = Form(""),
+):
+    _require_admin_user(request)
+    columnists.review_editorial_article(
+        get_db(), news_id, decision=decision, admin_note=admin_note
+    )
+    _invalidate_home_cache()
+    return RedirectResponse("/admin/editorial?ok=1&msg=Fila+atualizada.", status_code=303)
 
 
 @app.post("/admin/colunistas/candidatura/{application_id}")

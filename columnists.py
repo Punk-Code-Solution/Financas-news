@@ -39,6 +39,11 @@ PUBLISHED_SQL = (
     "(moderation_status IS NULL OR moderation_status = '' OR moderation_status = 'published')"
 )
 
+# Indexação / home curada: seo_noindex=1 fica fora do sitemap e do feed principal.
+INDEXABLE_SQL = "(seo_noindex IS NULL OR seo_noindex = 0)"
+
+FEED_VISIBLE_SQL = f"({PUBLISHED_SQL}) AND ({INDEXABLE_SQL})"
+
 BOOST_CAP_PRIORITY = 90
 MIN_TITLE_LEN = 12
 MIN_SUMMARY_LEN = 40
@@ -497,6 +502,51 @@ def list_pending_articles(client, limit: int = 50) -> list[dict[str, Any]]:
     ]
 
 
+def list_pending_editorial(client, limit: int = 50) -> list[dict[str, Any]]:
+    """Fila do robô/desk: pending até aprovação humana (AdSense).
+
+    Ordena por score editorial (maior primeiro) para acelerar a revisão humana do RSS.
+    """
+    import core as _core
+
+    result = client.execute(
+        """
+        SELECT id, titulo, created_at, fonte, tag, link,
+               LENGTH(COALESCE(resumo, '')) AS resumo_len,
+               resumo, impacto, contexto_editorial
+        FROM news
+        WHERE COALESCE(content_origin, ?) = ?
+          AND moderation_status = ?
+        ORDER BY id ASC LIMIT ?
+        """,
+        [ORIGIN_EDITORIAL, ORIGIN_EDITORIAL, STATUS_PENDING, max(int(limit) * 3, 30)],
+    )
+    items: list[dict[str, Any]] = []
+    for r in result.rows or []:
+        link = str(r[5] or "")
+        resumo = str(r[7] or "")
+        impacto = str(r[8] or "")
+        contexto = str(r[9] or "")
+        score = _core.compute_editorial_score(
+            resumo=resumo, impacto=impacto, contexto=contexto
+        )
+        items.append(
+            {
+                "id": int(r[0]),
+                "titulo": str(r[1] or ""),
+                "created_at": r[2],
+                "fonte": r[3],
+                "tag": r[4],
+                "link": link,
+                "resumo_len": int(r[6] or 0),
+                "score": score,
+                "kind": "própria" if _core.is_desk_own_link(link) else "RSS",
+            }
+        )
+    items.sort(key=lambda x: (-int(x["score"]), int(x["id"])))
+    return items[: int(limit)]
+
+
 def review_article(client, news_id: int, *, approve: bool, admin_note: str = "") -> None:
     article = get_article_for_author(client, news_id, None)
     if not article or article["content_origin"] != ORIGIN_COLUMNIST:
@@ -521,6 +571,64 @@ def review_article(client, news_id: int, *, approve: bool, admin_note: str = "")
             WHERE id = ?
             """,
             [STATUS_REJECTED, now, f"\n[Revisão] {note}" if note else "", int(news_id)],
+        )
+
+
+def review_editorial_article(
+    client,
+    news_id: int,
+    *,
+    decision: str,
+    admin_note: str = "",
+) -> None:
+    """Aprovar / rejeitar / pedir reescrita de matéria do robô (content_origin=editorial)."""
+    article = get_article_for_author(client, news_id, None)
+    if not article:
+        raise ValueError("Matéria não encontrada.")
+    origin = article.get("content_origin") or ORIGIN_EDITORIAL
+    if origin == ORIGIN_COLUMNIST:
+        raise ValueError("Use a fila de colunistas para este artigo.")
+    now = utc_now_iso()
+    note = (admin_note or "").strip()[:500]
+    action = (decision or "").strip().lower()
+    if action == "approve":
+        client.execute(
+            """
+            UPDATE news SET moderation_status = ?, published_at = COALESCE(published_at, ?),
+                   updated_at = ?, seo_noindex = 0,
+                   home_priority = CASE
+                       WHEN COALESCE(home_priority, 0) < 20 THEN 40 ELSE home_priority END
+            WHERE id = ?
+            """,
+            [STATUS_PUBLISHED, now, now, int(news_id)],
+        )
+    elif action == "rewrite":
+        client.execute(
+            """
+            UPDATE news SET moderation_status = ?, updated_at = ?,
+                   contexto_editorial = COALESCE(contexto_editorial, '') || ?
+            WHERE id = ?
+            """,
+            [
+                STATUS_DRAFT,
+                now,
+                f"\n[Reescrita pedida] {note}" if note else "\n[Reescrita pedida]",
+                int(news_id),
+            ],
+        )
+    else:
+        client.execute(
+            """
+            UPDATE news SET moderation_status = ?, updated_at = ?, seo_noindex = 1,
+                   contexto_editorial = COALESCE(contexto_editorial, '') || ?
+            WHERE id = ?
+            """,
+            [
+                STATUS_REJECTED,
+                now,
+                f"\n[Revisão editorial] {note}" if note else "",
+                int(news_id),
+            ],
         )
 
 

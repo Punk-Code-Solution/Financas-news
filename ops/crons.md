@@ -29,17 +29,30 @@ Schedules em **UTC** (cron-job.org e Railway Cron usam UTC). BRT = UTC−3.
 | Crédito colunistas | POST | `/api/columnists/credit-daily` | `30 2 * * *` | 23:30 BRT | 2 min |
 | Expirar boosts | POST | `/api/columnists/expire-boosts` | `10 * * * *` | a cada hora | 1 min |
 
-**AdSense / qualidade:** preferir **1 rodada/dia** do robô (`0 12 * * *` UTC) com defaults `ROBOT_MAX_ARTICLES=8`, `ROBOT_MAX_PER_FEED=1`, `ROBOT_OWN_ANALYSES=5`. Evitar várias rodadas cheias — volume alto com IA é sinal de *scaled content abuse* para o Google.
+**AdSense Fase 0 (baixo valor):** pausar o robô e reduzir ads até o índice curado estabilizar no GSC (2–4 semanas).
 
-Env sugerido (Railway):
+Env sugerido (Railway) — **fase atual**:
 
 ```
+ROBOT_PAUSED=1
+EDITORIAL_REVIEW_REQUIRED=1
+EDITORIAL_AUTO_PUBLISH_OWN=1
+EDITORIAL_AUTO_PUBLISH_DAILY_CAP=2
+EDITORIAL_AUTO_PUBLISH_MIN_SCORE=70
+ADSENSE_REVIEW_MODE=1
 ROBOT_MAX_PER_FEED=1
-ROBOT_MAX_ARTICLES=8
-ROBOT_OWN_ANALYSES=5
+ROBOT_MAX_ARTICLES=2
+ROBOT_OWN_ANALYSES=1
 ROBOT_POLITICO_MAX_PER_FEED=1
-ROBOT_POLITICO_MAX_ARTICLES=3
+ROBOT_POLITICO_MAX_ARTICLES=1
 ```
+
+- Com `ROBOT_PAUSED=1`, `GET /api/rodar-robo` responde **202 Ignorado** (não gera lote).
+- **Híbrido B:** RSS → fila `/admin/editorial`. Análises próprias (`internal://analise|radar|macro`) com score ≥ `MIN_SCORE` publicam sozinhas até o teto diário; o resto fica pending.
+- `ADSENSE_REVIEW_MODE=1` (default): no máx. 1–2 unidades AdSense por página.
+- Quando retomar: `ROBOT_PAUSED=0` e manter tetos baixos (2 + 1 própria/dia). **Não** voltar a 8/rodada.
+
+Ferramentas: `tools/curate_adsense_index.py`, `tools/purge_thin_news.py`, `tools/adsense_qa_sample.py` — ver `DOCUMENTACAO.md` §11b.
 
 ---
 

@@ -180,6 +180,17 @@ def get_contextual_affiliate(tag: str) -> dict[str, object] | None:
     return None
 
 
+def adsense_review_mode() -> bool:
+    """Modo revisão AdSense: no máximo 1–2 unidades/página (conteúdo > ads).
+
+    Default ligado (Fase 0). Desligar com ADSENSE_REVIEW_MODE=0 após aprovação.
+    """
+    raw = _env("ADSENSE_REVIEW_MODE").strip().lower()
+    if not raw:
+        return True
+    return raw in ("1", "true", "yes", "on")
+
+
 def get_monetization_config() -> dict[str, object]:
     adsense_client = _env("GOOGLE_ADSENSE_CLIENT") or ADSENSE_PUBLISHER_ID
     adsense_slot = _env("ADSENSE_AD_SLOT")
@@ -199,6 +210,18 @@ def get_monetization_config() -> dict[str, object]:
         adsense_fluid_slot = ""
     if not adsense_fluid2_layout:
         adsense_fluid2_slot = ""
+
+    review_mode = adsense_review_mode()
+    if review_mode:
+        # Mantém Auto ads no <head> + no máximo 1 display e 1 in-article.
+        adsense_fluid_slot = ""
+        adsense_fluid2_slot = ""
+        adsense_sidebar_slot = ""
+        adsense_skyscraper_slot = ""
+        adsense_autorelaxed_slot = ""
+        if not adsense_slot and adsense_in_article_slot:
+            adsense_slot = adsense_in_article_slot
+        adsense_display_enabled = adsense_enabled and bool(adsense_slot)
 
     affiliates: list[dict[str, object]] = []
     for item in DEFAULT_AFFILIATES:
@@ -238,13 +261,14 @@ def get_monetization_config() -> dict[str, object]:
         "adsense": {
             "enabled": adsense_enabled,
             "display_enabled": adsense_display_enabled,
+            "review_mode": review_mode,
             "client": adsense_client,
             "slot": adsense_slot or "",
             "fluid_slot": adsense_fluid_slot,
             "fluid_layout_key": adsense_fluid_layout,
             "fluid2_slot": adsense_fluid2_slot,
             "fluid2_layout_key": adsense_fluid2_layout,
-            "in_article_slot": adsense_in_article_slot,
+            "in_article_slot": "" if review_mode else adsense_in_article_slot,
             "sidebar_slot": adsense_sidebar_slot,
             "skyscraper_slot": adsense_skyscraper_slot,
             "autorelaxed_slot": adsense_autorelaxed_slot,
